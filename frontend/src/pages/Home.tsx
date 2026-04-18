@@ -296,7 +296,7 @@ export default function Home() {
                 </p>
 
                 {submittingTurn ? (
-                  <p className="text-sm text-text-muted">Processing your answer…</p>
+                  <p className="text-sm text-text-muted">Analyzing your response — usually takes 5–10 seconds.</p>
                 ) : (
                   <>
                     {recorder.state === 'idle' && (
