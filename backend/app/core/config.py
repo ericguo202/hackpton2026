@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     CLERK_JWT_ISSUER: str
     CLERK_SECRET_KEY: str | None = None
 
+    # Google AI Studio API key — authenticates `google-generativeai` for the
+    # Gemma 4 evaluator call (and later Gemini 2.5 Flash for research +
+    # opening-question generation). Optional at app boot so tests (which
+    # mock the SDK) can import `settings` without a live key; the evaluator
+    # configures the SDK lazily and raises if the key is missing when a
+    # real call is actually attempted.
+    GEMINI_API_KEY: str | None = None
+
     @property
     def DATABASE_URL(self) -> str:
         """SQLAlchemy async URL composed from the POSTGRES_* parts above."""

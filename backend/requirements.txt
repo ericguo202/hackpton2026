@@ -35,3 +35,13 @@ email-validator
 
 # FastAPI needs this to accept multipart/form-data (UploadFile + Form fields).
 python-multipart
+
+# Gemma 4 / Gemini client. Evaluator uses `gemma-4-26b-a4b-it` via this SDK;
+# later tasks (company research, opening question) use Gemini 2.5 Flash via
+# the same package.
+google-generativeai
+
+# Test runner. `pytest-asyncio` (with `asyncio_mode = auto` in pytest.ini)
+# lets `async def test_*` functions run without explicit decoration.
+pytest
+pytest-asyncio

@@ -91,10 +91,10 @@ TTS audio: return base64 inline in JSON — no S3.
 }
 ```
 
-- Use `response_mime_type="application/json"` + response schema on all Gemini calls
-- Use Gemini 2.5 Flash for **everything** — don't mix models
+- Use `response_mime_type="application/json"` + response schema on all Gemini/Gemma calls
+- Use **Gemma 4 (`gemma-4-26b-a4b-it`) for the evaluator call** (sponsor track); Gemini 2.5 Flash for company research + opening question. No other model mixing.
 - Pass full turn history in prompt so follow-ups reference earlier answers
-- Filler regex is ground truth; Gemini breakdown is supplemental only
+- Filler regex is ground truth; any LLM breakdown is supplemental only
 
 **Filler word regex** (case-insensitive, word boundaries):
 `um, uh, er, like, you know, basically, literally, actually, i mean, kind of, sort of, right`
