@@ -17,11 +17,16 @@ We never share secrets with Clerk here — JWKS is public by design.
 from typing import Optional
 
 import httpx
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from jose import jwt, JWTError
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.models.user import User
+from app.db.session import get_db
 
 
 # Module-level JWKS cache. Clerk rotates signing keys rarely (on the order of
@@ -118,3 +123,41 @@ async def current_user(authorization: str = Header(None)) -> ClerkClaims:
     # which would also surface as a 500 — acceptable since a token that passes
     # jose.decode but lacks these fields would be a Clerk-side bug.
     return ClerkClaims(**payload)
+
+
+async def get_current_user_db(
+    claims: ClerkClaims = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """
+    Authenticated dependency that returns a `users` row (not raw claims).
+
+    On the user's FIRST authenticated request we don't yet have a row — Clerk
+    owns their identity, we just mirror it. The INSERT ... ON CONFLICT DO
+    NOTHING pattern handles concurrency-safe upsert: if two requests arrive
+    at once, only one insert wins, the other is a no-op, and both re-SELECT
+    the same row.
+
+    Note: email/name stay NULL here. Clerk session JWTs don't carry them;
+    they're filled later by `POST /onboarding` (or by a Clerk Backend API
+    lookup, not yet wired).
+    """
+    result = await db.execute(select(User).where(User.clerk_user_id == claims.sub))
+    user = result.scalar_one_or_none()
+    if user is not None:
+        return user
+
+    # Not found — try to insert. ON CONFLICT makes this safe under race.
+    stmt = (
+        pg_insert(User)
+        .values(clerk_user_id=claims.sub)
+        .on_conflict_do_nothing(index_elements=["clerk_user_id"])
+    )
+    await db.execute(stmt)
+    await db.commit()
+
+    # Re-SELECT: covers both "we just inserted" and "the other request did".
+    result = await db.execute(select(User).where(User.clerk_user_id == claims.sub))
+    user = result.scalar_one()
+    # TODO: backfill email/name via Clerk Backend API once CLERK_SECRET_KEY is used.
+    return user

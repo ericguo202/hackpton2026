@@ -1,25 +1,25 @@
 """
-/me endpoint — the T+0 "is auth working?" smoke test.
+/me endpoint — the auth + upsert smoke test.
 
-Any route that `Depends(current_user)` is automatically protected: FastAPI runs
-the dependency before the handler, and a 401 raised inside the dependency
-short-circuits the request. The handler only ever runs with verified claims.
+`get_current_user_db` both verifies the Clerk JWT and ensures a `users` row
+exists for the caller (upsert on first call). The handler runs only for
+authenticated users and returns the full DB row as `UserOut`.
 
-Expected behaviors (from the CLAUDE.md verification checklist):
+Expected behaviors:
   - no Authorization header            -> 401 "Missing bearer token"
   - Authorization: Bearer <garbage>    -> 401 "Invalid token: ..."
-  - Authorization: Bearer <valid JWT>  -> 200 {"clerk_user_id": "user_..."}
+  - Authorization: Bearer <valid JWT>  -> 200 UserOut
 """
 
 from fastapi import APIRouter, Depends
 
-from app.core.auth import ClerkClaims, current_user
+from app.core.auth import get_current_user_db
+from app.db.models.user import User
+from app.schemas.user import UserOut
 
 router = APIRouter()
 
 
-@router.get("")
-async def get_me(claims: ClerkClaims = Depends(current_user)):
-    # `claims.sub` is Clerk's stable user id (e.g. "user_2abc..."). Once the
-    # users table exists, this is the column we'll join on / upsert by.
-    return {"clerk_user_id": claims.sub}
+@router.get("", response_model=UserOut)
+async def get_me(user: User = Depends(get_current_user_db)) -> User:
+    return user
