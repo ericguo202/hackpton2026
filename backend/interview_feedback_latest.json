@@ -1,0 +1,18 @@
+{
+  "frames_processed": 5867,
+  "face_visible_pct": 61.9,
+  "eye_contact_score": 40.3,
+  "expression_score": 34.5,
+  "overall_interview_score": 38.3,
+  "eye_contact_rating": "fair",
+  "expression_rating": "needs work",
+  "interview_rating": "needs work",
+  "best_eye_contact_frame_score": 99.0,
+  "best_expression_frame_score": 100.0,
+  "coaching_tip": "Center your face in the camera to begin interview scoring.",
+  "notes": [
+    "Eye contact is estimated from face and eye alignment in the webcam image.",
+    "Expression scoring uses visible smile and eye-openness cues as an engagement proxy.",
+    "This is a lightweight computer-vision heuristic, not a clinically validated interview assessment."
+  ]
+}
