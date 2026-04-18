@@ -12,13 +12,18 @@
  * explicit fallback — the user can tap play.
  */
 
-type Props = { question: string; audioUrl: string };
+type Props = {
+  question: string;
+  audioUrl: string;
+  questionNum?: number;
+  onEnded?: () => void;
+};
 
-export default function QuestionPlayer({ question, audioUrl }: Props) {
+export default function QuestionPlayer({ question, audioUrl, questionNum = 1, onEnded }: Props) {
   return (
     <div className="mt-12 max-w-[56ch]">
       <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted mb-4">
-        Question 1
+        Question {questionNum}
       </p>
       <p className="font-display text-xl md:text-2xl text-text leading-snug">
         {question}
@@ -27,6 +32,7 @@ export default function QuestionPlayer({ question, audioUrl }: Props) {
         src={audioUrl}
         autoPlay
         controls
+        onEnded={onEnded}
         className="mt-6 w-full"
       />
     </div>

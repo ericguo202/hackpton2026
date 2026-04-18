@@ -8,8 +8,6 @@ key) and a JSON extractor that copes with chain-of-thought preambles the
 
 from __future__ import annotations
 
-import re
-
 import google.generativeai as genai
 
 from app.core.config import settings
@@ -36,15 +34,36 @@ def ensure_configured() -> None:
     _configured = True
 
 
-# Gemma 4 (and occasionally Gemini) emits chain-of-thought text before the
-# JSON object, even with `response_mime_type="application/json"`. Pull the
-# outermost {...} block. Greedy + DOTALL so trailing reasoning after the
-# closing brace gets cropped out.
-_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
-
-
 def extract_json_object(text: str) -> str:
-    match = _JSON_OBJECT_RE.search(text)
-    if not match:
+    """Extract the first complete JSON object from text using brace counting.
+
+    Gemma 4 (and occasionally Gemini) emits chain-of-thought preamble/postamble
+    even with response_mime_type="application/json". A greedy regex overshoots
+    when the model appends text after the closing brace. Brace counting stops
+    exactly at the matching close brace.
+    """
+    start = text.find("{")
+    if start == -1:
         raise ValueError(f"No JSON object in LLM response: {text!r}")
-    return match.group(0)
+    depth = 0
+    in_string = False
+    escape_next = False
+    for i, ch in enumerate(text[start:], start):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    raise ValueError(f"Unterminated JSON object in LLM response: {text!r}")
