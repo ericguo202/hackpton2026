@@ -15,36 +15,15 @@ the route handler at T+10-12 composes them. It also does NOT generate
 from __future__ import annotations
 
 import logging
-import re
 
 import google.generativeai as genai
 from pydantic import BaseModel, field_validator
 
-from app.core.config import settings
+from app.services._gemini_utils import ensure_configured, extract_json_object
 
 logger = logging.getLogger(__name__)
 
 GEMMA_EVAL_MODEL = "gemma-4-26b-a4b-it"
-
-_configured = False
-
-
-def _ensure_configured() -> None:
-    """Configure the Gemini SDK on first real call.
-
-    Kept lazy so tests (which monkeypatch `GenerativeModel`) can import this
-    module without a live API key in the environment.
-    """
-    global _configured
-    if _configured:
-        return
-    if not settings.GEMINI_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY is not set. Add it to backend/.env before "
-            "calling the evaluator."
-        )
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    _configured = True
 
 
 class EvaluatorOutput(BaseModel):
@@ -123,27 +102,13 @@ def _build_prompt(
     return "\n".join(parts)
 
 
-# Gemma 4 has extended-reasoning behavior that often emits chain-of-thought
-# before the JSON object, even with `response_mime_type="application/json"`.
-# Grab the outermost {...} block from the raw text. Non-greedy + DOTALL so
-# the first `{` through the matching `}` wins even when reasoning follows.
-_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
-
-
-def _extract_json_object(text: str) -> str:
-    match = _JSON_OBJECT_RE.search(text)
-    if not match:
-        raise ValueError(f"No JSON object in Gemma response: {text!r}")
-    return match.group(0)
-
-
 async def evaluate_turn(
     question: str,
     transcript: str,
     history: list[dict] | None = None,
 ) -> EvaluatorOutput:
     """Score one interview turn with Gemma 4 and return structured JSON."""
-    _ensure_configured()
+    ensure_configured()
     model = genai.GenerativeModel(
         GEMMA_EVAL_MODEL,
         system_instruction=_SYSTEM_INSTRUCTION,
@@ -161,4 +126,4 @@ async def evaluate_turn(
         },
         request_options={"timeout": 180},
     )
-    return EvaluatorOutput.model_validate_json(_extract_json_object(response.text))
+    return EvaluatorOutput.model_validate_json(extract_json_object(response.text))

@@ -14,7 +14,7 @@ Adding a new route group is a three-step ritual:
 """
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, me, onboarding
+from app.api.v1.endpoints import health, me, onboarding, sessions
 
 api_router = APIRouter()
 
@@ -29,3 +29,6 @@ api_router.include_router(me.router, prefix="/me", tags=["me"])
 api_router.include_router(
     onboarding.router, prefix="/onboarding", tags=["onboarding"]
 )
+
+# Protected. POST /api/v1/sessions starts a new mock interview.
+api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"])

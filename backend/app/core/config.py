@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # real call is actually attempted.
     GEMINI_API_KEY: str | None = None
 
+    # serper.dev API key — feeds `POST https://google.serper.dev/search` in
+    # the company-research service. Optional at boot for the same reason as
+    # GEMINI_API_KEY: tests monkeypatch the httpx call, no key required.
+    SERPER_API_KEY: str | None = None
+
     @property
     def DATABASE_URL(self) -> str:
         """SQLAlchemy async URL composed from the POSTGRES_* parts above."""
