@@ -1,7 +1,24 @@
+# Web framework + ASGI server
 fastapi
 uvicorn[standard]
+
+# Async SQLAlchemy + Postgres driver (asyncpg pairs with sqlalchemy[asyncio])
 sqlalchemy[asyncio]
 asyncpg
+
+# Config loading (pydantic v2 settings) + .env file support
 pydantic-settings
 python-dotenv
+
+# Computer-vision heuristics for the interview analyzer prototype
 opencv-python
+
+# Clerk JWT verification:
+#   python-jose handles JWT decode + RS256 signature check.
+#   The [cryptography] extra pulls in the pyca/cryptography backend which is
+#   required for RSA verification against Clerk's JWKS.
+python-jose[cryptography]
+
+# Async HTTP client — used to fetch Clerk's JWKS (and later: Gemini, ElevenLabs,
+# Serper). Prefer httpx over `requests` because our backend is async.
+httpx
