@@ -29,3 +29,7 @@ class SessionCreateOut(BaseModel):
     session_id: UUID
     summary: CompanyBriefOut
     first_question: str
+    # `data:audio/mpeg;base64,...` — ready to drop into `<audio src>`.
+    # Not persisted; regenerated on demand per CLAUDE.md (audio inline in
+    # JSON, no S3).
+    first_question_audio_url: str

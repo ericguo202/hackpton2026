@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     # GEMINI_API_KEY: tests monkeypatch the httpx call, no key required.
     SERPER_API_KEY: str | None = None
 
+    # ElevenLabs TTS (T+8-10). `VOICE_ID` picks which voice speaks the
+    # question — grab one from the Voice Library (e.g. `JBFqnCBsd6RMkjVDRZzb`
+    # for "George"). Both are optional at boot so tests that mock the HTTP
+    # call can import `settings` without live credentials; the TTS service
+    # raises RuntimeError at call time if either is missing.
+    ELEVENLABS_API_KEY: str | None = None
+    ELEVENLABS_VOICE_ID: str | None = None
+
     @property
     def DATABASE_URL(self) -> str:
         """SQLAlchemy async URL composed from the POSTGRES_* parts above."""

@@ -14,6 +14,7 @@
 import { useState, type FormEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
 
+import QuestionPlayer from '../components/QuestionPlayer';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar from '../components/TopBar';
 import { useApi } from '../hooks/useApi';
@@ -41,7 +42,8 @@ export default function Home() {
 
   const [company, setCompany] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [session, setSession] = useState<SessionStart | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const firstName = user?.firstName ?? null;
 
@@ -51,27 +53,22 @@ export default function Home() {
     if (!trimmed) return;
 
     setSubmitting(true);
-    setNote(null);
+    setError(null);
+    setSession(null);
     try {
-      await apiFetch<SessionStart>('/api/v1/sessions', {
+      const data = await apiFetch<SessionStart>('/api/v1/sessions', {
         method: 'POST',
         body: JSON.stringify({
           company: trimmed,
           job_title: me?.target_role ?? 'Software Engineer',
         }),
       });
-      // Success path: once the session view is built, navigate there.
-      // Until then, surface a calm placeholder so the UI stays honest.
-      setNote(
-        'Session created. The session view is still being built — check back soon.',
-      );
+      setSession(data);
     } catch (err) {
       if (err instanceof ApiError) {
-        setNote(
-          `Sessions endpoint returned ${err.status}. This route is still being wired up on the backend.`,
-        );
+        setError(`Sessions endpoint returned ${err.status}: ${err.message}`);
       } else {
-        setNote((err as Error).message);
+        setError((err as Error).message);
       }
     } finally {
       setSubmitting(false);
@@ -151,16 +148,23 @@ export default function Home() {
               )}
             </div>
 
-            {note && (
+            {session && session.first_question_audio_url && (
+              <QuestionPlayer
+                question={session.first_question}
+                audioUrl={session.first_question_audio_url}
+              />
+            )}
+
+            {error && (
               <p
-                role="status"
+                role="alert"
                 aria-live="polite"
                 className="mt-10 max-w-[56ch] text-sm text-text-muted leading-[1.6]"
               >
                 <span className="mr-3 text-[10px] uppercase tracking-eyebrow text-text">
-                  Note
+                  Error
                 </span>
-                {note}
+                {error}
               </p>
             )}
           </div>

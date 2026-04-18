@@ -14,6 +14,7 @@ question, and we strip any wrapping quotes defensively.
 from __future__ import annotations
 
 import logging
+import random
 
 import google.generativeai as genai
 
@@ -29,18 +30,36 @@ _RESUME_CHAR_LIMIT = 1500
 
 _SYSTEM_INSTRUCTION = """\
 You are a behavioral-interview coach preparing a candidate for a mock
-interview.
+interview. Generate exactly ONE opening question.
 
-Generate exactly ONE opening interview question, tailored to BOTH the
-candidate's background AND the target company's recent activity. The
-question must be:
+Hard constraints:
+- Exactly ONE sentence. No preamble, markdown, or surrounding quotes.
+- Target 15-22 words. Never exceed 25 words.
+- Phrased the way a human interviewer would actually say it out loud —
+  natural, conversational, no clauses stacked on clauses.
 - Open-ended and behavioral (answerable with the STAR structure).
-- 1-2 sentences, no preamble, no markdown, no surrounding quotes.
-- Specific enough to hook into the candidate's real experience while
-  inviting them to connect it to something the target company cares about.
 
 Return ONLY the question text. Nothing else.
 """
+
+
+# Two distinct styles we rotate between so the demo doesn't feel like
+# "every question namedrops the company". Roughly 50/50 keeps the mix
+# recognizable without needing stateful tracking across sessions.
+_STYLE_STANDARD = (
+    "STYLE: Classic behavioral question. Do NOT mention the target "
+    "company or its recent activity. Focus on the candidate's experience "
+    "level and domain (e.g. teamwork, conflict, failure, ownership, "
+    "ambiguity, learning). Examples of shape: 'Tell me about a time you "
+    "...', 'Describe a situation where ...', 'Walk me through how you ...'."
+)
+_STYLE_COMPANY = (
+    "STYLE: Lightly company-flavored. You MAY reference ONE concrete "
+    "thing about the target company (a product area, a stated value, or "
+    "a recent initiative) as a gentle hook — but the question itself is "
+    "still a standard behavioral prompt about the candidate's past "
+    "experience. Do not quiz them on the company."
+)
 
 
 def _profile_digest(user: User, job_title: str) -> str:
@@ -78,11 +97,14 @@ async def generate_opening_question(
     brief: CompanyBrief,
     job_title: str,
 ) -> str:
-    """Return a single tailored opening interview question."""
+    """Return a single opening interview question — standard or company-flavored."""
     ensure_configured()
 
+    style = random.choice([_STYLE_STANDARD, _STYLE_COMPANY])
     prompt = (
-        f"{_profile_digest(user, job_title)}\n\n{_company_digest(brief)}\n\n"
+        f"{_profile_digest(user, job_title)}\n\n"
+        f"{_company_digest(brief)}\n\n"
+        f"{style}\n\n"
         "Now write the opening question."
     )
 
@@ -92,7 +114,7 @@ async def generate_opening_question(
     )
     response = await model.generate_content_async(
         prompt,
-        generation_config={"temperature": 0.5},
+        generation_config={"temperature": 0.7},
         request_options={"timeout": 60},
     )
     return _strip_wrapping_quotes(response.text)
