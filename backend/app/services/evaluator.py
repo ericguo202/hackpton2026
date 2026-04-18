@@ -43,6 +43,7 @@ class EvaluatorOutput(BaseModel):
     impact: int
     conciseness: int
     notes: str
+    next_question: str = ""
 
     @field_validator("directness", "star", "specificity", "impact", "conciseness", mode="before")
     @classmethod
@@ -57,7 +58,7 @@ class EvaluatorOutput(BaseModel):
 _SYSTEM_INSTRUCTION = """\
 You are a behavioral-interview coach scoring a candidate's response.
 
-Return ONLY a single JSON object with exactly these six keys, and nothing
+Return ONLY a single JSON object with exactly these seven keys, and nothing
 else (no markdown, no prose, no thinking steps):
 
 {
@@ -66,7 +67,8 @@ else (no markdown, no prose, no thinking steps):
   "specificity": <int 0-10>,
   "impact": <int 0-10>,
   "conciseness": <int 0-10>,
-  "notes": "<2-3 sentence coaching note>"
+  "notes": "<2-3 sentence coaching note>",
+  "next_question": "<follow-up question or empty string>"
 }
 
 Rubric:
@@ -82,6 +84,10 @@ Rubric:
 
 `notes` is written in the second person ("You could strengthen this by...").
 Be direct but constructive.
+
+`next_question`: When the prompt instructs you to generate a follow-up, write
+one behavioral follow-up question (15-22 words, conversational, probes a gap
+or unexplored angle in the answer). When instructed not to, set it to "".
 """
 
 
@@ -89,6 +95,7 @@ def _build_prompt(
     question: str,
     transcript: str,
     history: list[dict] | None,
+    generate_followup: bool,
 ) -> str:
     parts: list[str] = []
     if history:
@@ -99,6 +106,14 @@ def _build_prompt(
         parts.append("")
     parts.append(f"Current question: {question}")
     parts.append(f"Candidate answer: {transcript}")
+    parts.append("")
+    if generate_followup:
+        parts.append(
+            "Generate a follow-up question in 'next_question' that probes "
+            "a gap or weakness in the answer above (15-22 words, behavioral, open-ended)."
+        )
+    else:
+        parts.append("Set 'next_question' to an empty string \"\".")
     return "\n".join(parts)
 
 
@@ -106,6 +121,7 @@ async def evaluate_turn(
     question: str,
     transcript: str,
     history: list[dict] | None = None,
+    generate_followup: bool = False,
 ) -> EvaluatorOutput:
     """Score one interview turn with Gemma 4 and return structured JSON."""
     ensure_configured()
@@ -119,7 +135,7 @@ async def evaluate_turn(
     # The system prompt spells the shape out explicitly and Pydantic
     # validates on the client side — equivalent guarantee, fast response.
     response = await model.generate_content_async(
-        _build_prompt(question, transcript, history),
+        _build_prompt(question, transcript, history, generate_followup),
         generation_config={
             "response_mime_type": "application/json",
             "temperature": 0.2,

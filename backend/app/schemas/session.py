@@ -33,3 +33,22 @@ class SessionCreateOut(BaseModel):
     # Not persisted; regenerated on demand per CLAUDE.md (audio inline in
     # JSON, no S3).
     first_question_audio_url: str
+
+
+class ScoresOut(BaseModel):
+    directness: int
+    star: int
+    specificity: int
+    impact: int
+    conciseness: int
+
+
+class TurnSubmitOut(BaseModel):
+    transcript: str
+    scores: ScoresOut
+    feedback: str
+    filler_word_count: int
+    filler_word_breakdown: dict[str, int]
+    next_question: str | None
+    next_question_audio_url: str | None
+    is_final: bool

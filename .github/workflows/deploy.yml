@@ -1,0 +1,37 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: SSH & Docker Compose Up
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          # Increase timeout: docker build (mediapipe/opencv) can take ~3 min on a small instance
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+
+            cd ~/hackpton2026
+
+            echo "==> Pulling latest code..."
+            git pull origin main
+
+            echo "==> Building and restarting containers..."
+            cd backend
+            docker compose up -d --build --remove-orphans
+
+            echo "==> Waiting for health check..."
+            sleep 10
+            docker compose ps
+            curl -sf http://localhost:8000/api/v1/health && echo " [OK] API is healthy" || echo " [WARN] Health check failed — check logs"
