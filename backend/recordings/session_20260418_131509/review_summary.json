@@ -1,0 +1,30 @@
+{
+  "session_video": "C:\\Users\\herma\\Desktop\\hackpton2026\\backend\\recordings\\session_20260418_131509\\interview_session.mp4",
+  "fps": 30.0,
+  "frame_count": 373,
+  "highlights": [
+    {
+      "clip": "C:\\Users\\herma\\Desktop\\hackpton2026\\backend\\recordings\\session_20260418_131509\\highlights\\highlight_01.mp4",
+      "start_frame": 0,
+      "end_frame": 77,
+      "start_seconds": 0.0,
+      "end_seconds": 2.57,
+      "reasons": [
+        "Posture or head alignment drifted"
+      ],
+      "severity": 48.22
+    },
+    {
+      "clip": "C:\\Users\\herma\\Desktop\\hackpton2026\\backend\\recordings\\session_20260418_131509\\highlights\\highlight_02.mp4",
+      "start_frame": 277,
+      "end_frame": 372,
+      "start_seconds": 9.23,
+      "end_seconds": 12.4,
+      "reasons": [
+        "Posture or head alignment drifted",
+        "Looked away from camera"
+      ],
+      "severity": 100.0
+    }
+  ]
+}
