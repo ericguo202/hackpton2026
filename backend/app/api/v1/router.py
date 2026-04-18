@@ -14,7 +14,7 @@ Adding a new route group is a three-step ritual:
 """
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, me
+from app.api.v1.endpoints import health, me, onboarding
 
 api_router = APIRouter()
 
@@ -24,3 +24,8 @@ api_router.include_router(health.router, prefix="/health", tags=["health"])
 # Protected. GET /api/v1/me returns the caller's Clerk user id.
 # Auth is enforced inside the endpoint via Depends(current_user), NOT here.
 api_router.include_router(me.router, prefix="/me", tags=["me"])
+
+# Protected. POST /api/v1/onboarding fills in profile fields + résumé.
+api_router.include_router(
+    onboarding.router, prefix="/onboarding", tags=["onboarding"]
+)

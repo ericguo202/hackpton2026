@@ -26,3 +26,12 @@ python-jose[cryptography]
 # Async HTTP client — used to fetch Clerk's JWKS (and later: Gemini, ElevenLabs,
 # Serper). Prefer httpx over `requests` because our backend is async.
 httpx
+
+# Resume PDF parsing for the onboarding endpoint.
+pdfplumber
+
+# EmailStr validation — pydantic delegates to this.
+email-validator
+
+# FastAPI needs this to accept multipart/form-data (UploadFile + Form fields).
+python-multipart

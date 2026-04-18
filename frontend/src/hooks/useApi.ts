@@ -26,14 +26,17 @@ export function useApi() {
         throw new ApiError(401, 'no session token');
       }
 
-      const res = await fetch(buildUrl(path), {
-        ...init,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          ...init?.headers,
-        },
-      });
+      // Let the browser set Content-Type (with the multipart boundary) when
+      // the caller passes FormData. Forcing application/json here would
+      // produce a malformed request that the server can't parse.
+      const isFormData = init?.body instanceof FormData;
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(init?.headers as Record<string, string> | undefined),
+      };
+
+      const res = await fetch(buildUrl(path), { ...init, headers });
 
       if (!res.ok) {
         throw new ApiError(res.status, await res.text());

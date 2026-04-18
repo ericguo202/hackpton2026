@@ -19,6 +19,7 @@ class UserOut(BaseModel):
     target_role: str | None
     experience_level: ExperienceLevel | None
     short_bio: str | None
+    resume_text: str | None
     completed_registration: bool
     created_at: datetime
     updated_at: datetime
