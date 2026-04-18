@@ -1,18 +1,18 @@
 {
-  "frames_processed": 5867,
-  "face_visible_pct": 61.9,
-  "eye_contact_score": 40.3,
-  "expression_score": 34.5,
-  "overall_interview_score": 38.3,
+  "frames_processed": 11136,
+  "face_visible_pct": 95.4,
+  "eye_contact_score": 45.8,
+  "expression_score": 38.2,
+  "overall_interview_score": 43.1,
   "eye_contact_rating": "fair",
   "expression_rating": "needs work",
-  "interview_rating": "needs work",
-  "best_eye_contact_frame_score": 99.0,
+  "interview_rating": "fair",
+  "best_eye_contact_frame_score": 74.5,
   "best_expression_frame_score": 100.0,
-  "coaching_tip": "Center your face in the camera to begin interview scoring.",
+  "coaching_tip": "Add a slight smile and keep your eyes more open to look engaged.",
   "notes": [
-    "Eye contact is estimated from face and eye alignment in the webcam image.",
-    "Expression scoring uses visible smile and eye-openness cues as an engagement proxy.",
-    "This is a lightweight computer-vision heuristic, not a clinically validated interview assessment."
+    "Eye contact uses MediaPipe face and iris landmarks as a webcam-based gaze proxy.",
+    "Expression scoring uses mouth width, eye openness, and brow relaxation as engagement cues.",
+    "This is still a heuristic practice tool, not a validated interview or hiring assessment."
   ]
 }
