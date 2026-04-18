@@ -15,7 +15,7 @@ pydantic-settings
 python-dotenv
 
 # Computer-vision heuristics for the interview analyzer prototype
-opencv-python
+opencv-python-headless
 mediapipe
 
 # Clerk JWT verification:
