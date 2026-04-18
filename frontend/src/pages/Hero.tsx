@@ -15,6 +15,7 @@ import { SignInButton } from '@clerk/react';
 
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar from '../components/TopBar';
+import { GetStartedButton } from '../components/ui/get-started-button';
 
 export default function Hero() {
   return (
@@ -55,7 +56,7 @@ export default function Hero() {
             </h1>
 
             <p
-              className="anim-reveal font-sans text-lg md:text-xl text-text-muted leading-[1.55] max-w-[56ch] mb-12 md:mb-14"
+              className="anim-reveal font-sans text-lg md:text-xl text-text-muted leading-[1.55] max-w-[56ch] mb-4 md:mb-6"
               style={{ animationDelay: '160ms' }}
             >
               Speak your answer aloud. Get five scores and a short list of
@@ -67,18 +68,7 @@ export default function Hero() {
               style={{ animationDelay: '240ms' }}
             >
               <SignInButton mode="modal">
-                <button
-                  type="button"
-                  className="group inline-flex items-baseline gap-2 bg-accent text-accent-fg rounded-full px-7 py-3.5 text-[15px] font-medium hover:bg-accent-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-                >
-                  Start practicing
-                  <span
-                    aria-hidden
-                    className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1"
-                  >
-                    →
-                  </span>
-                </button>
+                <GetStartedButton />
               </SignInButton>
 
               <p className="text-[13px] text-text-subtle">
