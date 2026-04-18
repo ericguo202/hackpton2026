@@ -1,6 +1,7 @@
 import json
 import math
 import os
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +34,260 @@ class FrameAssessment:
     guidance: str
 
 
+@dataclass
+class HeuristicTunable:
+    key: str
+    value: float
+    step: float
+    minimum: float
+    maximum: float
+    description: str
+
+
+@dataclass
+class HighlightSegment:
+    start_frame: int
+    end_frame: int
+    reasons: list[str]
+    metrics: list[str]
+    severity: float
+
+
+class InterviewRecorder:
+    def __init__(self, base_dir: Path, fps: float, frame_size: tuple[int, int]) -> None:
+        self.base_dir = base_dir
+        self.fps = fps if fps and fps > 1 else 30.0
+        self.frame_width, self.frame_height = frame_size
+        self.is_recording = False
+        self.writer: cv2.VideoWriter | None = None
+        self.session_dir: Path | None = None
+        self.session_video_path: Path | None = None
+        self.frame_index = 0
+        self.issue_log: list[dict] = []
+
+    def start(self) -> None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.session_dir = self.base_dir / f"session_{timestamp}"
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+        self.session_video_path = self.session_dir / "interview_session.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        self.writer = cv2.VideoWriter(
+            str(self.session_video_path),
+            fourcc,
+            self.fps,
+            (self.frame_width, self.frame_height),
+        )
+        if not self.writer.isOpened():
+            raise RuntimeError(f"Could not open video writer for {self.session_video_path}")
+        self.is_recording = True
+        self.frame_index = 0
+        self.issue_log = []
+
+    def write_frame(self, frame, issues: list[dict]) -> None:
+        if not self.is_recording or self.writer is None:
+            return
+        self.writer.write(frame)
+        issue_snapshot = []
+        for issue in issues:
+            issue_snapshot.append(
+                {
+                    "key": issue["key"],
+                    "label": issue["label"],
+                    "reason": issue["reason"],
+                    "metric": issue.get("metric", ""),
+                    "severity": float(issue["severity"]),
+                }
+            )
+        self.issue_log.append({"frame": self.frame_index, "issues": issue_snapshot})
+        self.frame_index += 1
+
+    def stop(self) -> dict:
+        if not self.is_recording:
+            return {}
+
+        if self.writer is not None:
+            self.writer.release()
+            self.writer = None
+        self.is_recording = False
+
+        segments = self._build_segments()
+        clips = self._write_highlight_clips(segments)
+        review_path = None
+        if self.session_dir is not None:
+            review_path = self.session_dir / "review_summary.json"
+            review_payload = {
+                "session_video": str(self.session_video_path) if self.session_video_path else None,
+                "fps": self.fps,
+                "frame_count": self.frame_index,
+                "highlights": clips,
+            }
+            review_path.write_text(json.dumps(review_payload, indent=2), encoding="utf-8")
+
+        return {
+            "session_dir": str(self.session_dir) if self.session_dir else None,
+            "session_video": str(self.session_video_path) if self.session_video_path else None,
+            "review_summary": str(review_path) if review_path else None,
+            "highlights": clips,
+        }
+
+    def _build_segments(self) -> list[HighlightSegment]:
+        segments: list[HighlightSegment] = []
+        if not self.issue_log:
+            return segments
+
+        active_start: int | None = None
+        active_end: int | None = None
+        active_reasons: dict[str, tuple[str, str, float]] = {}
+        active_severity = 0.0
+        gap_tolerance = int(self.fps * 0.4)
+        pre_roll = int(self.fps * 1.0)
+        post_roll = int(self.fps * 0.8)
+
+        for entry in self.issue_log:
+            frame_no = entry["frame"]
+            issues = entry["issues"]
+            if not issues:
+                continue
+
+            current_reasons = {
+                issue["key"]: (issue["label"], issue.get("metric", ""), issue["severity"])
+                for issue in issues
+            }
+            current_max_severity = max(issue["severity"] for issue in issues)
+
+            if active_start is None:
+                active_start = frame_no
+                active_end = frame_no
+                active_reasons = current_reasons
+                active_severity = current_max_severity
+                continue
+
+            if frame_no - (active_end or frame_no) <= gap_tolerance:
+                active_end = frame_no
+                active_severity = max(active_severity, current_max_severity)
+                for key, value in current_reasons.items():
+                    if key not in active_reasons or value[2] > active_reasons[key][2]:
+                        active_reasons[key] = value
+            else:
+                segments.append(
+                    HighlightSegment(
+                        start_frame=max(active_start - pre_roll, 0),
+                        end_frame=min((active_end or active_start) + post_roll, max(self.frame_index - 1, 0)),
+                        reasons=[value[0] for value in active_reasons.values()],
+                        metrics=[value[1] for value in active_reasons.values() if value[1]],
+                        severity=active_severity,
+                    )
+                )
+                active_start = frame_no
+                active_end = frame_no
+                active_reasons = current_reasons
+                active_severity = current_max_severity
+
+        if active_start is not None:
+            segments.append(
+                HighlightSegment(
+                    start_frame=max(active_start - pre_roll, 0),
+                    end_frame=min((active_end or active_start) + post_roll, max(self.frame_index - 1, 0)),
+                    reasons=[value[0] for value in active_reasons.values()],
+                    metrics=[value[1] for value in active_reasons.values() if value[1]],
+                    severity=active_severity,
+                )
+            )
+
+        merged: list[HighlightSegment] = []
+        for segment in segments:
+            if not merged:
+                merged.append(segment)
+                continue
+            previous = merged[-1]
+            if segment.start_frame <= previous.end_frame + int(self.fps * 0.5):
+                previous.end_frame = max(previous.end_frame, segment.end_frame)
+                previous.severity = max(previous.severity, segment.severity)
+                previous.reasons = sorted(set(previous.reasons + segment.reasons))
+                previous.metrics = sorted(set(previous.metrics + segment.metrics))
+            else:
+                merged.append(segment)
+        return merged
+
+    def _write_highlight_clips(self, segments: list[HighlightSegment]) -> list[dict]:
+        if not segments or self.session_video_path is None or self.session_dir is None:
+            return []
+
+        capture = cv2.VideoCapture(str(self.session_video_path))
+        if not capture.isOpened():
+            return []
+
+        highlights_dir = self.session_dir / "highlights"
+        highlights_dir.mkdir(parents=True, exist_ok=True)
+        saved_clips = []
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+
+        try:
+            for index, segment in enumerate(segments, start=1):
+                clip_path = highlights_dir / f"highlight_{index:02d}.mp4"
+                writer = cv2.VideoWriter(
+                    str(clip_path),
+                    fourcc,
+                    self.fps,
+                    (self.frame_width, self.frame_height),
+                )
+                if not writer.isOpened():
+                    continue
+
+                capture.set(cv2.CAP_PROP_POS_FRAMES, segment.start_frame)
+                current_frame = segment.start_frame
+                while current_frame <= segment.end_frame:
+                    success, frame = capture.read()
+                    if not success:
+                        break
+                    annotated = self._annotate_highlight_frame(
+                        frame,
+                        current_frame,
+                        segment,
+                    )
+                    writer.write(annotated)
+                    current_frame += 1
+                writer.release()
+
+                saved_clips.append(
+                    {
+                        "clip": str(clip_path),
+                        "start_frame": segment.start_frame,
+                        "end_frame": segment.end_frame,
+                        "start_seconds": round(segment.start_frame / self.fps, 2),
+                        "end_seconds": round(segment.end_frame / self.fps, 2),
+                        "reasons": segment.reasons,
+                        "metrics": segment.metrics,
+                        "severity": round(segment.severity, 2),
+                    }
+                )
+        finally:
+            capture.release()
+
+        return saved_clips
+
+    def _annotate_highlight_frame(self, frame, current_frame: int, segment: HighlightSegment):
+        output = frame.copy()
+        cv2.rectangle(output, (16, 16), (output.shape[1] - 16, 130), (22, 32, 58), -1)
+        cv2.rectangle(output, (16, 16), (output.shape[1] - 16, 130), (55, 90, 220), 2)
+        cv2.putText(output, "Coaching Review Clip", (34, 46), cv2.FONT_HERSHEY_SIMPLEX, 0.78, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(
+            output,
+            f"Moment: {current_frame / self.fps:0.2f}s",
+            (34, 74),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.56,
+            (220, 230, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        reason_text = " | ".join(segment.reasons[:3])
+        cv2.putText(output, reason_text, (34, 104), cv2.FONT_HERSHEY_SIMPLEX, 0.54, (255, 214, 120), 2, cv2.LINE_AA)
+        metric_text = " | ".join(segment.metrics[:2]) if segment.metrics else f"Peak severity: {segment.severity:0.1f}/100"
+        cv2.putText(output, metric_text, (34, 128), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (210, 245, 210), 2, cv2.LINE_AA)
+        return output
+
+
 class InterviewAnalyzer:
     LEFT_EYE_OUTER = 33
     LEFT_EYE_INNER = 133
@@ -57,6 +312,33 @@ class InterviewAnalyzer:
     RIGHT_BROW = 334
 
     def __init__(self) -> None:
+        self.debug_mode = False
+        self.selected_tunable_index = 0
+        self.last_metrics: dict[str, float | str] = {}
+        self.tunables = [
+            HeuristicTunable("eye_left_center_weight", 0.25, 0.01, 0.0, 1.0, "Left iris centering weight"),
+            HeuristicTunable("eye_right_center_weight", 0.25, 0.01, 0.0, 1.0, "Right iris centering weight"),
+            HeuristicTunable("eye_head_alignment_weight", 0.25, 0.01, 0.0, 1.0, "Head alignment weight"),
+            HeuristicTunable("eye_midpoint_weight", 0.15, 0.01, 0.0, 1.0, "Eye midpoint alignment weight"),
+            HeuristicTunable("eye_posture_weight", 0.05, 0.01, 0.0, 1.0, "Vertical posture weight"),
+            HeuristicTunable("eye_balance_weight", 0.05, 0.01, 0.0, 1.0, "Eye size balance weight"),
+            HeuristicTunable("eye_center_target", 0.50, 0.01, 0.2, 0.8, "Ideal iris center ratio"),
+            HeuristicTunable("eye_center_sensitivity", 200.0, 5.0, 50.0, 400.0, "Iris centering penalty strength"),
+            HeuristicTunable("head_alignment_sensitivity", 100.0, 5.0, 20.0, 200.0, "Head yaw penalty strength"),
+            HeuristicTunable("midpoint_sensitivity", 100.0, 5.0, 20.0, 200.0, "Eye midpoint penalty strength"),
+            HeuristicTunable("posture_sensitivity", 70.0, 5.0, 10.0, 150.0, "Vertical posture penalty strength"),
+            HeuristicTunable("smile_baseline", 0.28, 0.005, 0.1, 0.5, "Smile ratio baseline"),
+            HeuristicTunable("smile_gain", 420.0, 10.0, 50.0, 1000.0, "Smile score gain"),
+            HeuristicTunable("openness_baseline", 0.028, 0.001, 0.005, 0.08, "Eye openness baseline"),
+            HeuristicTunable("openness_gain", 1800.0, 25.0, 100.0, 3000.0, "Eye openness gain"),
+            HeuristicTunable("brow_baseline", 0.32, 0.005, 0.1, 0.6, "Relaxed brow baseline"),
+            HeuristicTunable("brow_gain", 320.0, 10.0, 50.0, 1000.0, "Brow relaxation gain"),
+            HeuristicTunable("tension_baseline", 0.08, 0.005, 0.01, 0.2, "Open-mouth tension baseline"),
+            HeuristicTunable("tension_gain", 900.0, 25.0, 100.0, 2000.0, "Open-mouth tension penalty"),
+            HeuristicTunable("expr_smile_weight", 0.45, 0.01, 0.0, 1.0, "Smile contribution weight"),
+            HeuristicTunable("expr_openness_weight", 0.30, 0.01, 0.0, 1.0, "Eye openness contribution weight"),
+            HeuristicTunable("expr_brow_weight", 0.25, 0.01, 0.0, 1.0, "Brow contribution weight"),
+        ]
         self.face_mesh = None
         self.face_landmarker = None
         self.using_tasks_api = False
@@ -116,6 +398,75 @@ class InterviewAnalyzer:
             guidance="Move into frame so your face is visible.",
         )
 
+    def _tunable(self, key: str) -> HeuristicTunable:
+        for tunable in self.tunables:
+            if tunable.key == key:
+                return tunable
+        raise KeyError(f"Unknown tunable: {key}")
+
+    def _tunable_value(self, key: str) -> float:
+        return self._tunable(key).value
+
+    def handle_keypress(self, keycode: int) -> bool:
+        key = keycode & 0xFF
+        if key == ord("p"):
+            self.debug_mode = not self.debug_mode
+            return True
+        if key == ord("r"):
+            return False
+        if key == ord("["):
+            self.selected_tunable_index = (self.selected_tunable_index - 1) % len(self.tunables)
+            return True
+        if key == ord("]"):
+            self.selected_tunable_index = (self.selected_tunable_index + 1) % len(self.tunables)
+            return True
+        if key in (ord("="), ord("+")):
+            self._adjust_selected_tunable(1)
+            return True
+        if key in (ord("-"), ord("_")):
+            self._adjust_selected_tunable(-1)
+            return True
+        if key == ord("0"):
+            self._reset_selected_tunable()
+            return True
+        return False
+
+    def _adjust_selected_tunable(self, direction: int) -> None:
+        tunable = self.tunables[self.selected_tunable_index]
+        tunable.value = clamp(
+            tunable.value + (tunable.step * direction),
+            tunable.minimum,
+            tunable.maximum,
+        )
+
+    def _reset_selected_tunable(self) -> None:
+        defaults = {
+            "eye_left_center_weight": 0.25,
+            "eye_right_center_weight": 0.25,
+            "eye_head_alignment_weight": 0.25,
+            "eye_midpoint_weight": 0.15,
+            "eye_posture_weight": 0.05,
+            "eye_balance_weight": 0.05,
+            "eye_center_target": 0.50,
+            "eye_center_sensitivity": 200.0,
+            "head_alignment_sensitivity": 100.0,
+            "midpoint_sensitivity": 100.0,
+            "posture_sensitivity": 70.0,
+            "smile_baseline": 0.28,
+            "smile_gain": 420.0,
+            "openness_baseline": 0.028,
+            "openness_gain": 1800.0,
+            "brow_baseline": 0.32,
+            "brow_gain": 320.0,
+            "tension_baseline": 0.08,
+            "tension_gain": 900.0,
+            "expr_smile_weight": 0.45,
+            "expr_openness_weight": 0.30,
+            "expr_brow_weight": 0.25,
+        }
+        tunable = self.tunables[self.selected_tunable_index]
+        tunable.value = defaults[tunable.key]
+
     def _resolve_face_landmarker_model(self) -> Path | None:
         env_model_path = os.getenv("MEDIAPIPE_FACE_LANDMARKER_MODEL")
         candidate_paths = []
@@ -153,6 +504,7 @@ class InterviewAnalyzer:
         if not face_landmarks_list:
             self.last_face_box = None
             self.last_landmarks_px = []
+            self.last_metrics = {"status": "no face"}
             self.eye_contact_ema = self._smooth(self.eye_contact_ema, 15.0)
             self.expression_ema = self._smooth(self.expression_ema, 15.0)
             self.overall_ema = self._smooth(self.overall_ema, 15.0)
@@ -257,8 +609,14 @@ class InterviewAnalyzer:
         right_gaze_ratio = self._safe_ratio(right_iris[0] - right_inner[0], min(right_outer[0] - right_inner[0], -1))
         right_gaze_ratio = abs(right_gaze_ratio)
 
-        left_center_score = 100 - abs(left_gaze_ratio - 0.5) * 200
-        right_center_score = 100 - abs(right_gaze_ratio - 0.5) * 200
+        center_target = self._tunable_value("eye_center_target")
+        center_sensitivity = self._tunable_value("eye_center_sensitivity")
+        head_sensitivity = self._tunable_value("head_alignment_sensitivity")
+        midpoint_sensitivity = self._tunable_value("midpoint_sensitivity")
+        posture_sensitivity = self._tunable_value("posture_sensitivity")
+
+        left_center_score = 100 - abs(left_gaze_ratio - center_target) * center_sensitivity
+        right_center_score = 100 - abs(right_gaze_ratio - center_target) * center_sensitivity
 
         eye_mid_x = (left_iris[0] + right_iris[0]) / 2
         face_mid_x = (face_left[0] + face_right[0]) / 2
@@ -269,17 +627,34 @@ class InterviewAnalyzer:
             abs(left_eye_width - right_eye_width) / max(max(left_eye_width, right_eye_width), 1)
         ) * 100
 
-        head_alignment_score = 100 - (head_yaw_offset * 100)
-        midpoint_score = 100 - (midpoint_offset * 100)
-        posture_score = 100 - (vertical_posture * 70)
+        head_alignment_score = 100 - (head_yaw_offset * head_sensitivity)
+        midpoint_score = 100 - (midpoint_offset * midpoint_sensitivity)
+        posture_score = 100 - (vertical_posture * posture_sensitivity)
 
         score = clamp(
-            (clamp(left_center_score) * 0.25)
-            + (clamp(right_center_score) * 0.25)
-            + (clamp(head_alignment_score) * 0.25)
-            + (clamp(midpoint_score) * 0.15)
-            + (clamp(posture_score) * 0.05)
-            + (clamp(eye_size_balance) * 0.05)
+            (clamp(left_center_score) * self._tunable_value("eye_left_center_weight"))
+            + (clamp(right_center_score) * self._tunable_value("eye_right_center_weight"))
+            + (clamp(head_alignment_score) * self._tunable_value("eye_head_alignment_weight"))
+            + (clamp(midpoint_score) * self._tunable_value("eye_midpoint_weight"))
+            + (clamp(posture_score) * self._tunable_value("eye_posture_weight"))
+            + (clamp(eye_size_balance) * self._tunable_value("eye_balance_weight"))
+        )
+
+        self.last_metrics.update(
+            {
+                "left_gaze_ratio": round(left_gaze_ratio, 4),
+                "right_gaze_ratio": round(right_gaze_ratio, 4),
+                "head_yaw_offset": round(head_yaw_offset, 4),
+                "midpoint_offset": round(midpoint_offset, 4),
+                "vertical_posture": round(vertical_posture, 4),
+                "eye_size_balance": round(eye_size_balance, 2),
+                "left_center_score": round(clamp(left_center_score), 2),
+                "right_center_score": round(clamp(right_center_score), 2),
+                "head_alignment_score": round(clamp(head_alignment_score), 2),
+                "midpoint_score": round(clamp(midpoint_score), 2),
+                "posture_score": round(clamp(posture_score), 2),
+                "eye_contact_raw_score": round(score, 2),
+            }
         )
 
         if score >= 82:
@@ -318,16 +693,34 @@ class InterviewAnalyzer:
         eye_open_ratio = self._safe_ratio((left_eye_open + right_eye_open) / 2, max(face_width, 1))
         brow_relax_ratio = self._safe_ratio(brow_width, max(face_width, 1))
 
-        smile_score = clamp((smile_ratio - 0.28) * 420)
-        openness_score = clamp((eye_open_ratio - 0.028) * 1800)
-        relaxed_brow_score = clamp((brow_relax_ratio - 0.32) * 320)
-        over_tension_penalty = clamp((mouth_open_ratio - 0.08) * 900, 0.0, 30.0)
+        smile_score = clamp((smile_ratio - self._tunable_value("smile_baseline")) * self._tunable_value("smile_gain"))
+        openness_score = clamp((eye_open_ratio - self._tunable_value("openness_baseline")) * self._tunable_value("openness_gain"))
+        relaxed_brow_score = clamp((brow_relax_ratio - self._tunable_value("brow_baseline")) * self._tunable_value("brow_gain"))
+        over_tension_penalty = clamp(
+            (mouth_open_ratio - self._tunable_value("tension_baseline")) * self._tunable_value("tension_gain"),
+            0.0,
+            30.0,
+        )
 
         score = clamp(
-            (smile_score * 0.45)
-            + (openness_score * 0.30)
-            + (relaxed_brow_score * 0.25)
+            (smile_score * self._tunable_value("expr_smile_weight"))
+            + (openness_score * self._tunable_value("expr_openness_weight"))
+            + (relaxed_brow_score * self._tunable_value("expr_brow_weight"))
             - over_tension_penalty
+        )
+
+        self.last_metrics.update(
+            {
+                "smile_ratio": round(smile_ratio, 4),
+                "mouth_open_ratio": round(mouth_open_ratio, 4),
+                "eye_open_ratio": round(eye_open_ratio, 4),
+                "brow_relax_ratio": round(brow_relax_ratio, 4),
+                "smile_score": round(smile_score, 2),
+                "openness_score": round(openness_score, 2),
+                "relaxed_brow_score": round(relaxed_brow_score, 2),
+                "over_tension_penalty": round(over_tension_penalty, 2),
+                "expression_raw_score": round(score, 2),
+            }
         )
 
         if score >= 80:
@@ -357,10 +750,76 @@ class InterviewAnalyzer:
             return "Relax your face and add a little warmth between answers."
         return "Nice balance. Maintain this level of eye contact and expression."
 
+    def current_issues(self) -> list[dict]:
+        issues: list[dict] = []
+        if not self.last_assessment.face_found:
+            issues.append(
+                {
+                    "key": "face_missing",
+                    "label": "Face dropped out of frame",
+                    "reason": "Your face was not visible enough for the interviewer to read you clearly.",
+                    "metric": "face_visible=no",
+                    "severity": 85.0,
+                }
+            )
+            return issues
+
+        eye_score = self.last_assessment.eye_contact_score
+        expression_score = self.last_assessment.expression_score
+        head_alignment = float(self.last_metrics.get("head_alignment_score", 100.0))
+        vertical_posture = float(self.last_metrics.get("vertical_posture", 0.0))
+        midpoint_offset = float(self.last_metrics.get("midpoint_offset", 0.0))
+        smile_score = float(self.last_metrics.get("smile_score", 0.0))
+        mouth_open_ratio = float(self.last_metrics.get("mouth_open_ratio", 0.0))
+
+        if eye_score < 55:
+            issues.append(
+                {
+                    "key": "looked_away",
+                    "label": "Looked away from camera",
+                    "reason": "Your gaze drifted away from the camera, which weakens eye contact.",
+                    "metric": f"eye_contact={eye_score:.1f}",
+                    "severity": clamp(100 - eye_score),
+                }
+            )
+        if head_alignment < 62 or vertical_posture > 0.22 or midpoint_offset > 0.20:
+            posture_severity = max(
+                clamp(72 - head_alignment),
+                clamp(vertical_posture * 180),
+                clamp(midpoint_offset * 220),
+            )
+            posture_metric = f"head_align={head_alignment:.1f}"
+            if clamp(vertical_posture * 180) >= clamp(72 - head_alignment) and clamp(vertical_posture * 180) >= clamp(midpoint_offset * 220):
+                posture_metric = f"vertical_posture={vertical_posture:.3f}"
+            elif clamp(midpoint_offset * 220) >= clamp(72 - head_alignment):
+                posture_metric = f"midpoint_offset={midpoint_offset:.3f}"
+            issues.append(
+                {
+                    "key": "posture_drift",
+                    "label": "Posture or head alignment drifted",
+                    "reason": "Your head moved off-center or tilted enough to look less composed.",
+                    "metric": posture_metric,
+                    "severity": posture_severity,
+                }
+            )
+        if smile_score < 40 and mouth_open_ratio < .15:
+            issues.append(
+                {
+                    "key": "low_energy",
+                    "label": "Low-energy expression",
+                    "reason": "Your expression looked flat, so your answer may have felt less engaged.",
+                    "metric": f"smile_score={smile_score:.1f}",
+                    "severity": clamp(95 - expression_score),
+                }
+            )
+        return issues
+
     def _draw_overlay(self, frame, points: list[tuple[int, int]]) -> None:
         if self.last_face_box:
             x, y, w, h = self.last_face_box
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (40, 210, 120), 2)
+            has_issues = bool(self.current_issues())
+            box_color = (0, 0, 255) if has_issues else (40, 210, 120)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), box_color, 2)
 
         feature_groups = [
             (self.LEFT_IRIS, (255, 205, 70)),
@@ -376,27 +835,82 @@ class InterviewAnalyzer:
                 cv2.circle(frame, (px, py), 2, color, -1)
 
     def draw_hud(self, frame) -> None:
-        assessment = self.last_assessment
-        lines = [
-            f"Eye contact: {assessment.eye_contact_score:5.1f}/100 ({assessment.eye_label})",
-            f"Expression:  {assessment.expression_score:5.1f}/100 ({assessment.expression_label})",
-            f"Interview:   {assessment.overall_score:5.1f}/100 ({score_band(assessment.overall_score)})",
-            f"Coaching: {assessment.guidance}",
-            "Press q to end session",
+        if self.debug_mode:
+            self._draw_debug_hud(frame)
+            return
+
+    def _draw_debug_hud(self, frame) -> None:
+        panel = frame.copy()
+        cv2.rectangle(panel, (8, 8), (840, 710), (15, 20, 30), -1)
+        cv2.addWeighted(panel, 0.60, frame, 0.40, 0, frame)
+
+        selected = self.tunables[self.selected_tunable_index]
+        header_lines = [
+            "Precision tuning mode",
+            f"Selected: {selected.key} = {selected.value:.4f} | step {selected.step:g}",
+            "Controls: [ / ] select  |  - / + adjust  |  0 reset selected  |  p exit  |  q quit",
         ]
 
-        for index, text in enumerate(lines):
-            y = 32 + (index * 28)
+        for index, text in enumerate(header_lines):
+            cv2.putText(frame, text, (20, 35 + (index * 24)), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA)
+
+        metric_items = [
+            f"left_gaze_ratio={self.last_metrics.get('left_gaze_ratio', 'n/a')}",
+            f"right_gaze_ratio={self.last_metrics.get('right_gaze_ratio', 'n/a')}",
+            f"head_yaw_offset={self.last_metrics.get('head_yaw_offset', 'n/a')}",
+            f"midpoint_offset={self.last_metrics.get('midpoint_offset', 'n/a')}",
+            f"vertical_posture={self.last_metrics.get('vertical_posture', 'n/a')}",
+            f"eye_size_balance={self.last_metrics.get('eye_size_balance', 'n/a')}",
+            f"left_center_score={self.last_metrics.get('left_center_score', 'n/a')}",
+            f"right_center_score={self.last_metrics.get('right_center_score', 'n/a')}",
+            f"head_alignment_score={self.last_metrics.get('head_alignment_score', 'n/a')}",
+            f"midpoint_score={self.last_metrics.get('midpoint_score', 'n/a')}",
+            f"posture_score={self.last_metrics.get('posture_score', 'n/a')}",
+            f"smile_ratio={self.last_metrics.get('smile_ratio', 'n/a')}",
+            f"mouth_open_ratio={self.last_metrics.get('mouth_open_ratio', 'n/a')}",
+            f"eye_open_ratio={self.last_metrics.get('eye_open_ratio', 'n/a')}",
+            f"brow_relax_ratio={self.last_metrics.get('brow_relax_ratio', 'n/a')}",
+            f"smile_score={self.last_metrics.get('smile_score', 'n/a')}",
+            f"openness_score={self.last_metrics.get('openness_score', 'n/a')}",
+            f"relaxed_brow_score={self.last_metrics.get('relaxed_brow_score', 'n/a')}",
+            f"over_tension_penalty={self.last_metrics.get('over_tension_penalty', 'n/a')}",
+            f"eye_contact_raw={self.last_metrics.get('eye_contact_raw_score', 'n/a')}",
+            f"expression_raw={self.last_metrics.get('expression_raw_score', 'n/a')}",
+        ]
+
+        cv2.putText(frame, "Live ratios and component scores", (20, 108), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (120, 220, 255), 2, cv2.LINE_AA)
+        for index, text in enumerate(metric_items):
+            col = index // 11
+            row = index % 11
+            x = 20 + (col * 380)
+            y = 138 + (row * 24)
+            cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (235, 235, 235), 1, cv2.LINE_AA)
+
+        cv2.putText(frame, "Editable tunables", (20, 420), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (120, 220, 255), 2, cv2.LINE_AA)
+        visible_tunables = self.tunables[:]
+        for index, tunable in enumerate(visible_tunables):
+            marker = ">" if index == self.selected_tunable_index else " "
+            text = f"{marker} {tunable.key}={tunable.value:.4f} [{tunable.minimum:g},{tunable.maximum:g}] {tunable.description}"
+            y = 450 + (index * 11)
             cv2.putText(
                 frame,
                 text,
-                (18, y),
+                (20, y),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                (255, 255, 255),
-                2,
+                0.34,
+                (120, 255, 170) if index == self.selected_tunable_index else (230, 230, 230),
+                1,
                 cv2.LINE_AA,
             )
+
+    def draw_recording_indicator(self, frame, is_recording: bool) -> None:
+        if not self.debug_mode:
+            return
+        if is_recording:
+            cv2.circle(frame, (frame.shape[1] - 170, 34), 10, (0, 0, 255), -1)
+            cv2.putText(frame, "REC", (frame.shape[1] - 150, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 255, 255), 2, cv2.LINE_AA)
+        else:
+            cv2.putText(frame, "Press r to record", (frame.shape[1] - 240, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA)
 
     def build_summary(self) -> dict:
         face_presence = 0.0
@@ -447,7 +961,20 @@ def main() -> None:
     cv2.namedWindow(window_name, window_flags)
     cv2.resizeWindow(window_name, 1280, 720)
 
-    print("Interview analyzer is running. Resize the window freely; the camera view will keep its aspect ratio. Press 'q' to end the session.")
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1280)
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 720)
+    recorder = InterviewRecorder(
+        base_dir=Path(__file__).with_name("recordings"),
+        fps=fps,
+        frame_size=(frame_width, frame_height),
+    )
+    recording_result: dict = {}
+
+    print(
+        "Interview analyzer is running. Resize the window freely; the camera view will keep its aspect ratio. "
+        "Press 'r' to start or stop recording, 'p' for tuning mode, and 'q' to end the session."
+    )
 
     try:
         while True:
@@ -459,11 +986,33 @@ def main() -> None:
             frame = cv2.flip(frame, 1)
             analyzer.analyze_frame(frame)
             analyzer.draw_hud(frame)
+            analyzer.draw_recording_indicator(frame, recorder.is_recording)
+            issues = analyzer.current_issues()
+            if recorder.is_recording:
+                recorder.write_frame(frame.copy(), issues)
             cv2.imshow(window_name, frame)
 
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1)
+            if key & 0xFF == ord("r"):
+                if recorder.is_recording:
+                    recording_result = recorder.stop()
+                    print("\nRecording stopped.")
+                    if recording_result.get("highlights"):
+                        print(f"Saved review clips to: {recording_result.get('session_dir')}")
+                    else:
+                        print("No bad-moment clips were detected strongly enough to save.")
+                else:
+                    recorder.start()
+                    recording_result = {}
+                    print(f"\nRecording started. Session will be saved under: {recorder.session_dir}")
+                continue
+            if analyzer.handle_keypress(key):
+                continue
+            if key & 0xFF == ord("q"):
                 break
     finally:
+        if recorder.is_recording:
+            recording_result = recorder.stop()
         cap.release()
         cv2.destroyAllWindows()
         analyzer.close()
@@ -475,6 +1024,9 @@ def main() -> None:
     print("\nInterview session summary")
     print(json.dumps(summary, indent=2))
     print(f"\nSaved summary to: {summary_path}")
+    if recording_result:
+        print("\nRecording artifacts")
+        print(json.dumps(recording_result, indent=2))
 
 
 if __name__ == "__main__":
