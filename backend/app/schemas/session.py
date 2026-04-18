@@ -41,6 +41,9 @@ class ScoresOut(BaseModel):
     specificity: int
     impact: int
     conciseness: int
+    # 6th dimension from browser webcam analytics. Null when the candidate
+    # declined camera access; the UI hides the row in that case.
+    delivery: int | None = None
 
 
 class TurnSubmitOut(BaseModel):

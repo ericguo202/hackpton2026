@@ -117,3 +117,66 @@ def test_history_included_in_prompt():
     assert "First A" in prompt
     assert "Tell me more." in prompt
     assert "Well..." in prompt
+
+
+async def test_delivery_absent_when_no_cv_summary(monkeypatch):
+    """When the caller passes no cv_summary, the model's 5-key response
+    should round-trip with delivery=None — the camera-declined path."""
+    monkeypatch.setattr("app.services.evaluator.genai.GenerativeModel", _FakeModel)
+
+    result = await evaluate_turn(
+        question="Tell me about a time you led a project.",
+        transcript="I led a migration from Mongo to Postgres...",
+        cv_summary=None,
+    )
+    assert result.delivery is None
+
+
+async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
+    """With cv_summary provided, the evaluator returns a 0-10 delivery
+    score, clamped like the other rubric fields."""
+    captured_prompt: dict[str, str] = {}
+
+    class _DeliveryModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def generate_content_async(self, prompt, *args, **kwargs):
+            captured_prompt["value"] = prompt
+            return _fake_response(
+                {
+                    "directness": 6,
+                    "star": 7,
+                    "specificity": 6,
+                    "impact": 5,
+                    "conciseness": 7,
+                    "delivery": 7,
+                    "notes": "Strong eye contact; expression could be warmer.",
+                }
+            )
+
+    monkeypatch.setattr("app.services.evaluator.genai.GenerativeModel", _DeliveryModel)
+
+    cv_summary = {
+        "frames_processed": 4668,
+        "face_visible_pct": 98.1,
+        "eye_contact_score": 67.9,
+        "expression_score": 55.9,
+        "overall_interview_score": 63.7,
+        "eye_contact_rating": "good",
+        "expression_rating": "fair",
+        "interview_rating": "good",
+        "best_eye_contact_frame_score": 74.6,
+        "best_expression_frame_score": 91.6,
+        "coaching_tip": "Relax your face and add a little warmth between answers.",
+    }
+    result = await evaluate_turn(
+        question="Walk me through how you handled a difficult teammate.",
+        transcript="There was a teammate who kept missing standups...",
+        cv_summary=cv_summary,
+    )
+    assert result.delivery == 7
+    # The analytics block must actually reach the prompt — otherwise the
+    # model can't score delivery and we'd be lying to Gemma.
+    assert "Webcam analytics" in captured_prompt["value"]
+    assert "67.9" in captured_prompt["value"]

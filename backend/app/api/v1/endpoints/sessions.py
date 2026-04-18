@@ -6,10 +6,12 @@ POST /api/v1/sessions/{id}/turns  — submit an answer audio blob for evaluation
 """
 
 import asyncio
+import json
+import logging
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
@@ -34,6 +36,8 @@ from app.services.followup import generate_followup
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
 from app.services.tts import synthesize_speech
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -125,6 +129,10 @@ async def _followup_and_tts(question: str, transcript: str) -> tuple[str, str]:
 async def submit_turn(
     session_id: UUID,
     audio: UploadFile = File(...),
+    # Browser-computed webcam analytics (see `faceHeuristics.ts` on the
+    # frontend). JSON-encoded; missing when the candidate declined camera.
+    # Parse failures degrade gracefully to the 5-score path rather than 400.
+    cv_summary: str | None = Form(None),
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> TurnSubmitOut:
@@ -171,29 +179,50 @@ async def submit_turn(
         for t in prior_turns
     ]
 
-    # 6. Hardcoded 2-turn rule (CLAUDE.md): turn 2 is always final.
+    # 6. Parse webcam analytics sidecar if present. Failing closed (None)
+    # keeps the turn viable; the evaluator just skips the delivery score.
+    parsed_cv_summary: dict | None = None
+    if cv_summary:
+        try:
+            loaded = json.loads(cv_summary)
+            if isinstance(loaded, dict):
+                parsed_cv_summary = loaded
+            else:
+                logger.warning("cv_summary payload was not a JSON object; ignoring")
+        except json.JSONDecodeError as exc:
+            logger.warning("cv_summary JSON parse failed: %s", exc)
+
+    # 7. Hardcoded 2-turn rule (CLAUDE.md): turn 2 is always final.
     is_final = current_turn.turn_number >= 2
 
-    # 7. Evaluate scores and generate follow-up question in parallel.
+    # 8. Evaluate scores and generate follow-up question in parallel.
     # Gemma 4 (scoring) and Flash+TTS (next question) start simultaneously;
     # TTS is no longer on the critical path after Gemma 4 finishes.
     if not is_final:
         eval_out, (next_q, next_audio_url) = await asyncio.gather(
-            evaluate_turn(current_turn.question_text, transcript, history),
+            evaluate_turn(
+                current_turn.question_text, transcript, history,
+                cv_summary=parsed_cv_summary,
+            ),
             _followup_and_tts(current_turn.question_text, transcript),
         )
     else:
-        eval_out = await evaluate_turn(current_turn.question_text, transcript, history)
+        eval_out = await evaluate_turn(
+            current_turn.question_text, transcript, history,
+            cv_summary=parsed_cv_summary,
+        )
         next_q = None
         next_audio_url = None
 
-    # 8. Write scores + transcript back to the current turn.
+    # 9. Write scores + transcript back to the current turn.
     current_turn.transcript_text       = transcript
     current_turn.directness_score      = eval_out.directness
     current_turn.star_score            = eval_out.star
     current_turn.specificity_score     = eval_out.specificity
     current_turn.impact_score          = eval_out.impact
     current_turn.conciseness_score     = eval_out.conciseness
+    current_turn.delivery_score        = eval_out.delivery
+    current_turn.cv_summary            = parsed_cv_summary
     current_turn.filler_word_count     = filler_count
     current_turn.filler_word_breakdown = filler_breakdown
     current_turn.feedback              = eval_out.notes
@@ -203,18 +232,25 @@ async def submit_turn(
     if not is_final and next_q:
         await _insert_followup_turn(db, session_id, current_turn.id, next_q)
     elif is_final:
-        # Average all rubric scores across both turns, scale to 0-100.
-        all_scores = [
+        # Average all populated rubric scores across both turns, scale to 0-100.
+        # `delivery_score` participates only when present (camera may be off
+        # on either turn independently), preventing a missing 6th dimension
+        # from dragging the aggregate toward zero.
+        prior_score_values = [
             float(s)
             for t in prior_turns
             for s in (t.directness_score, t.star_score, t.specificity_score,
-                      t.impact_score, t.conciseness_score)
+                      t.impact_score, t.conciseness_score, t.delivery_score)
             if s is not None
-        ] + [
+        ]
+        current_score_values = [
             float(eval_out.directness), float(eval_out.star),
             float(eval_out.specificity), float(eval_out.impact),
             float(eval_out.conciseness),
         ]
+        if eval_out.delivery is not None:
+            current_score_values.append(float(eval_out.delivery))
+        all_scores = prior_score_values + current_score_values
         overall = round(sum(all_scores) / len(all_scores) * 10, 2) if all_scores else 0.0
         session.status        = SessionStatus.completed
         session.ended_at      = func.now()
@@ -230,6 +266,7 @@ async def submit_turn(
             specificity=eval_out.specificity,
             impact=eval_out.impact,
             conciseness=eval_out.conciseness,
+            delivery=eval_out.delivery,
         ),
         feedback=eval_out.notes,
         filler_word_count=filler_count,
