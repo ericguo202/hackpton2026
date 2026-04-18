@@ -1,111 +1,188 @@
+/* Fraunces (variable optical size) for display, Geist for body/UI.
+   Google Font imports MUST precede `@import "tailwindcss"` — Tailwind's
+   import expands into `@layer` rules, and all `@import`s must come first. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* ---------- Scale tokens ---------- */
+
+  /* Primary */
+  --color-primary-100: #F1E9D2;
+  --color-primary-200: #ccc19e;
+  --color-primary-300: #a49a7e;
+  --color-primary-400: #7d765f;
+  --color-primary-500: #585342;
+  --color-primary-600: #363228;
+  --color-primary-700: #17150f;
+
+  /* Secondary */
+  --color-secondary-100: #E7DFC6;
+  --color-secondary-200: #beb7a3;
+  --color-secondary-300: #979180;
+  --color-secondary-400: #716d60;
+  --color-secondary-500: #4e4b41;
+  --color-secondary-600: #2d2b25;
+  --color-secondary-700: #12110e;
+
+  /* Tertiary */
+  --color-tertiary-100: #f4f0e7;
+  --color-tertiary-200: #D4CAB0;
+  --color-tertiary-300: #aba38e;
+  --color-tertiary-400: #847e6d;
+  --color-tertiary-500: #605b4e;
+  --color-tertiary-600: #3d3a31;
+  --color-tertiary-700: #1d1c17;
+
+  /* Quaternary */
+  --color-quaternary-100: #eee6d5;
+  --color-quaternary-200: #C9BEA3;
+  --color-quaternary-300: #a19882;
+  --color-quaternary-400: #7a7362;
+  --color-quaternary-500: #565044;
+  --color-quaternary-600: #343028;
+  --color-quaternary-700: #14130e;
+
+  /* Quinary */
+  --color-quinary-100: #e5d9c8;
+  --color-quinary-200: #c2b099;
+  --color-quinary-300: #998B78;
+  --color-quinary-400: #726759;
+  --color-quinary-500: #4d463b;
+  --color-quinary-600: #2b2720;
+  --color-quinary-700: #13100d;
+
+  /* Senary */
+  --color-senary-100: #e9d8b2;
+  --color-senary-200: #c1b08d;
+  --color-senary-300: #988b6e;
+  --color-senary-400: #716751;
+  --color-senary-500: #4c4536;
+  --color-senary-600: #2b261c;
+  --color-senary-700: #13110b;
+
+  /* Septenary */
+  --color-septenary-100: #E9D9B8;
+  --color-septenary-200: #c1b290;
+  --color-septenary-300: #988c71;
+  --color-septenary-400: #726853;
+  --color-septenary-500: #4d4637;
+  --color-septenary-600: #2b271e;
+  --color-septenary-700: #13110b;
+
+  /* Octonary */
+  --color-octonary-100: #f6f1de;
+  --color-octonary-200: #DAD1AA;
+  --color-octonary-300: #b1aa8a;
+  --color-octonary-400: #8a846b;
+  --color-octonary-500: #65604d;
+  --color-octonary-600: #423f31;
+  --color-octonary-700: #222018;
+
+  /* Grey */
+  --color-grey-100: #eae9e6;
+  --color-grey-200: #c2c1bd;
+  --color-grey-300: #9c9a97;
+  --color-grey-400: #767673;
+  --color-grey-500: #535351;
+  --color-grey-600: #333231;
+  --color-grey-700: #151514;
+
+  /* ---------- Semantic aliases (prefer these in components) ---------- */
+  --color-surface:        var(--color-primary-100);
+  --color-surface-raised: var(--color-tertiary-100);
+  --color-surface-sunken: var(--color-quaternary-100);
+  --color-border:         var(--color-primary-200);
+  --color-border-strong:  var(--color-primary-300);
+  --color-text:           var(--color-primary-700);
+  --color-text-muted:     var(--color-primary-500);
+  /* text-subtle is a custom stop between primary-400 and primary-500.
+     primary-400 (#7d765f) on surface = 3.77:1 and fails WCAG AA.
+     This value clears AA (4.64:1) while staying softer than text-muted. */
+  --color-text-subtle:    #706853;
+  --color-accent:         var(--color-primary-700);
+  --color-accent-fg:      var(--color-primary-100);
+  --color-accent-hover:   var(--color-primary-600);
+  --color-focus-ring:     var(--color-primary-700);
+
+  /* ---------- Fonts ---------- */
+  --font-sans:    "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-mono:    "Geist Mono", ui-monospace, Consolas, monospace;
+
+  /* ---------- Editorial eyebrow ----------
+     Running heads, masthead metadata, dimension lists. Pair with
+     `uppercase`, `tracking-eyebrow`, and a muted text token. */
+  --text-eyebrow: 11px;
+  --text-eyebrow--line-height: 1.1;
+  --tracking-eyebrow: 0.22em;
+
+  /* ---------- Radius ---------- */
+  --radius-xs:   4px;
+  --radius-sm:   8px;
+  --radius:     12px;
+  --radius-lg:  16px;
+  --radius-xl:  24px;
+  --radius-full: 9999px;
+}
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  color-scheme: light;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: 16px/1.55 var(--font-sans);
+  letter-spacing: -0.005em;
   font-synthesis: none;
+  font-kerning: normal;
+  font-feature-settings: "kern", "liga", "calt";
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
 }
 
 body {
   margin: 0;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  color: var(--color-text);
   font-weight: 500;
-  color: var(--text-h);
+  /* Engage Fraunces's optical-size (opsz 9..144) axis so display sizes pick
+     up the more delicate cuts and body-adjacent sizes stay sturdy. */
+  font-optical-sizing: auto;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+/* Tracking eases back as heading size drops — tight at display,
+   near-neutral at body-adjacent sizes. */
+h1 { font-size: clamp(2.25rem, 3vw + 1rem, 3.5rem); line-height: 1.05; letter-spacing: -0.02em;  margin: 0.5em 0; }
+h2 { font-size: clamp(1.5rem, 1.5vw + 1rem, 2rem);  line-height: 1.15; letter-spacing: -0.015em; margin: 0.5em 0; }
+h3 { font-size: 1.25rem;                            line-height: 1.3;  letter-spacing: -0.005em; margin: 0.5em 0; }
+
+p { margin: 0; }
+
+/* Staggered entrance for hero/home page load.
+   One orchestrated reveal per page load — not a per-component micro-interaction. */
+@keyframes fade-lift-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+.anim-reveal {
+  opacity: 0;
+  animation: fade-lift-in 640ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-reveal {
+    animation: none;
+    opacity: 1;
   }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
 }
