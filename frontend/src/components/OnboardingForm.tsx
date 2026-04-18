@@ -87,8 +87,9 @@ export default function OnboardingForm({ onDone }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-xl mx-auto p-6 space-y-4">
-      <h1 className="text-2xl font-bold">Tell us about yourself</h1>
+    <main>
+      <form onSubmit={handleSubmit} className="max-w-xl mx-auto p-6 space-y-4">
+        <h1 className="text-2xl font-bold">Tell us about yourself</h1>
 
       <div>
         <label className="block text-sm font-medium">Email (from Clerk)</label>
@@ -190,6 +191,7 @@ export default function OnboardingForm({ onDone }: Props) {
       >
         {submitting ? 'Submitting…' : 'Finish setup'}
       </button>
-    </form>
+      </form>
+    </main>
   );
 }
