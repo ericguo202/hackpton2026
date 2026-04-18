@@ -16,6 +16,7 @@ python-dotenv
 
 # Computer-vision heuristics for the interview analyzer prototype
 opencv-python
+mediapipe
 
 # Clerk JWT verification:
 #   python-jose handles JWT decode + RS256 signature check.
