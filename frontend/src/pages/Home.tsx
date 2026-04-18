@@ -55,7 +55,10 @@ export default function Home() {
     try {
       await apiFetch<SessionStart>('/api/v1/sessions', {
         method: 'POST',
-        body: JSON.stringify({ company: trimmed }),
+        body: JSON.stringify({
+          company: trimmed,
+          job_title: me?.target_role ?? 'Software Engineer',
+        }),
       });
       // Success path: once the session view is built, navigate there.
       // Until then, surface a calm placeholder so the UI stays honest.

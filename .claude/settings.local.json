@@ -5,7 +5,9 @@
       "Bash(./venv/Scripts/pip.exe install *)",
       "Bash(docker compose *)",
       "Bash(./venv/Scripts/python.exe -c \"import app.db.models; print\\('models registered:', list\\(app.db.models.__all__\\)\\); from app.db.base import Base; print\\('tables:', list\\(Base.metadata.tables.keys\\(\\)\\)\\)\")",
-      "Bash(./venv/Scripts/alembic.exe history *)"
+      "Bash(./venv/Scripts/alembic.exe history *)",
+      "Bash(./venv/Scripts/pytest.exe tests/test_opening_question.py -v)",
+      "Bash(./venv/Scripts/python.exe -c ' *)"
     ]
   }
 }
