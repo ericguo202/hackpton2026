@@ -438,10 +438,16 @@ def main() -> None:
         analyzer.close()
         raise RuntimeError("Could not open the camera.")
 
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    window_flags = cv2.WINDOW_NORMAL
+    if hasattr(cv2, "WINDOW_KEEPRATIO"):
+        window_flags |= cv2.WINDOW_KEEPRATIO
+    if hasattr(cv2, "WINDOW_GUI_EXPANDED"):
+        window_flags |= cv2.WINDOW_GUI_EXPANDED
 
-    print("Interview analyzer is running. Press 'q' in the video window to end the session.")
+    cv2.namedWindow(window_name, window_flags)
+    cv2.resizeWindow(window_name, 1280, 720)
+
+    print("Interview analyzer is running. Resize the window freely; the camera view will keep its aspect ratio. Press 'q' to end the session.")
 
     try:
         while True:
