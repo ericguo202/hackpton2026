@@ -49,6 +49,7 @@ class HighlightSegment:
     start_frame: int
     end_frame: int
     reasons: list[str]
+    metrics: list[str]
     severity: float
 
 
@@ -93,6 +94,7 @@ class InterviewRecorder:
                     "key": issue["key"],
                     "label": issue["label"],
                     "reason": issue["reason"],
+                    "metric": issue.get("metric", ""),
                     "severity": float(issue["severity"]),
                 }
             )
@@ -135,7 +137,7 @@ class InterviewRecorder:
 
         active_start: int | None = None
         active_end: int | None = None
-        active_reasons: dict[str, tuple[str, float]] = {}
+        active_reasons: dict[str, tuple[str, str, float]] = {}
         active_severity = 0.0
         gap_tolerance = int(self.fps * 0.4)
         pre_roll = int(self.fps * 1.0)
@@ -147,7 +149,10 @@ class InterviewRecorder:
             if not issues:
                 continue
 
-            current_reasons = {issue["key"]: (issue["label"], issue["severity"]) for issue in issues}
+            current_reasons = {
+                issue["key"]: (issue["label"], issue.get("metric", ""), issue["severity"])
+                for issue in issues
+            }
             current_max_severity = max(issue["severity"] for issue in issues)
 
             if active_start is None:
@@ -161,7 +166,7 @@ class InterviewRecorder:
                 active_end = frame_no
                 active_severity = max(active_severity, current_max_severity)
                 for key, value in current_reasons.items():
-                    if key not in active_reasons or value[1] > active_reasons[key][1]:
+                    if key not in active_reasons or value[2] > active_reasons[key][2]:
                         active_reasons[key] = value
             else:
                 segments.append(
@@ -169,6 +174,7 @@ class InterviewRecorder:
                         start_frame=max(active_start - pre_roll, 0),
                         end_frame=min((active_end or active_start) + post_roll, max(self.frame_index - 1, 0)),
                         reasons=[value[0] for value in active_reasons.values()],
+                        metrics=[value[1] for value in active_reasons.values() if value[1]],
                         severity=active_severity,
                     )
                 )
@@ -183,6 +189,7 @@ class InterviewRecorder:
                     start_frame=max(active_start - pre_roll, 0),
                     end_frame=min((active_end or active_start) + post_roll, max(self.frame_index - 1, 0)),
                     reasons=[value[0] for value in active_reasons.values()],
+                    metrics=[value[1] for value in active_reasons.values() if value[1]],
                     severity=active_severity,
                 )
             )
@@ -197,6 +204,7 @@ class InterviewRecorder:
                 previous.end_frame = max(previous.end_frame, segment.end_frame)
                 previous.severity = max(previous.severity, segment.severity)
                 previous.reasons = sorted(set(previous.reasons + segment.reasons))
+                previous.metrics = sorted(set(previous.metrics + segment.metrics))
             else:
                 merged.append(segment)
         return merged
@@ -249,6 +257,7 @@ class InterviewRecorder:
                         "start_seconds": round(segment.start_frame / self.fps, 2),
                         "end_seconds": round(segment.end_frame / self.fps, 2),
                         "reasons": segment.reasons,
+                        "metrics": segment.metrics,
                         "severity": round(segment.severity, 2),
                     }
                 )
@@ -264,7 +273,7 @@ class InterviewRecorder:
         cv2.putText(output, "Coaching Review Clip", (34, 46), cv2.FONT_HERSHEY_SIMPLEX, 0.78, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.putText(
             output,
-            f"Moment: {current_frame / self.fps:0.2f}s  Severity: {segment.severity:0.1f}/100",
+            f"Moment: {current_frame / self.fps:0.2f}s",
             (34, 74),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.56,
@@ -274,6 +283,8 @@ class InterviewRecorder:
         )
         reason_text = " | ".join(segment.reasons[:3])
         cv2.putText(output, reason_text, (34, 104), cv2.FONT_HERSHEY_SIMPLEX, 0.54, (255, 214, 120), 2, cv2.LINE_AA)
+        metric_text = " | ".join(segment.metrics[:2]) if segment.metrics else f"Peak severity: {segment.severity:0.1f}/100"
+        cv2.putText(output, metric_text, (34, 128), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (210, 245, 210), 2, cv2.LINE_AA)
         return output
 
 
@@ -747,6 +758,7 @@ class InterviewAnalyzer:
                     "key": "face_missing",
                     "label": "Face dropped out of frame",
                     "reason": "Your face was not visible enough for the interviewer to read you clearly.",
+                    "metric": "face_visible=no",
                     "severity": 85.0,
                 }
             )
@@ -757,13 +769,16 @@ class InterviewAnalyzer:
         head_alignment = float(self.last_metrics.get("head_alignment_score", 100.0))
         vertical_posture = float(self.last_metrics.get("vertical_posture", 0.0))
         midpoint_offset = float(self.last_metrics.get("midpoint_offset", 0.0))
+        smile_score = float(self.last_metrics.get("smile_score", 0.0))
+        mouth_open_ratio = float(self.last_metrics.get("mouth_open_ratio", 0.0))
 
-        if eye_score < 52:
+        if eye_score < 55:
             issues.append(
                 {
                     "key": "looked_away",
                     "label": "Looked away from camera",
                     "reason": "Your gaze drifted away from the camera, which weakens eye contact.",
+                    "metric": f"eye_contact={eye_score:.1f}",
                     "severity": clamp(100 - eye_score),
                 }
             )
@@ -773,20 +788,27 @@ class InterviewAnalyzer:
                 clamp(vertical_posture * 180),
                 clamp(midpoint_offset * 220),
             )
+            posture_metric = f"head_align={head_alignment:.1f}"
+            if clamp(vertical_posture * 180) >= clamp(72 - head_alignment) and clamp(vertical_posture * 180) >= clamp(midpoint_offset * 220):
+                posture_metric = f"vertical_posture={vertical_posture:.3f}"
+            elif clamp(midpoint_offset * 220) >= clamp(72 - head_alignment):
+                posture_metric = f"midpoint_offset={midpoint_offset:.3f}"
             issues.append(
                 {
                     "key": "posture_drift",
                     "label": "Posture or head alignment drifted",
                     "reason": "Your head moved off-center or tilted enough to look less composed.",
+                    "metric": posture_metric,
                     "severity": posture_severity,
                 }
             )
-        if expression_score < 50:
+        if smile_score < 40 and mouth_open_ratio < .15:
             issues.append(
                 {
                     "key": "low_energy",
                     "label": "Low-energy expression",
                     "reason": "Your expression looked flat, so your answer may have felt less engaged.",
+                    "metric": f"smile_score={smile_score:.1f}",
                     "severity": clamp(95 - expression_score),
                 }
             )
@@ -795,7 +817,9 @@ class InterviewAnalyzer:
     def _draw_overlay(self, frame, points: list[tuple[int, int]]) -> None:
         if self.last_face_box:
             x, y, w, h = self.last_face_box
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (40, 210, 120), 2)
+            has_issues = bool(self.current_issues())
+            box_color = (0, 0, 255) if has_issues else (40, 210, 120)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), box_color, 2)
 
         feature_groups = [
             (self.LEFT_IRIS, (255, 205, 70)),
@@ -814,28 +838,6 @@ class InterviewAnalyzer:
         if self.debug_mode:
             self._draw_debug_hud(frame)
             return
-
-        assessment = self.last_assessment
-        lines = [
-            f"Eye contact: {assessment.eye_contact_score:5.1f}/100 ({assessment.eye_label})",
-            f"Expression:  {assessment.expression_score:5.1f}/100 ({assessment.expression_label})",
-            f"Interview:   {assessment.overall_score:5.1f}/100 ({score_band(assessment.overall_score)})",
-            f"Coaching: {assessment.guidance}",
-            "Press p for precision tuning mode | q to end session",
-        ]
-
-        for index, text in enumerate(lines):
-            y = 32 + (index * 28)
-            cv2.putText(
-                frame,
-                text,
-                (18, y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                (255, 255, 255),
-                2,
-                cv2.LINE_AA,
-            )
 
     def _draw_debug_hud(self, frame) -> None:
         panel = frame.copy()
@@ -902,6 +904,8 @@ class InterviewAnalyzer:
             )
 
     def draw_recording_indicator(self, frame, is_recording: bool) -> None:
+        if not self.debug_mode:
+            return
         if is_recording:
             cv2.circle(frame, (frame.shape[1] - 170, 34), 10, (0, 0, 255), -1)
             cv2.putText(frame, "REC", (frame.shape[1] - 150, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 255, 255), 2, cv2.LINE_AA)

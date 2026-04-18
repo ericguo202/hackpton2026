@@ -1,0 +1,18 @@
+{
+  "session_video": "C:\\Users\\herma\\Desktop\\hackpton2026\\backend\\recordings\\session_20260418_143253\\interview_session.mp4",
+  "fps": 30.0,
+  "frame_count": 171,
+  "highlights": [
+    {
+      "clip": "C:\\Users\\herma\\Desktop\\hackpton2026\\backend\\recordings\\session_20260418_143253\\highlights\\highlight_01.mp4",
+      "start_frame": 0,
+      "end_frame": 170,
+      "start_seconds": 0.0,
+      "end_seconds": 5.67,
+      "reasons": [
+        "Low-energy expression"
+      ],
+      "severity": 83.56
+    }
+  ]
+}
