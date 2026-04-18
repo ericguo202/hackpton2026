@@ -3,8 +3,8 @@
  * reveal the arrow across the button surface. Tokens remapped to the
  * earth-tone palette: bg-primary-foreground/15 → bg-accent-fg/15.
  *
- * Forwards props to the underlying Button so it composes with Clerk's
- * <SignInButton mode="modal">, which injects onClick via cloneElement.
+ * Forwards props to the underlying Button so callers pass onClick
+ * directly (Hero uses it to navigate to the custom /sign-in view).
  */
 
 import type { ComponentProps } from 'react'
