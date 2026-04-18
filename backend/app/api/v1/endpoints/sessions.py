@@ -30,6 +30,7 @@ from app.schemas.session import (
 from app.services.company_research import CompanyBrief, research_company
 from app.services.evaluator import GEMMA_EVAL_MODEL, evaluate_turn
 from app.services.filler_words import count_filler_words
+from app.services.followup import generate_followup
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
 from app.services.tts import synthesize_speech
@@ -113,6 +114,13 @@ async def _insert_followup_turn(
     await db.flush()
 
 
+async def _followup_and_tts(question: str, transcript: str) -> tuple[str, str]:
+    """Generate follow-up via Flash then TTS — runs in parallel with Gemma 4 eval."""
+    next_q = await generate_followup(question, transcript)
+    audio_url = await synthesize_speech(next_q)
+    return next_q, audio_url
+
+
 @router.post("/{session_id}/turns", response_model=TurnSubmitOut)
 async def submit_turn(
     session_id: UUID,
@@ -166,36 +174,34 @@ async def submit_turn(
     # 6. Hardcoded 2-turn rule (CLAUDE.md): turn 2 is always final.
     is_final = current_turn.turn_number >= 2
 
-    # 7. Evaluate — generates follow-up question on turn 1.
-    eval_out = await evaluate_turn(
-        question=current_turn.question_text,
-        transcript=transcript,
-        history=history,
-        generate_followup=not is_final,
-    )
+    # 7. Evaluate scores and generate follow-up question in parallel.
+    # Gemma 4 (scoring) and Flash+TTS (next question) start simultaneously;
+    # TTS is no longer on the critical path after Gemma 4 finishes.
+    if not is_final:
+        eval_out, (next_q, next_audio_url) = await asyncio.gather(
+            evaluate_turn(current_turn.question_text, transcript, history),
+            _followup_and_tts(current_turn.question_text, transcript),
+        )
+    else:
+        eval_out = await evaluate_turn(current_turn.question_text, transcript, history)
+        next_q = None
+        next_audio_url = None
 
     # 8. Write scores + transcript back to the current turn.
-    current_turn.transcript_text      = transcript
-    current_turn.directness_score     = eval_out.directness
-    current_turn.star_score           = eval_out.star
-    current_turn.specificity_score    = eval_out.specificity
-    current_turn.impact_score         = eval_out.impact
-    current_turn.conciseness_score    = eval_out.conciseness
-    current_turn.filler_word_count    = filler_count
+    current_turn.transcript_text       = transcript
+    current_turn.directness_score      = eval_out.directness
+    current_turn.star_score            = eval_out.star
+    current_turn.specificity_score     = eval_out.specificity
+    current_turn.impact_score          = eval_out.impact
+    current_turn.conciseness_score     = eval_out.conciseness
+    current_turn.filler_word_count     = filler_count
     current_turn.filler_word_breakdown = filler_breakdown
-    current_turn.feedback             = eval_out.notes
-    current_turn.ai_model_used        = GEMMA_EVAL_MODEL
-    current_turn.evaluated_at         = datetime.utcnow()
-
-    next_q = eval_out.next_question.strip() or None
-    next_audio_url: str | None = None
+    current_turn.feedback              = eval_out.notes
+    current_turn.ai_model_used         = GEMMA_EVAL_MODEL
+    current_turn.evaluated_at          = datetime.utcnow()
 
     if not is_final and next_q:
-        # TTS and DB insert are independent — fan them out.
-        next_audio_url, _ = await asyncio.gather(
-            synthesize_speech(next_q),
-            _insert_followup_turn(db, session_id, current_turn.id, next_q),
-        )
+        await _insert_followup_turn(db, session_id, current_turn.id, next_q)
     elif is_final:
         # Average all rubric scores across both turns, scale to 0-100.
         all_scores = [
