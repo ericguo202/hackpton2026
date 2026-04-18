@@ -44,6 +44,9 @@ class InterviewTurn(Base):
         CheckConstraint(
             "conciseness_score BETWEEN 0 AND 10", name="ck_turns_conciseness"
         ),
+        CheckConstraint(
+            "delivery_score BETWEEN 0 AND 10", name="ck_turns_delivery"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -76,6 +79,16 @@ class InterviewTurn(Base):
     specificity_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     impact_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     conciseness_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    # 6th rubric dimension: delivery / on-camera presence, derived by the
+    # evaluator LLM from the browser-computed `cv_summary` below. Null when
+    # the candidate declined camera access (evaluator omits the field too).
+    delivery_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    # Raw webcam-analytics summary the browser posts with each turn.
+    # Same shape as `backend/interview_feedback_latest.json` (frames_processed,
+    # face_visible_pct, eye_contact_score, expression_score, overall_interview_score,
+    # band labels, best-frame peaks, coaching_tip, notes[]). Kept as JSONB for
+    # later analytics; not read back into feedback today.
+    cv_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     filler_word_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")

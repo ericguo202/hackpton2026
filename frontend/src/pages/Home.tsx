@@ -9,10 +9,12 @@
 import { useState, type FormEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
 
+import { CameraPreview } from '../components/CameraPreview';
 import QuestionPlayer from '../components/QuestionPlayer';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar from '../components/TopBar';
 import { useApi } from '../hooks/useApi';
+import { useFaceAnalyzer } from '../hooks/useFaceAnalyzer';
 import { useMe } from '../hooks/useMe';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
@@ -49,6 +51,9 @@ function ScoreBar({ value }: { value: number }) {
 }
 
 function TurnResultCard({ result, turnNum }: { result: TurnResult; turnNum: number }) {
+  // `delivery` is the 6th dimension from browser webcam analytics; the
+  // row is conditionally rendered below so camera-declined turns still
+  // show a clean 5-score card.
   const scoreKeys = [
     ['directness', 'Directness'],
     ['star', 'STAR structure'],
@@ -69,6 +74,12 @@ function TurnResultCard({ result, turnNum }: { result: TurnResult; turnNum: numb
             <ScoreBar value={result.scores[key]} />
           </div>
         ))}
+        {result.scores.delivery != null && (
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-sm text-text-muted">Delivery</span>
+            <ScoreBar value={result.scores.delivery} />
+          </div>
+        )}
       </div>
       {result.filler_word_count > 0 && (
         <p className="text-sm text-text-muted mb-4">
@@ -95,6 +106,13 @@ export default function Home() {
   const { me } = useMe();
   const { apiFetch } = useApi();
   const recorder = useRecorder();
+  // Analyzer runs strictly during `state === 'recording'`; the EMA
+  // accumulator lives across re-records and is reset alongside the
+  // recorder in `handleNewSession`.
+  const analyzer = useFaceAnalyzer(
+    recorder.videoStream,
+    recorder.state === 'recording',
+  );
 
   // ── Phase 1: setup ──────────────────────────────────────────────────────
   const [company, setCompany]       = useState('');
@@ -155,6 +173,11 @@ export default function Home() {
     try {
       const form = new FormData();
       form.append('audio', recorder.audioBlob, 'answer.webm');
+      // Batch per-turn delivery analytics alongside the audio. Null
+      // summary (no frames, e.g. camera declined) drops the field so
+      // the backend's evaluator falls back to the 5-score path.
+      const cvSummary = analyzer.buildSummary();
+      if (cvSummary) form.append('cv_summary', JSON.stringify(cvSummary));
       const result = await apiFetch<TurnResult>(
         `/api/v1/sessions/${sessionId}/turns`,
         { method: 'POST', body: form },
@@ -170,6 +193,7 @@ export default function Home() {
           num: currentQ.num + 1,
         });
         recorder.reset();
+        analyzer.reset();
       }
     } catch (err) {
       setTurnError(
@@ -190,6 +214,7 @@ export default function Home() {
     setTurnError(null);
     setSetupError(null);
     recorder.reset();
+    analyzer.reset();
     setCompany('');
   }
 
@@ -289,6 +314,15 @@ export default function Home() {
                 }}
               />
 
+              {/* Mirrored self-view. Hidden until `recorder.start()` has
+                  actually acquired the video track — avoids a flash of
+                  empty black before permission returns. */}
+              {recorder.videoStream && (
+                <div className="mt-8">
+                  <CameraPreview stream={recorder.videoStream} />
+                </div>
+              )}
+
               {/* Recording controls */}
               <div className="mt-10 space-y-4">
                 <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
@@ -384,11 +418,15 @@ export default function Home() {
                 Overall:{' '}
                 <span className="text-text font-medium">
                   {turnResults.length > 0
-                    ? (
-                        Object.values(turnResults[turnResults.length - 1].scores).reduce(
-                          (a, b) => a + b, 0,
-                        ) / 5
-                      ).toFixed(1)
+                    ? (() => {
+                        // Exclude `delivery` when the candidate declined
+                        // camera — otherwise averaging 5 scores + `null`
+                        // yields NaN.
+                        const vals = Object.values(
+                          turnResults[turnResults.length - 1].scores,
+                        ).filter((v): v is number => typeof v === 'number');
+                        return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+                      })()
                     : '—'}
                   /10
                 </span>{' '}

@@ -4,6 +4,9 @@ export type Scores = {
   specificity: number;
   impact: number;
   conciseness: number;
+  // Null when the candidate declined camera access — the card hides
+  // the row in that case.
+  delivery: number | null;
 };
 
 export type TurnResult = {
