@@ -39,19 +39,7 @@ Browser (React+Vite)
 
 ## Data Model
 
-```sql
-users(id, clerk_user_id UNIQUE, email, name, resume_text, field, target_role, bio, created_at)
-
-sessions(id, user_id FK, company, company_summary TEXT, status, created_at, completed_at)
-
-turns(id, session_id FK, turn_number, question TEXT, transcript TEXT,
-      filler_word_count INT, filler_word_breakdown JSONB,
-      directness_score INT, star_score INT, relevance_score INT,
-      confidence_score INT, overall_score INT,
-      feedback_text TEXT, created_at)
-```
-
-No `filler_words` table — use `filler_word_breakdown jsonb` on `turns` instead.
+Users model, interview_sessions model, interview_turns model, and session_metrics model.
 
 ---
 
@@ -102,8 +90,8 @@ TTS audio: return base64 inline in JSON — no S3.
 
 ## Session Rules
 
-- **5 turns fixed**: 1 opening + 4 follow-ups. Hardcode end condition — don't make it dynamic.
-- `is_final: true` on turn 5 from Gemini. `next_question` is empty string.
+- **2 turns fixed**: 1 opening + 1 follow-up. Hardcode end condition — don't make it dynamic.
+- `is_final: true` on turn 2 from Gemini. `next_question` is empty string.
 
 ---
 
@@ -146,7 +134,7 @@ HEYGEN_API_KEY   # optional, only if avatar feature is attempted
 | 6–8   | Company research (Serper → Gemini) + opening question generation                      | `/sessions` returns summary + Q1                          |
 | 8–10  | ElevenLabs TTS: base64 audio in JSON response, frontend `<audio>` playback            | Q1 plays in browser                                       |
 | 10–12 | MediaRecorder → blob POST → ElevenLabs STT → transcript → `/turns`                    | One full turn works end-to-end in browser                 |
-| 12–15 | Full 5-turn loop, session summary screen, all scores persisted                        | Complete mock interview start-to-finish                   |
+| 12–15 | Full 2-turn loop, session summary screen, all scores persisted                        | Complete mock interview start-to-finish                   |
 | 15–17 | Onboarding UI, session history list, per-metric line chart (recharts)                 | Second session shows trend vs first                       |
 | 17–19 | UI polish: loading states, error toasts, mic-permission handling                      | App doesn't look like a hackathon project                 |
 | 19–21 | HeyGen LiveAvatar — **only if all above is green**                                    | Optional; skip without guilt                              |

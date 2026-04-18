@@ -6,6 +6,10 @@ uvicorn[standard]
 sqlalchemy[asyncio]
 asyncpg
 
+# DB migrations. Async `env.py` uses `async_engine_from_config` and drives
+# `context.run_migrations` via `connection.run_sync(...)`.
+alembic
+
 # Config loading (pydantic v2 settings) + .env file support
 pydantic-settings
 python-dotenv
