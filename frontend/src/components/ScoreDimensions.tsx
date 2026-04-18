@@ -1,10 +1,12 @@
 /**
- * Editorial bottom strip — the five evaluator dimensions as a "table of
+ * Editorial bottom strip — the evaluator dimensions as a "table of
  * contents" for the practice session. Used on Hero and Home.
  *
- * Five is a fact, not a feature: see backend Gemini evaluator schema in
- * ../../../CLAUDE.md (directness, STAR, specificity, impact, conciseness).
- * If that schema changes, this list must move with it.
+ * Content rubric (5 dims) comes from the Gemma 4 evaluator JSON schema
+ * in ../../../CLAUDE.md. Delivery (the 6th) is computed in-browser from
+ * the webcam via MediaPipe and folded into the same response when the
+ * candidate allows camera access. If the backend schema changes, this
+ * list must move with it.
  */
 
 const DIMENSIONS = [
@@ -13,6 +15,7 @@ const DIMENSIONS = [
   { n: '03', name: 'Specificity' },
   { n: '04', name: 'Impact' },
   { n: '05', name: 'Conciseness' },
+  { n: '06', name: 'Delivery' },
 ] as const;
 
 type Props = { tagline?: string };
