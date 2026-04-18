@@ -6,30 +6,31 @@
  * emotional load; no illustrations, no gradient cards, no decorative
  * elements. One primary action alone on a cream surface.
  *
- * Sign-in is a Clerk modal triggered from the primary CTA and the header
- * link — not a dedicated /sign-in page. Keeps the landing surface
- * undisturbed.
+ * Sign-in navigates to a dedicated /sign-in view (SignedOutApp handles
+ * the state toggle — no router). Both the header link and the primary
+ * CTA call onSignInClick.
  */
-
-import { SignInButton } from '@clerk/react';
 
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar from '../components/TopBar';
 import { GetStartedButton } from '../components/ui/get-started-button';
 
-export default function Hero() {
+interface HeroProps {
+  onSignInClick: () => void;
+}
+
+export default function Hero({ onSignInClick }: HeroProps) {
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
       <TopBar
         rightSlot={
-          <SignInButton mode="modal">
-            <button
-              type="button"
-              className="relative text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs before:absolute before:-inset-[14px] before:content-['']"
-            >
-              Sign in
-            </button>
-          </SignInButton>
+          <button
+            type="button"
+            onClick={onSignInClick}
+            className="relative text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs before:absolute before:-inset-[14px] before:content-['']"
+          >
+            Sign in
+          </button>
         }
       />
 
@@ -67,9 +68,7 @@ export default function Hero() {
               className="anim-reveal flex flex-wrap items-center gap-x-8 gap-y-4"
               style={{ animationDelay: '240ms' }}
             >
-              <SignInButton mode="modal">
-                <GetStartedButton />
-              </SignInButton>
+              <GetStartedButton onClick={onSignInClick} />
 
               <p className="text-[13px] text-text-subtle">
                 No streaks. No confetti. No mascots.
