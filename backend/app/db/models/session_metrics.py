@@ -24,6 +24,9 @@ class SessionMetrics(Base):
         CheckConstraint(
             "overall_score BETWEEN 0 AND 100", name="ck_metrics_overall_score"
         ),
+        CheckConstraint(
+            "avg_delivery BETWEEN 0 AND 10", name="ck_metrics_avg_delivery"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -43,6 +46,9 @@ class SessionMetrics(Base):
     avg_specificity: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     avg_impact: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     avg_conciseness: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    # Nullable when no turn in the session had webcam analytics (camera-off
+    # for every turn). Added in migration 0003.
+    avg_delivery: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     total_filler_word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     overall_score: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
