@@ -130,9 +130,9 @@ export default function SignUp({ onBack, onSignInClick }: SignUpProps) {
   }
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col md:flex-row bg-surface text-text">
-      <section className="flex-1 flex flex-col min-h-0">
-      <main className="flex-1 flex items-center justify-center px-8 md:px-16 py-6 overflow-y-auto">
+    <div className="min-h-screen flex flex-col md:flex-row bg-surface text-text">
+      <section className="flex-1 flex flex-col">
+      <main className="flex-1 flex items-center justify-center px-8 md:px-16 py-6">
         <div className="w-full max-w-md">
           {onBack && (
             <button
@@ -312,7 +312,7 @@ export default function SignUp({ onBack, onSignInClick }: SignUpProps) {
       </main>
       </section>
 
-      <section className="hidden md:flex flex-1 relative items-center justify-center">
+      <section className="hidden md:flex flex-1 relative items-center justify-center md:sticky md:top-0 md:h-screen md:self-start">
         <div
           className="absolute top-4 inset-x-4 bottom-4 rounded-xl overflow-hidden"
           onMouseEnter={() => setIsHovered(true)}
