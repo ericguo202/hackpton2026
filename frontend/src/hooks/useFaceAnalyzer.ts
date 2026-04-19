@@ -21,19 +21,60 @@ import { getFaceLandmarker } from '../lib/faceLandmarker';
 const TARGET_FPS = 15;
 const FRAME_MIN_MS = 1000 / TARGET_FPS;
 
+type AnalyzerStatus = 'warming' | 'ready' | 'running' | 'no-face' | 'idle' | 'error';
+
+export type AnalyzerDiagnostics = {
+  isReady: boolean;
+  status: AnalyzerStatus;
+  initError: string | null;
+  framesProcessed: number;
+  faceFrames: number;
+  lastSummary: InterviewSummary | null;
+};
+
 export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
   const [isReady, setIsReady] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<AnalyzerDiagnostics>({
+    isReady: false,
+    status: 'warming',
+    initError: null,
+    framesProcessed: 0,
+    faceFrames: 0,
+    lastSummary: null,
+  });
   const summaryRef = useRef(new FrameSummary());
   const videoRef   = useRef<HTMLVideoElement | null>(null);
   const rafRef     = useRef<number | null>(null);
   const activeRef  = useRef(active);
   const streamRef  = useRef<MediaStream | null>(null);
+  const frameCountRef = useRef(0);
+  const faceFrameCountRef = useRef(0);
+  const initErrorRef = useRef<string | null>(null);
+  const statusRef = useRef<AnalyzerStatus>('warming');
+  const lastSummaryRef = useRef<InterviewSummary | null>(null);
+  const publishCounterRef = useRef(0);
+  const lastLoggedStatusRef = useRef<string>('');
+
+  const publishDiagnostics = useCallback((force = false) => {
+    publishCounterRef.current += 1;
+    if (!force && publishCounterRef.current % 5 !== 0) return;
+    setDiagnostics({
+      isReady,
+      status: statusRef.current,
+      initError: initErrorRef.current,
+      framesProcessed: frameCountRef.current,
+      faceFrames: faceFrameCountRef.current,
+      lastSummary: lastSummaryRef.current,
+    });
+  }, [isReady]);
 
   // Track `active` via ref so the rAF loop (closure-captured) always
   // sees the latest value without needing to restart on toggle.
   useEffect(() => {
     activeRef.current = active;
-  }, [active]);
+    statusRef.current = active ? (isReady ? 'ready' : 'warming') : 'idle';
+    publishDiagnostics(true);
+  }, [active, isReady, publishDiagnostics]);
 
   // Bind the incoming stream to a hidden video element. Created lazily
   // so we don't hold the camera open when there's no stream.
@@ -69,15 +110,61 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
     (async () => {
       try {
         await getFaceLandmarker();
-        if (!cancelled) setIsReady(true);
+        if (!cancelled) {
+          initErrorRef.current = null;
+          statusRef.current = activeRef.current ? 'ready' : 'idle';
+          setIsReady(true);
+        }
       } catch (err) {
         // Non-fatal: delivery score just won't be produced. Don't crash
         // the interview surface — audio-only flow still works.
+        initErrorRef.current = err instanceof Error ? err.message : 'Unknown FaceLandmarker init error';
+        statusRef.current = 'error';
         console.warn('[useFaceAnalyzer] FaceLandmarker init failed:', err);
       }
     })();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    publishDiagnostics(true);
+  }, [isReady, publishDiagnostics]);
+
+  useEffect(() => {
+    const summarySnapshot = diagnostics.lastSummary
+      ? {
+          frames_processed: diagnostics.lastSummary.frames_processed,
+          face_visible_pct: diagnostics.lastSummary.face_visible_pct,
+          eye_contact_score: diagnostics.lastSummary.eye_contact_score,
+          expression_score: diagnostics.lastSummary.expression_score,
+          overall_interview_score: diagnostics.lastSummary.overall_interview_score,
+        }
+      : null;
+
+    const nextLogKey = JSON.stringify({
+      active,
+      hasStream: Boolean(stream),
+      isReady,
+      status: diagnostics.status,
+      framesProcessed: diagnostics.framesProcessed,
+      faceFrames: diagnostics.faceFrames,
+      initError: diagnostics.initError,
+      summary: summarySnapshot,
+    });
+    if (lastLoggedStatusRef.current === nextLogKey) return;
+    lastLoggedStatusRef.current = nextLogKey;
+
+    console.log('[useFaceAnalyzer] diagnostics', {
+      active,
+      hasStream: Boolean(stream),
+      isReady,
+      status: diagnostics.status,
+      framesProcessed: diagnostics.framesProcessed,
+      faceFrames: diagnostics.faceFrames,
+      initError: diagnostics.initError,
+      lastSummary: summarySnapshot,
+    });
+  }, [active, diagnostics, isReady, stream]);
 
   // The actual analyzer rAF loop. Only alive while `active` is true AND
   // we have a stream AND the landmarker is ready — any missing piece
@@ -108,14 +195,23 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
           // refinement didn't fire and our eye-contact math will
           // miss-index; treat as no-face rather than crash.
           summaryRef.current.update(null);
+          frameCountRef.current += 1;
+          statusRef.current = 'no-face';
+          publishDiagnostics();
           return;
         }
         const w = video.videoWidth || 1;
         const h = video.videoHeight || 1;
         const points: Point[] = face.map((lm) => [lm.x * w, lm.y * h] as const);
         summaryRef.current.update(points);
+        frameCountRef.current += 1;
+        faceFrameCountRef.current += 1;
+        statusRef.current = 'running';
+        publishDiagnostics();
       } catch (err) {
+        statusRef.current = 'error';
         console.warn('[useFaceAnalyzer] frame tick failed:', err);
+        publishDiagnostics(true);
       }
     };
 
@@ -128,12 +224,32 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
   }, [active, stream, isReady]);
 
   const buildSummary = useCallback((): InterviewSummary | null => {
-    return summaryRef.current.buildSummary();
-  }, []);
+    const summary = summaryRef.current.buildSummary();
+    lastSummaryRef.current = summary;
+    console.log('[useFaceAnalyzer] buildSummary()', {
+      returnedNull: summary == null,
+      status: statusRef.current,
+      framesProcessed: frameCountRef.current,
+      faceFrames: faceFrameCountRef.current,
+      summary,
+    });
+    publishDiagnostics(true);
+    return summary;
+  }, [publishDiagnostics]);
 
   const reset = useCallback(() => {
+    console.log('[useFaceAnalyzer] reset()', {
+      previousFramesProcessed: frameCountRef.current,
+      previousFaceFrames: faceFrameCountRef.current,
+      previousSummary: lastSummaryRef.current,
+    });
     summaryRef.current.reset();
-  }, []);
+    frameCountRef.current = 0;
+    faceFrameCountRef.current = 0;
+    lastSummaryRef.current = null;
+    statusRef.current = isReady ? 'ready' : 'warming';
+    publishDiagnostics(true);
+  }, [isReady, publishDiagnostics]);
 
-  return { buildSummary, reset, isReady };
+  return { buildSummary, reset, isReady, diagnostics };
 }
