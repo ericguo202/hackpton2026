@@ -545,9 +545,9 @@ function VoicePicker({
           onClick={() => setOpen((value) => !value)}
           disabled={disabled}
           aria-expanded={open}
-          className="text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          className="text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {open ? 'Hide interviewer voice' : 'Choose interviewer voice'}
+          {open ? 'Hide interviewer voice (accent)' : 'Choose interviewer voice (accent)'}
         </button>
         <span className="text-text-subtle">
           {selected
@@ -573,7 +573,7 @@ function VoicePicker({
               className={
                 selected === null
                   ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-                  : 'rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+                  : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
               }
             >
               Surprise me
@@ -590,7 +590,7 @@ function VoicePicker({
                   className={
                     active
                       ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-                      : 'rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+                      : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
                   }
                 >
                   <span>{voice.name}</span>
