@@ -64,20 +64,6 @@ function timeOfDay(): 'morning' | 'afternoon' | 'evening' {
   return 'evening';
 }
 
-function ScoreBar({ value }: { value: number }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="h-[3px] w-24 overflow-hidden rounded-full bg-border">
-        <div
-          className="h-full rounded-full bg-accent"
-          style={{ width: `${value * 10}%` }}
-        />
-      </div>
-      <span className="w-8 text-xs tabular-nums text-text-muted">{value}/10</span>
-    </div>
-  );
-}
-
 /**
  * Pure-CSS ring spinner. Inherits its color via `border-current`, so the
  * caller can tint it by setting `text-*` on a parent. Pure presentation —
@@ -113,6 +99,34 @@ function computeOverall(result: ReplayTurnResult): string {
   return values.length
     ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)
     : '-';
+}
+
+/**
+ * Returns one row per dimension with the per-turn scores averaged across
+ * every turn that produced a value. Missing scores (e.g. turn 1 bg-eval
+ * failure, or camera-less `delivery`) are skipped, not zero-weighted —
+ * otherwise a failed eval would drag the average down instead of being
+ * surfaced as unavailable.
+ */
+function computeAverageScores(turns: ReplayTurnResult[]):
+  Array<{ key: keyof Scores; label: string; value: number | null }> {
+  const totals: Partial<Record<keyof Scores, { sum: number; count: number }>> = {};
+  for (const turn of turns) {
+    for (const entry of getScoreEntries(turn.scores)) {
+      const agg = totals[entry.key] ?? { sum: 0, count: 0 };
+      agg.sum += entry.value;
+      agg.count += 1;
+      totals[entry.key] = agg;
+    }
+  }
+  return (Object.keys(SCORE_LABELS) as Array<keyof Scores>).map((key) => {
+    const agg = totals[key];
+    return {
+      key,
+      label: SCORE_LABELS[key],
+      value: agg ? agg.sum / agg.count : null,
+    };
+  });
 }
 
 function getAnalyzerStatusLabel(status: AnalyzerDiagnostics['status']) {
@@ -310,45 +324,32 @@ function ReplayLandmarkOverlay({ videoRef }: { videoRef: React.RefObject<HTMLVid
 function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNum: number }) {
   const [showOverlay, setShowOverlay] = useState(true);
   const [showLandmarks, setShowLandmarks] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
   const insights = buildReplayInsights(result);
   const scoreEntries = getScoreEntries(result.scores);
   const replayVideoRef = useRef<HTMLVideoElement | null>(null);
 
   return (
-    <div className="mt-10 max-w-[70rem] border-t border-border pt-10">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="mb-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-            Turn {turnNum}
-          </p>
-          <h3 className="mb-2 max-w-[40rem] text-xl">{result.question}</h3>
-          <p className="text-sm text-text-muted">
-            Overall {computeOverall(result)}/10
-            {result.scores?.delivery != null
-              ? `, delivery ${result.scores.delivery}/10`
-              : ', delivery unavailable'}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowOverlay((value) => !value)}
-          className="inline-flex items-center rounded-full border border-border px-4 py-2 text-sm text-text-muted transition-colors hover:border-border-strong hover:text-text"
-        >
-          {showOverlay ? 'Hide coach overlay' : 'Show coach overlay'}
-        </button>
-        {result.replayUrl && (
-          <button
-            type="button"
-            onClick={() => setShowLandmarks((value) => !value)}
-            className="inline-flex items-center rounded-full border border-border px-4 py-2 text-sm text-text-muted transition-colors hover:border-border-strong hover:text-text"
-          >
-            {showLandmarks ? 'Hide AI face landmarks' : 'Show AI face landmarks'}
-          </button>
-        )}
-      </div>
+    <div className="max-w-[72rem]">
+      <p className="mb-4 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+        Turn {turnNum}
+      </p>
+      <h3
+        className="mb-4 max-w-[46rem] font-display font-medium leading-[1.1] tracking-[-0.01em] text-text"
+        style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.25rem)' }}
+      >
+        {result.question}
+      </h3>
+      <p className="mb-10 text-sm text-text-muted">
+        Overall {computeOverall(result)}/10
+        {result.scores?.delivery != null
+          ? ` · Delivery ${result.scores.delivery}/10`
+          : ' · Delivery unavailable'}
+      </p>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.9fr)]">
-        <div>
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1.3fr)_minmax(20rem,0.9fr)]">
+        {/* Left column: replay media + score strip */}
+        <div className="space-y-10">
           {result.replayUrl ? (
             <div className="relative aspect-video overflow-hidden rounded-2xl bg-surface-sunken">
               <video
@@ -385,6 +386,25 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                   <ReplayLandmarkOverlay videoRef={replayVideoRef} />
                 </div>
               )}
+              {/* Toggles pinned to the video so they don't compete with the question heading. */}
+              <div className="absolute right-3 top-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOverlay((v) => !v)}
+                  aria-pressed={showOverlay}
+                  className="rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                >
+                  {showOverlay ? 'Hide notes' : 'Show notes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowLandmarks((v) => !v)}
+                  aria-pressed={showLandmarks}
+                  className="rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                >
+                  {showLandmarks ? 'Hide landmarks' : 'Show landmarks'}
+                </button>
+              </div>
             </div>
           ) : result.audioReplayUrl ? (
             <div className="rounded-2xl bg-surface-raised p-5">
@@ -397,59 +417,82 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
             </div>
           )}
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {scoreEntries.map((entry) => (
-              <div key={entry.key} className="rounded-xl bg-surface-raised p-4">
-                <div className="mb-2 text-sm text-text-muted">{entry.label}</div>
-                <ScoreBar value={entry.value} />
+          {scoreEntries.length > 0 && (
+            <div>
+              <p className="mb-5 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                Scores
+              </p>
+              <div className="grid grid-cols-3 gap-x-6 gap-y-7 sm:grid-cols-6">
+                {scoreEntries.map((entry) => (
+                  <div key={entry.key}>
+                    <div className="font-display text-[2.25rem] font-medium leading-none tabular-nums text-text">
+                      {entry.value}
+                    </div>
+                    <div className="mt-3 h-[2px] w-full overflow-hidden rounded-full bg-border">
+                      <div
+                        className="h-full bg-accent"
+                        style={{ width: `${entry.value * 10}%` }}
+                      />
+                    </div>
+                    <div className="mt-2 text-[11px] uppercase tracking-eyebrow text-text-muted">
+                      {entry.label}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
 
-        <div className="space-y-4">
-          <div className="rounded-2xl bg-surface-raised p-5">
-            <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-              Improve next
-            </p>
-            <div className="space-y-3">
-              {insights.map((insight) => (
-                <div key={insight.title} className="rounded-xl border border-border/70 bg-surface p-4">
-                  <p className="mb-1 text-sm font-medium text-text">{insight.title}</p>
-                  <p className="text-sm leading-6 text-text-muted">{insight.detail}</p>
-                </div>
-              ))}
+        {/* Right column: coach prose + insights + collapsible transcript */}
+        <div className="space-y-10">
+          {result.feedback && (
+            <div>
+              <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                Coach notes
+              </p>
+              <p className="text-[15px] leading-7 text-text">
+                {result.feedback}
+              </p>
             </div>
-          </div>
+          )}
 
-          <div className="rounded-2xl bg-surface-raised p-5">
-            <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-              Capture diagnostics
-            </p>
-            <div className="space-y-2 text-sm text-text-muted">
-              <p>Analyzer status: {getAnalyzerStatusLabel(result.analyzerDiagnostics.status)}</p>
-              <p>Frames processed: {result.analyzerDiagnostics.framesProcessed}</p>
-              <p>Face frames: {result.analyzerDiagnostics.faceFrames}</p>
-              {result.cvSummary && (
-                <>
-                  <p>Face visible: {result.cvSummary.face_visible_pct}%</p>
-                  <p>Eye contact: {result.cvSummary.eye_contact_score}/100</p>
-                  <p>Expression: {result.cvSummary.expression_score}/100</p>
-                  <p>Delivery hint: {result.cvSummary.coaching_tip}</p>
-                </>
-              )}
-              {result.analyzerDiagnostics.initError && (
-                <p className="text-red-600">Analyzer error: {result.analyzerDiagnostics.initError}</p>
+          {insights.length > 0 && (
+            <div>
+              <p className="mb-4 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                Improve next
+              </p>
+              <ul className="space-y-5">
+                {insights.map((insight) => (
+                  <li key={insight.title} className="border-l-2 border-accent/40 pl-4">
+                    <p className="mb-1 text-sm font-medium text-text">{insight.title}</p>
+                    <p className="text-sm leading-6 text-text-muted">{insight.detail}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {result.transcript && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowTranscript((v) => !v)}
+                aria-expanded={showTranscript}
+                className="group inline-flex items-center gap-2 rounded text-eyebrow uppercase tracking-eyebrow text-text-muted transition hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+              >
+                {showTranscript ? 'Hide transcript' : 'Show transcript'}
+                <span aria-hidden className={`transition-transform ${showTranscript ? 'rotate-180' : ''}`}>
+                  ↓
+                </span>
+              </button>
+              {showTranscript && (
+                <p className="mt-4 text-sm leading-7 text-text-muted">
+                  {result.transcript}
+                </p>
               )}
             </div>
-          </div>
-
-          <div className="rounded-2xl bg-surface-raised p-5">
-            <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-              Transcript
-            </p>
-            <p className="text-sm leading-7 text-text-muted">{result.transcript}</p>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -625,6 +668,14 @@ export default function Home({ onNavigateHistory }: Props) {
   const [submittingTurn, setSubmittingTurn] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [isDone, setIsDone] = useState(false);
+  // Stepped summary view. Step 0 is the session overview, steps 1..N map
+  // to each turn's ReplayCoachCard. `stepKey` force-remounts the section
+  // so the slide animation replays on every navigation, same pattern as
+  // `OnboardingForm`. `direction` picks slide-in-left (forward) vs
+  // slide-in-right (back).
+  const [resultsStep, setResultsStep] = useState(0);
+  const [resultsStepKey, setResultsStepKey] = useState(0);
+  const [resultsDirection, setResultsDirection] = useState<'forward' | 'back'>('forward');
   // Latched as soon as the user clicks "End answer" so the spinner shows
   // immediately instead of flashing the (now-removed) preview UI for the
   // tens-of-ms it takes MediaRecorder to flush its final chunk and
@@ -865,6 +916,15 @@ export default function Home({ onNavigateHistory }: Props) {
     analyzer.reset();
     setCompany('');
     setVoiceId(null);
+    setResultsStep(0);
+    setResultsDirection('forward');
+  }
+
+  function goToResultsStep(next: number) {
+    if (next === resultsStep) return;
+    setResultsDirection(next > resultsStep ? 'forward' : 'back');
+    setResultsStep(next);
+    setResultsStepKey((k) => k + 1);
   }
 
   // Refresh the auto-submit ref DURING render so by the time the
@@ -1130,57 +1190,153 @@ export default function Home({ onNavigateHistory }: Props) {
           </div>
         )}
 
-        {isDone && (
-          <div className="mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16">
-            <div className="max-w-[72rem]">
-              <p className="mb-6 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-                Session complete
-              </p>
-              <h2
-                className="mb-2 font-display font-medium leading-[1.05] tracking-[-0.02em] text-text"
-                style={{ fontSize: 'clamp(2rem, 4vw, 3.25rem)' }}
-              >
-                Here is how you did.
-              </h2>
-              <p className="mb-2 text-sm text-text-muted">
-                Overall:{' '}
-                <span className="font-medium text-text">
-                  {turnResults.length > 0
-                    ? (                                                                                                                                              
-                        turnResults.reduce((sum, r) => sum + turnAverage(r), 0) /                                                                                    
-                        turnResults.length                                                                                                                           
-                      ).toFixed(1)
-                    : '—'}
-                  /10
-                </span>{' '}
-                averaged across {turnResults.length} turn{turnResults.length === 1 ? '' : 's'}   
-              </p>
-              <p className="max-w-[54ch] text-sm leading-6 text-text-subtle">
-                Each replay keeps your actual recording, the model feedback, and the delivery analytics together so you can review what to tighten on the next run instead of guessing.
-              </p>
+        {isDone && (() => {
+          // One step for the overview, one per turn. With the locked
+          // 2-turn plan that's 3 steps, but the math is general.
+          const resultsTotalSteps = 1 + turnResults.length;
+          const stepIndex = Math.min(resultsStep, resultsTotalSteps - 1);
+          const isLastStep = stepIndex === resultsTotalSteps - 1;
+          const isOverviewStep = stepIndex === 0;
+          const activeTurn = isOverviewStep ? null : turnResults[stepIndex - 1];
+          const averageScores = computeAverageScores(turnResults);
+          const hasAnyAverage = averageScores.some((s) => s.value != null);
+          return (
+            <div className="mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16">
+              <div className="max-w-[72rem]">
+                <div className="mb-10 flex items-center gap-3" role="tablist" aria-label="Results sections">
+                  {Array.from({ length: resultsTotalSteps }).map((_, i) => {
+                    const active = i === stepIndex;
+                    const label = i === 0 ? 'Overview' : `Turn ${i}`;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        aria-label={label}
+                        onClick={() => goToResultsStep(i)}
+                        className={`h-2 rounded-full transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+                          active ? 'w-10 bg-accent' : 'w-2 bg-border hover:bg-border-strong'
+                        }`}
+                      />
+                    );
+                  })}
+                  <span className="ml-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                    {isOverviewStep ? 'Overview' : `Turn ${stepIndex} of ${turnResults.length}`}
+                  </span>
+                </div>
 
-              {turnResults.map((r, i) => (
-                <ReplayCoachCard key={`${i}-${r.question}`} result={r} turnNum={i + 1} />
-              ))}
+                <section
+                  key={resultsStepKey}
+                  className={resultsDirection === 'back' ? 'anim-slide-in-right' : 'anim-slide-in-left'}
+                >
+                  {isOverviewStep && (
+                    <>
+                      <p className="mb-6 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                        Session complete
+                      </p>
+                      <h2
+                        className="mb-2 font-display font-medium leading-[1.05] tracking-[-0.02em] text-text"
+                        style={{ fontSize: 'clamp(2rem, 4vw, 3.25rem)' }}
+                      >
+                        Here is how you did.
+                      </h2>
+                      <p className="mb-2 text-sm text-text-muted">
+                        Overall:{' '}
+                        <span className="font-medium text-text">
+                          {turnResults.length > 0
+                            ? (
+                                turnResults.reduce((sum, r) => sum + turnAverage(r), 0) /
+                                turnResults.length
+                              ).toFixed(1)
+                            : '—'}
+                          /10
+                        </span>{' '}
+                        averaged across {turnResults.length} turn{turnResults.length === 1 ? '' : 's'}
+                      </p>
+                      <p className="mb-12 max-w-[54ch] text-sm leading-6 text-text-subtle">
+                        Each replay keeps your actual recording, the model feedback, and the delivery analytics together so you can review what to tighten on the next run instead of guessing.
+                      </p>
 
-              <div className="mt-12 flex flex-wrap gap-3">
-                <FlowHoverButton
-                  type="button"
-                  onClick={handleNewSession}
-                >
-                  Start another session
-                </FlowHoverButton>
-                <FlowHoverButton
-                  variant="dark"
-                  type="button"
-                  onClick={onNavigateHistory}
-                >
-                  View history
-                </FlowHoverButton>
+                      {hasAnyAverage && (
+                        <div className="max-w-[46rem]">
+                          <p className="mb-5 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                            Scores, averaged
+                          </p>
+                          <div className="grid grid-cols-3 gap-x-6 gap-y-7 sm:grid-cols-6">
+                            {averageScores.map(({ key, label, value }) => (
+                              <div key={key}>
+                                <div className="font-display text-[2.25rem] font-medium leading-none tabular-nums text-text">
+                                  {value != null ? value.toFixed(1) : '—'}
+                                </div>
+                                <div className="mt-3 h-[2px] w-full overflow-hidden rounded-full bg-border">
+                                  <div
+                                    className="h-full bg-accent"
+                                    style={{ width: `${((value ?? 0) / 10) * 100}%` }}
+                                  />
+                                </div>
+                                <div className="mt-2 text-[11px] uppercase tracking-eyebrow text-text-muted">
+                                  {label}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {!isOverviewStep && activeTurn && (
+                    <ReplayCoachCard
+                      key={`${stepIndex}-${activeTurn.question}`}
+                      result={activeTurn}
+                      turnNum={stepIndex}
+                    />
+                  )}
+                </section>
+
+                <div className="mt-12 flex flex-wrap items-center gap-3">
+                  {stepIndex > 0 && (
+                    <FlowHoverButton
+                      variant="dark"
+                      type="button"
+                      onClick={() => goToResultsStep(stepIndex - 1)}
+                    >
+                      Back
+                    </FlowHoverButton>
+                  )}
+
+                  {!isLastStep && (
+                    <FlowHoverButton
+                      type="button"
+                      onClick={() => goToResultsStep(stepIndex + 1)}
+                    >
+                      Review turn {stepIndex + 1}
+                    </FlowHoverButton>
+                  )}
+
+                  {isLastStep && (
+                    <>
+                      <FlowHoverButton
+                        type="button"
+                        onClick={handleNewSession}
+                      >
+                        Start another session
+                      </FlowHoverButton>
+                      <FlowHoverButton
+                        variant="dark"
+                        type="button"
+                        onClick={onNavigateHistory}
+                      >
+                        View history
+                      </FlowHoverButton>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </main>
 
       <ScoreDimensions tagline="One opening question. One follow-up. Then the scores." />

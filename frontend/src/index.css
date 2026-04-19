@@ -160,6 +160,16 @@ body {
   margin: 0;
 }
 
+/* Hide the native scrollbar — the cream surface is quiet, and a default
+   grey scrollbar sticks out against it. Scrolling still works via wheel,
+   trackpad, keyboard, and touch; only the visual indicator is gone. */
+html {
+  scrollbar-width: none; /* Firefox */
+}
+html::-webkit-scrollbar {
+  display: none; /* Chromium, Safari */
+}
+
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
   color: var(--color-text);

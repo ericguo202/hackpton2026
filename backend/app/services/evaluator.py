@@ -70,11 +70,17 @@ class EvaluatorOutput(BaseModel):
     notes: str
 
     @field_validator(
-        "directness", "star", "specificity", "impact", "conciseness",
+        "directness", "star", "specificity", "impact", "conciseness", "delivery",
         mode="before",
     )
     @classmethod
-    def _clamp(cls, v: int) -> int:
+    def _clamp(cls, v: int | float | None) -> int | None:
+        # `mode="before"` lets us accept the float scores Gemma sometimes
+        # returns (e.g. `5.6`) instead of the integers the prompt asks
+        # for — Pydantic 2's strict int validation would otherwise raise
+        # on any fractional value and 500 the whole turn.
+        if v is None:
+            return None
         try:
             n = int(v)
         except (TypeError, ValueError):
