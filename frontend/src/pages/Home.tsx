@@ -50,6 +50,15 @@ function ScoreBar({ value }: { value: number }) {
   );
 }
 
+function turnAverage(result: TurnResult): number {                                                                                                                    
+  // Delivery is nullable (camera-declined path) — averaging `null` into                                                                                              
+  // the mix would yield NaN, so we drop it before the reduce.                                                                                                        
+  const vals = Object.values(result.scores).filter(                                                                                                                   
+    (v): v is number => typeof v === 'number',                                                                                                                        
+  );                                                                                                                                                                  
+  return vals.reduce((a, b) => a + b, 0) / vals.length;                                                                                                               
+}    
+
 function TurnResultCard({ result, turnNum }: { result: TurnResult; turnNum: number }) {
   // `delivery` is the 6th dimension from browser webcam analytics; the
   // row is conditionally rendered below so camera-declined turns still
@@ -61,12 +70,22 @@ function TurnResultCard({ result, turnNum }: { result: TurnResult; turnNum: numb
     ['impact', 'Impact'],
     ['conciseness', 'Conciseness'],
   ] as const;
+  const avg = turnAverage(result);
 
   return (
     <div className="mt-10 pt-10 border-t border-border max-w-[56ch]">
-      <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted mb-6">
-        Turn {turnNum}
-      </p>
+      <div className="flex items-baseline justify-between gap-4 mb-6">                                                                                                
+        <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">                                                                                       
+          Turn {turnNum}                                                                                                                                              
+        </p>                                                                                                                                                          
+        <p className="text-sm text-text-muted">                                                                                                                       
+          Average:{' '}                                                                                                                                               
+          <span className="text-text font-medium tabular-nums">                                                                                                       
+            {avg.toFixed(1)}                                                                                                                                          
+          </span>                                                                                                                                                     
+          <span className="text-text-subtle">/10</span>                                                                                                               
+        </p>                                                                                                                                                          
+      </div>    
       <div className="space-y-3 mb-6">
         {scoreKeys.map(([key, label]) => (
           <div key={key} className="flex items-center justify-between gap-4">
@@ -418,19 +437,14 @@ export default function Home() {
                 Overall:{' '}
                 <span className="text-text font-medium">
                   {turnResults.length > 0
-                    ? (() => {
-                        // Exclude `delivery` when the candidate declined
-                        // camera — otherwise averaging 5 scores + `null`
-                        // yields NaN.
-                        const vals = Object.values(
-                          turnResults[turnResults.length - 1].scores,
-                        ).filter((v): v is number => typeof v === 'number');
-                        return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
-                      })()
+                    ? (                                                                                                                                              
+                        turnResults.reduce((sum, r) => sum + turnAverage(r), 0) /                                                                                    
+                        turnResults.length                                                                                                                           
+                      ).toFixed(1)
                     : '—'}
                   /10
                 </span>{' '}
-                average on final turn
+                averaged across {turnResults.length} turn{turnResults.length === 1 ? '' : 's'}   
               </p>
 
               {turnResults.map((r, i) => (
