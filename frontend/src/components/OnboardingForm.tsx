@@ -78,7 +78,6 @@ export default function OnboardingForm({ onDone }: Props) {
   const [step, setStep] = useState(0);
   const [stepKey, setStepKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const validators: Array<() => boolean> = [
@@ -144,7 +143,6 @@ export default function OnboardingForm({ onDone }: Props) {
         method: 'POST',
         body,
       });
-      setDone(true);
       onDone();
     } catch (err) {
       if (err instanceof ApiError) {
