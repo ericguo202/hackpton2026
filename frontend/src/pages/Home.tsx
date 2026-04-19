@@ -395,7 +395,7 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                   type="button"
                   onClick={() => setShowOverlay((v) => !v)}
                   aria-pressed={showOverlay}
-                  className="rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  className="cursor-pointer rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 >
                   {showOverlay ? 'Hide notes' : 'Show notes'}
                 </button>
@@ -403,7 +403,7 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                   type="button"
                   onClick={() => setShowLandmarks((v) => !v)}
                   aria-pressed={showLandmarks}
-                  className="rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  className="cursor-pointer rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 >
                   {showLandmarks ? 'Hide landmarks' : 'Show landmarks'}
                 </button>

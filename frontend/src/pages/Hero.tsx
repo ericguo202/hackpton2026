@@ -28,7 +28,7 @@ export default function Hero({ onSignInClick }: HeroProps) {
           <button
             type="button"
             onClick={onSignInClick}
-            className="relative text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs before:absolute before:-inset-[14px] before:content-['']"
+            className="relative cursor-pointer text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs before:absolute before:-inset-[14px] before:content-['']"
           >
             Sign in
           </button>
@@ -92,7 +92,7 @@ export default function Hero({ onSignInClick }: HeroProps) {
               className="anim-reveal font-sans text-lg md:text-xl text-text-muted leading-[1.55] max-w-[56ch] mb-4 md:mb-6"
               style={{ animationDelay: '160ms' }}
             >
-              Speak your answer aloud. Get five scores and a short list of
+              Speak your answer aloud. Get six scores and a short list of
               fixes. Two turns per session — a tight rep, not a marathon.
             </p>
 
@@ -103,7 +103,7 @@ export default function Hero({ onSignInClick }: HeroProps) {
               <GetStartedButton onClick={onSignInClick} />
 
               <p className="text-[13px] text-text-subtle">
-                No streaks. No confetti. No mascots.
+                λόγος (Logos)— Greek for word, speech, reason.
               </p>
             </div>
           </div>

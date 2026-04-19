@@ -55,7 +55,7 @@ export function TopBarNavLink({ active, onClick, children }: NavLinkProps) {
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={
-        'transition-colors focus-visible:outline-none focus-visible:ring-2 ' +
+        'cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 ' +
         'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
         'focus-visible:ring-offset-surface rounded-sm ' +
         (active
