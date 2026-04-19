@@ -77,6 +77,7 @@ export default function OnboardingForm({ onDone }: Props) {
 
   const [step, setStep] = useState(0);
   const [stepKey, setStepKey] = useState(0);
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,12 +94,14 @@ export default function OnboardingForm({ onDone }: Props) {
 
   function advance() {
     if (!canAdvance) return;
+    setDirection('forward');
     setStep((s) => s + 1);
     setStepKey((k) => k + 1);
     setError(null);
   }
 
   function retreat() {
+    setDirection('back');
     setStep((s) => s - 1);
     setStepKey((k) => k + 1);
     setError(null);
@@ -164,7 +167,10 @@ export default function OnboardingForm({ onDone }: Props) {
         <Progress value={progressPct} />
       </div>
       <div className="w-full max-w-lg space-y-10">
-        <section key={stepKey} className="anim-reveal space-y-6">
+        <section
+          key={stepKey}
+          className={`${direction === 'back' ? 'anim-slide-in-right' : 'anim-slide-in-left'} space-y-6`}
+        >
           <h2>{HEADINGS[step]}</h2>
           {DESCRIPTIONS[step] && (
             <p className="text-text-subtle text-sm">{DESCRIPTIONS[step]}</p>
