@@ -33,20 +33,29 @@ DEFAULT_MODEL_ID = "eleven_flash_v2_5"
 DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
 
 
-async def synthesize_speech(text: str) -> str:
-    """POST `text` to ElevenLabs; return a `data:audio/mpeg;base64,...` URL."""
+async def synthesize_speech(text: str, voice_id: str | None = None) -> str:
+    """POST `text` to ElevenLabs; return a `data:audio/mpeg;base64,...` URL.
+
+    `voice_id` is the per-session voice from `voice_pool.voice_for_session`.
+    When omitted (e.g. one-off scripts or tests), the call falls back to
+    the legacy `ELEVENLABS_VOICE_ID` env var so existing tooling keeps
+    working without code changes.
+    """
     if not settings.ELEVENLABS_API_KEY:
         raise RuntimeError(
             "ELEVENLABS_API_KEY is not set. Add it to backend/.env before "
             "calling synthesize_speech()."
         )
-    if not settings.ELEVENLABS_VOICE_ID:
+
+    effective_voice_id = voice_id or settings.ELEVENLABS_VOICE_ID
+    if not effective_voice_id:
         raise RuntimeError(
-            "ELEVENLABS_VOICE_ID is not set. Add it to backend/.env — pick "
-            "one from https://elevenlabs.io/app/voice-library."
+            "No voice_id supplied and ELEVENLABS_VOICE_ID is not set. "
+            "Either pass voice_id (preferred — see voice_pool.voice_for_session) "
+            "or set the env var as a fallback."
         )
 
-    url = ELEVENLABS_URL.format(voice_id=settings.ELEVENLABS_VOICE_ID)
+    url = ELEVENLABS_URL.format(voice_id=effective_voice_id)
     async with httpx.AsyncClient(timeout=ELEVENLABS_TIMEOUT_SECONDS) as client:
         resp = await client.post(
             url,

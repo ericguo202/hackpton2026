@@ -20,6 +20,12 @@ from pydantic import BaseModel, Field
 class SessionCreateIn(BaseModel):
     company: str = Field(min_length=1, max_length=200)
     job_title: str = Field(min_length=1, max_length=200)
+    # Optional ElevenLabs voice ID picked from the start-form picker. The
+    # endpoint validates this against `voice_pool.list_voices()` and
+    # silently falls back to the deterministic-random voice when the
+    # caller omits it (or sends an unknown ID), so older clients keep
+    # working unchanged.
+    voice_id: str | None = Field(default=None, max_length=64)
 
 
 class CompanyBriefOut(BaseModel):
@@ -50,14 +56,35 @@ class ScoresOut(BaseModel):
 
 
 class TurnSubmitOut(BaseModel):
+    """Response shape for `POST /sessions/{id}/turns`.
+
+    On a non-final turn, Gemma 4 evaluation runs in the background so the
+    candidate can move to the next question without waiting ~30-40s for
+    scoring. In that case `scores` and `feedback` come back as `null` and
+    `evaluation_pending` is `true`; the frontend skips rendering them and
+    re-fetches the full session via `GET /sessions/{id}` at finalization
+    once the background task has finished writing scores to the DB.
+
+    On the final turn, evaluation is awaited inline (we need the scores
+    for aggregation), so `scores`, `feedback` and `evaluation_pending=false`
+    are populated as before.
+    """
+
     transcript: str
-    scores: ScoresOut
-    feedback: str
+    # Scores/feedback are only present once the evaluator has actually run.
+    # Nullable so the turn-1 response can return immediately after STT +
+    # follow-up generation without waiting on Gemma 4.
+    scores: ScoresOut | None = None
+    feedback: str | None = None
     filler_word_count: int
     filler_word_breakdown: dict[str, int]
     next_question: str | None
     next_question_audio_url: str | None
     is_final: bool
+    # True when the evaluator is still running in the background. The
+    # frontend uses this to (a) avoid showing 0/10 placeholder bars on
+    # turn 1 and (b) decide whether to refetch the session at finalize.
+    evaluation_pending: bool = False
 
 
 # ── History routes (GET /sessions, GET /sessions/{id}, GET /me/stats) ────────

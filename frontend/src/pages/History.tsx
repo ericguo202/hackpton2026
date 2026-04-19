@@ -37,13 +37,17 @@ type Props = {
   onOpenSession: (id: string) => void;
 };
 
+// Chart series colors are sourced from the dedicated --color-chart-*
+// palette in index.css, NOT the primary/secondary/etc. ramps. Those
+// ramps are intentionally monochromatic warm-earth and render as
+// indistinguishable near-black on the chart.
 const DIMENSIONS = [
-  { key: 'directness',  label: 'Directness',  color: 'var(--color-primary-700)' },
-  { key: 'star',        label: 'STAR',        color: 'var(--color-secondary-500)' },
-  { key: 'specificity', label: 'Specificity', color: 'var(--color-tertiary-500)' },
-  { key: 'impact',      label: 'Impact',      color: 'var(--color-quaternary-500)' },
-  { key: 'conciseness', label: 'Conciseness', color: 'var(--color-quinary-500)' },
-  { key: 'delivery',    label: 'Delivery',    color: 'var(--color-senary-500)' },
+  { key: 'directness',  label: 'Directness',  color: 'var(--color-chart-1)' },
+  { key: 'star',        label: 'STAR',        color: 'var(--color-chart-2)' },
+  { key: 'specificity', label: 'Specificity', color: 'var(--color-chart-3)' },
+  { key: 'impact',      label: 'Impact',      color: 'var(--color-chart-4)' },
+  { key: 'conciseness', label: 'Conciseness', color: 'var(--color-chart-5)' },
+  { key: 'delivery',    label: 'Delivery',    color: 'var(--color-chart-6)' },
 ] as const;
 
 type DimensionKey = (typeof DIMENSIONS)[number]['key'];

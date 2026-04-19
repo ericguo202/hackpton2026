@@ -20,6 +20,8 @@ import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
 import { getReplayFaceLandmarker } from '../lib/faceLandmarker';
 import type { InterviewSummary } from '../lib/faceHeuristics';
+import { VOICE_PROFILES, type VoiceProfile } from '../lib/voices';
+import type { SessionDetail } from '../types/history';
 import type { Scores, TurnResult } from '../types/session';
 
 type SessionStart = {
@@ -74,7 +76,27 @@ function ScoreBar({ value }: { value: number }) {
   );
 }
 
-function getScoreEntries(scores: Scores) {
+/**
+ * Pure-CSS ring spinner. Inherits its color via `border-current`, so the
+ * caller can tint it by setting `text-*` on a parent. Pure presentation —
+ * no layout side effects (the parent controls flow / sizing).
+ */
+function Spinner({ size = 18 }: { size?: number }) {
+  return (
+    <span
+      role="status"
+      aria-label="Loading"
+      className="inline-block animate-spin rounded-full border-2 border-current border-t-transparent"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+function getScoreEntries(scores: Scores | null) {
+  // `scores` is null while the background evaluator is still running on
+  // turn 1 — the caller should typically guard against this and skip
+  // rendering, but returning [] keeps every consumer safe.
+  if (scores == null) return [];
   return (Object.entries(scores) as Array<[keyof Scores, number | null]>)
     .filter(([, value]) => value != null)
     .map(([key, value]) => ({
@@ -127,6 +149,18 @@ function getAnalyzerStatusClass(status: AnalyzerDiagnostics['status']) {
 
 function buildReplayInsights(result: ReplayTurnResult): Insight[] {
   const insights: Insight[] = [];
+
+  // Defensive: if a final-page render somehow fires before scores have
+  // landed (bg eval crashed AND inline-eval fallback also failed),
+  // surface that explicitly rather than rendering a blank card.
+  if (result.scores == null) {
+    insights.push({
+      title: 'Scores unavailable',
+      detail: 'The evaluator did not complete in time for this turn. Re-run the session to score this answer.',
+    });
+    return insights;
+  }
+
   const entries = getScoreEntries(result.scores);
   const weakest = [...entries].sort((a, b) => a.value - b.value)[0];
   const strongest = [...entries].sort((a, b) => b.value - a.value)[0];
@@ -180,15 +214,18 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
     });
   }
 
-  insights.push({
-    title: 'Model note',
-    detail: result.feedback,
-  });
+  if (result.feedback) {
+    insights.push({
+      title: 'Model note',
+      detail: result.feedback,
+    });
+  }
 
   return insights.slice(0, 4);
 }
 
 function turnAverage(result: TurnResult): number {
+  if (result.scores == null) return 0;
   const vals = Object.values(result.scores).filter(
     (v): v is number => typeof v === 'number',
   );
@@ -285,7 +322,9 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
           <h3 className="mb-2 max-w-[40rem] text-xl">{result.question}</h3>
           <p className="text-sm text-text-muted">
             Overall {computeOverall(result)}/10
-            {result.scores.delivery != null ? `, delivery ${result.scores.delivery}/10` : ', delivery unavailable'}
+            {result.scores?.delivery != null
+              ? `, delivery ${result.scores.delivery}/10`
+              : ', delivery unavailable'}
           </p>
         </div>
         <button
@@ -324,7 +363,7 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                       Model overlay
                     </div>
                     <p className="max-w-[48ch] text-sm leading-6 text-white/92">
-                      {result.feedback}
+                      {result.feedback ?? 'Coaching note unavailable for this turn.'}
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
                       {insights.slice(0, 3).map((insight) => (
@@ -415,11 +454,141 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
   );
 }
 
+/**
+ * Disclosure-style voice picker for the start form.
+ *
+ * Collapsed by default — the form's primary affordance is "type the
+ * company and hit Begin." Most candidates will skip the picker and
+ * accept the auto-randomized voice, which the backend resolves
+ * server-side from the session UUID. Clicking the disclosure expands
+ * a wrap of selectable pills (name + accent label, no audio preview).
+ *
+ * Selection state lives in the parent so the chosen `voice_id` ships
+ * in the `POST /sessions` body. `selectedId === null` means "let the
+ * backend pick" — the pill row visually highlights nothing in that
+ * case and the helper line reads "Surprise me."
+ */
+function VoicePicker({
+  selectedId,
+  onSelect,
+  disabled,
+}: {
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const selected: VoiceProfile | null =
+    VOICE_PROFILES.find((v) => v.id === selectedId) ?? null;
+
+  return (
+    <div className="anim-reveal mt-8 max-w-[42rem]" style={{ animationDelay: '200ms' }}>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px]">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          disabled={disabled}
+          aria-expanded={open}
+          className="text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {open ? 'Hide interviewer voice' : 'Choose interviewer voice'}
+        </button>
+        <span className="text-text-subtle">
+          {selected
+            ? `${selected.name} (${selected.accent})`
+            : 'Surprise me'}
+        </span>
+      </div>
+
+      {open && (
+        <div className="mt-4">
+          <div className="flex flex-wrap gap-2">
+            {/*
+              Explicit "Surprise me" pill so the candidate can BACK OUT
+              of a pick without reloading the page. Maps to selectedId
+              = null which the backend treats as "use the deterministic
+              fallback derived from the session UUID."
+            */}
+            <button
+              type="button"
+              onClick={() => onSelect(null)}
+              disabled={disabled}
+              aria-pressed={selected === null}
+              className={
+                selected === null
+                  ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+                  : 'rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+              }
+            >
+              Surprise me
+            </button>
+            {VOICE_PROFILES.map((voice) => {
+              const active = voice.id === selectedId;
+              return (
+                <button
+                  key={voice.id}
+                  type="button"
+                  onClick={() => onSelect(voice.id)}
+                  disabled={disabled}
+                  aria-pressed={active}
+                  className={
+                    active
+                      ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+                      : 'rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+                  }
+                >
+                  <span>{voice.name}</span>
+                  <span className={active ? 'ml-1.5 opacity-75' : 'ml-1.5 text-text-subtle'}>
+                    {voice.accent}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function revokeReplayUrls(turns: ReplayTurnResult[]) {
   for (const turn of turns) {
     if (turn.replayUrl) URL.revokeObjectURL(turn.replayUrl);
     if (turn.audioReplayUrl) URL.revokeObjectURL(turn.audioReplayUrl);
   }
+}
+
+/**
+ * Overlay server-side scores/feedback onto local placeholder turns.
+ *
+ * Turn 1's `POST /turns` response returns null scores because the
+ * evaluator runs in the background. After turn 2 finalizes, we refetch
+ * the full session and graft the now-evaluated scores onto each
+ * placeholder by index — local-only fields (replay blobs, analyzer
+ * diagnostics, recorded `cvSummary`) survive untouched because the
+ * server doesn't have them.
+ */
+function mergeServerScores(
+  local: ReplayTurnResult[],
+  detail: SessionDetail,
+): ReplayTurnResult[] {
+  return local.map((turn, idx) => {
+    const server = detail.turns[idx];
+    // The server is the source of truth for ordering (it returns turns
+    // sorted by turn_number), so an index mismatch means something
+    // weird happened — better to keep the local placeholder than to
+    // wipe its replay blobs with a wrong-turn graft.
+    if (!server) return turn;
+    return {
+      ...turn,
+      scores: server.scores,
+      feedback: server.feedback,
+      filler_word_count: server.filler_word_count,
+      filler_word_breakdown: server.filler_word_breakdown,
+      evaluation_pending: false,
+    };
+  });
 }
 
 type Props = {
@@ -439,6 +608,11 @@ export default function Home({ onNavigateHistory }: Props) {
   const turnResultsRef = useRef<ReplayTurnResult[]>([]);
 
   const [company, setCompany] = useState('');
+  // null = "Surprise me" (let the backend pick from the session UUID).
+  // Otherwise, an explicit voice ID from `VOICE_PROFILES`. Reset to
+  // null on `handleNewSession` so each session starts fresh — matches
+  // the per-session scope the user picked when designing this feature.
+  const [voiceId, setVoiceId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
 
@@ -448,6 +622,12 @@ export default function Home({ onNavigateHistory }: Props) {
   const [submittingTurn, setSubmittingTurn] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [isDone, setIsDone] = useState(false);
+  // Latched as soon as the user clicks "End answer" so the spinner shows
+  // immediately instead of flashing the (now-removed) preview UI for the
+  // tens-of-ms it takes MediaRecorder to flush its final chunk and
+  // populate `recorder.audioBlob`. The auto-submit effect below clears
+  // it implicitly by transitioning into `submittingTurn === true`.
+  const [endingTurn, setEndingTurn] = useState(false);
 
   const firstName = user?.firstName ?? null;
 
@@ -460,6 +640,32 @@ export default function Home({ onNavigateHistory }: Props) {
       revokeReplayUrls(turnResultsRef.current);
     };
   }, []);
+
+  // Auto-submit on Stop: as soon as MediaRecorder finishes flushing its
+  // final chunk and populates `recorder.audioBlob`, fire the turn
+  // submission. We can't chain this synchronously off the Stop click
+  // because `audioBlob` lands a beat later (set inside the recorder's
+  // `onstop` callback), and we don't want a preview window between them
+  // — that's the whole point of removing the Re-record path.
+  //
+  // `submitTurnRef` holds the latest `handleSubmitTurn` closure. It is
+  // assigned DURING render (just below) rather than in a `useEffect`
+  // so the ref is current by the time this effect fires post-render —
+  // an effect-based update would lag by one frame and cause the auto-
+  // submit to call a stale closure where `recorder.audioBlob` was
+  // still null, bailing out at the early-return guard inside
+  // `handleSubmitTurn` and never firing the network call.
+  const submitTurnRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    if (
+      endingTurn
+      && recorder.state === 'stopped'
+      && recorder.audioBlob != null
+      && !submittingTurn
+    ) {
+      submitTurnRef.current();
+    }
+  }, [endingTurn, recorder.state, recorder.audioBlob, submittingTurn]);
 
   async function handleStart(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -482,6 +688,10 @@ export default function Home({ onNavigateHistory }: Props) {
         body: JSON.stringify({
           company: trimmed,
           job_title: me?.target_role ?? 'Software Engineer',
+          // Backend treats null/missing as "use the deterministic
+          // fallback from session UUID," so we only send a string
+          // when the candidate explicitly picked a voice.
+          ...(voiceId ? { voice_id: voiceId } : {}),
         }),
       });
       setSessionId(data.session_id);
@@ -500,6 +710,9 @@ export default function Home({ onNavigateHistory }: Props) {
   async function handleSubmitTurn() {
     if (!recorder.audioBlob || !sessionId || !currentQ) return;
     setSubmittingTurn(true);
+    // Clear the "user clicked Stop" latch — once the spinner is up the
+    // auto-submit effect must not re-trigger if React batches state.
+    setEndingTurn(false);
     setTurnError(null);
     try {
       const form = new FormData();
@@ -552,7 +765,11 @@ export default function Home({ onNavigateHistory }: Props) {
 
       console.log('[Home] API result', result);
       console.log('[Home] delivery returned', {
-        delivery: result.scores.delivery,
+        // `result.scores` is null on non-final turns while the
+        // evaluator runs in the background; we surface that explicitly
+        // here instead of crashing on a property access.
+        delivery: result.scores?.delivery ?? null,
+        evaluationPending: result.evaluation_pending,
         hasCvSummary: cvSummary != null,
       });
 
@@ -583,6 +800,26 @@ export default function Home({ onNavigateHistory }: Props) {
       setTurnResults((prev) => [...prev, enriched]);
 
       if (result.is_final) {
+        // Turn 1's response intentionally returned null scores so the
+        // candidate could move on while Gemma 4 ran in the background.
+        // The backend awaited that bg task before responding to turn 2,
+        // so by now both turns are scored in the DB. Pull the full
+        // session and overlay the real scores onto our placeholders
+        // before flipping to the done view — otherwise turn 1 would
+        // render with the "Scores unavailable" fallback.
+        try {
+          const detail = await apiFetch<SessionDetail>(
+            `/api/v1/sessions/${sessionId}`,
+          );
+          setTurnResults((prev) => mergeServerScores(prev, detail));
+        } catch (err) {
+          console.warn(
+            '[Home] post-finalize session detail refetch failed; '
+            + 'turn-1 placeholder will render the "Scores unavailable" '
+            + 'fallback.',
+            err,
+          );
+        }
         setIsDone(true);
         setCurrentQ(null);
       } else {
@@ -620,10 +857,24 @@ export default function Home({ onNavigateHistory }: Props) {
     setIsDone(false);
     setTurnError(null);
     setSetupError(null);
+    setEndingTurn(false);
     recorder.reset();
     analyzer.reset();
     setCompany('');
+    setVoiceId(null);
   }
+
+  // Refresh the auto-submit ref DURING render so by the time the
+  // post-render auto-submit effect fires, the ref points at this
+  // render's closure (which sees the latest `recorder.audioBlob`,
+  // `sessionId`, `currentQ`, etc.). Updating the ref in a `useEffect`
+  // would lag by one frame and the effect would call a stale closure
+  // that captured `audioBlob === null`, hitting the early-return
+  // guard inside `handleSubmitTurn` and silently dropping the submit.
+  // Refs don't trigger re-renders, so write-during-render is safe.
+  submitTurnRef.current = () => {
+    void handleSubmitTurn();
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
@@ -678,9 +929,15 @@ export default function Home({ onNavigateHistory }: Props) {
                 />
               </label>
 
+              <VoicePicker
+                selectedId={voiceId}
+                onSelect={setVoiceId}
+                disabled={submitting}
+              />
+
               <div
                 className="anim-reveal mt-10 flex flex-wrap items-baseline gap-x-8 gap-y-4"
-                style={{ animationDelay: '240ms' }}
+                style={{ animationDelay: '280ms' }}
               >
                 <button
                   type="submit"
@@ -764,8 +1021,37 @@ export default function Home({ onNavigateHistory }: Props) {
                   Your answer
                 </p>
 
-                {submittingTurn ? (
-                  <p className="text-sm text-text-muted">Analyzing your response - usually takes 5-10 seconds.</p>
+                {/*
+                  Three visual states for the answer panel:
+                    1. recorder idle, not submitting    → "Recording will start..." hint
+                    2. recorder recording               → red dot + "End answer" button
+                    3. recorder stopped OR submitting   → spinner (auto-submit is in flight)
+                  The preview / Re-record / Submit-answer block was removed:
+                  pressing "End answer" now flips `endingTurn` and calls
+                  `recorder.stop()`; the auto-submit effect fires once
+                  the audio blob is available, which kicks `submittingTurn`
+                  on. Until that happens (a tens-of-ms gap) the spinner
+                  is shown via the `endingTurn` branch so the UI never
+                  flashes a stale state.
+                */}
+                {(submittingTurn || endingTurn) ? (
+                  // Turn 1: STT + Flash + TTS only (~5-10s); Gemma 4 runs
+                  // in the background, so the candidate moves on quickly.
+                  // Turn 2: Gemma 4 is on the critical path (we await it
+                  // so the session aggregate can be computed), which is
+                  // why the copy and the wait estimate change.
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="flex items-center gap-3 py-4 text-text-muted"
+                  >
+                    <Spinner size={20} />
+                    <p className="text-sm">
+                      {currentQ.num >= 2
+                        ? 'Scoring your interview — this can take up to 40 seconds.'
+                        : 'Analyzing your response — usually takes 5–10 seconds.'}
+                    </p>
+                  </div>
                 ) : (
                   <>
                     {recorder.state === 'idle' && (
@@ -781,43 +1067,19 @@ export default function Home({ onNavigateHistory }: Props) {
                           Recording
                         </span>
                         <button
-                          onClick={recorder.stop}
+                          onClick={() => {
+                            // Latch first, stop second: the spinner has
+                            // to be on screen before MediaRecorder
+                            // flushes its blob, otherwise the state
+                            // briefly drops back to "Recording will
+                            // start..." copy on the next render.
+                            setEndingTurn(true);
+                            recorder.stop();
+                          }}
                           className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-[14px] text-text transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
                         >
-                          Stop recording
+                          End answer
                         </button>
-                      </div>
-                    )}
-
-                    {recorder.state === 'stopped' && recorder.audioUrl && (
-                      <div className="space-y-4">
-                        {recorder.replayUrl ? (
-                          <div className="aspect-video overflow-hidden rounded-2xl bg-surface-sunken">
-                            <video src={recorder.replayUrl} controls className="h-full w-full object-cover" />
-                          </div>
-                        ) : (
-                          <audio src={recorder.audioUrl} controls className="w-full" />
-                        )}
-                        <div className="flex flex-wrap gap-3">
-                          <button
-                            onClick={handleSubmitTurn}
-                            className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
-                          >
-                            Submit answer
-                            <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">{'->'}</span>
-                          </button>
-                          <button
-                            onClick={recorder.reset}
-                            className="inline-flex items-center rounded-full border border-border px-5 py-2.5 text-[14px] text-text-muted transition-colors hover:border-border-strong hover:text-text"
-                          >
-                            Re-record
-                          </button>
-                        </div>
-                        <p className="text-xs text-text-subtle">
-                          {analyzer.diagnostics.framesProcessed > 0
-                            ? `Delivery capture armed: ${analyzer.diagnostics.framesProcessed} analyzer frames processed.`
-                            : 'No analyzer frames were processed for this take, so delivery may come back unavailable.'}
-                        </p>
                       </div>
                     )}
                   </>
