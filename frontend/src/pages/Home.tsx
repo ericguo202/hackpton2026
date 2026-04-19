@@ -1192,11 +1192,15 @@ export default function Home({ onNavigateHistory }: Props) {
                     {recorder.state === 'stopped' && recorder.audioUrl && (
                       <div className="anim-crossfade space-y-4">
                         {recorder.replayUrl ? (
-                          <div className="aspect-video overflow-hidden rounded-2xl bg-surface-sunken">
+                          // Thumbnail-sized preview so the Submit / Re-record
+                          // buttons stay above the fold. Full-bleed `aspect-video`
+                          // at the parent's 70rem max-width pushes them below
+                          // the viewport on a 1080p monitor.
+                          <div className="aspect-video w-full max-w-md overflow-hidden rounded-2xl bg-surface-sunken">
                             <video src={recorder.replayUrl} controls className="h-full w-full object-cover" />
                           </div>
                         ) : (
-                          <audio src={recorder.audioUrl} controls className="w-full" />
+                          <audio src={recorder.audioUrl} controls className="w-full max-w-md" />
                         )}
                         <div className="flex flex-wrap gap-3">
                           <FlowHoverButton
