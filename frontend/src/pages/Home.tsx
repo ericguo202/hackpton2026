@@ -12,7 +12,7 @@ import { UserButton, useUser } from '@clerk/react';
 import { CameraPreview } from '../components/CameraPreview';
 import QuestionPlayer from '../components/QuestionPlayer';
 import ScoreDimensions from '../components/ScoreDimensions';
-import TopBar from '../components/TopBar';
+import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { useApi } from '../hooks/useApi';
 import { useFaceAnalyzer } from '../hooks/useFaceAnalyzer';
 import { useMe } from '../hooks/useMe';
@@ -120,7 +120,12 @@ function TurnResultCard({ result, turnNum }: { result: TurnResult; turnNum: numb
   );
 }
 
-export default function Home() {
+type Props = {
+  /** Switch to the History view via the TopBar nav link. */
+  onNavigateHistory: () => void;
+};
+
+export default function Home({ onNavigateHistory }: Props) {
   const { user } = useUser();
   const { me } = useMe();
   const { apiFetch } = useApi();
@@ -241,7 +246,19 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
-      <TopBar rightSlot={<UserButton />} />
+      <TopBar
+        nav={
+          <>
+            <TopBarNavLink active onClick={() => undefined}>
+              Practice
+            </TopBarNavLink>
+            <TopBarNavLink active={false} onClick={onNavigateHistory}>
+              History
+            </TopBarNavLink>
+          </>
+        }
+        rightSlot={<UserButton />}
+      />
 
       <main className="flex-1">
 
@@ -451,13 +468,22 @@ export default function Home() {
                 <TurnResultCard key={i} result={r} turnNum={i + 1} />
               ))}
 
-              <button
-                onClick={handleNewSession}
-                className="mt-12 group inline-flex items-baseline gap-2 bg-accent text-accent-fg rounded-full px-7 py-3.5 text-[15px] font-medium hover:bg-accent-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-              >
-                Start another session
-                <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
-              </button>
+              <div className="mt-12 flex flex-wrap gap-3">
+                <button
+                  onClick={handleNewSession}
+                  className="group inline-flex items-baseline gap-2 bg-accent text-accent-fg rounded-full px-7 py-3.5 text-[15px] font-medium hover:bg-accent-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                >
+                  Start another session
+                  <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
+                </button>
+                <button
+                  onClick={onNavigateHistory}
+                  className="group inline-flex items-baseline gap-2 border border-border text-text rounded-full px-7 py-3.5 text-[15px] hover:border-border-strong transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                >
+                  View history
+                  <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
