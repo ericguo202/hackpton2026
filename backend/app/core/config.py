@@ -8,6 +8,7 @@ to boot if they're missing, which is what we want for secrets/URLs we can't
 sensibly guess a default for.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -16,14 +17,41 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Hackathon API"
 
     # Origins allowed to call the API with credentials (cookies / Authorization).
-    # 5173 = Vite dev server default. Add your deployed frontend origin before
-    # shipping; "*" will silently break because of credentials mode.
+    # 5173 = Vite dev server default, 4173 = `vite preview`. The production
+    # Vercel alias is included explicitly; per-deployment preview URLs (with
+    # random hash suffixes) are matched by ALLOWED_ORIGIN_REGEX below.
+    # "*" cannot be used here because allow_credentials=True forbids it.
+    #
+    # Override at deploy time via env var, comma-separated:
+    #   ALLOWED_ORIGINS=https://foo.com,https://bar.com
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
+        "http://localhost:4173",
         "http://localhost:5173",
         "http://localhost:8080",
         "https://hackpton2026.vercel.app",
     ]
+
+    # Regex matched against the request Origin header. Vercel mints a unique
+    # hostname for every deployment / branch / preview, so a static list can't
+    # keep up. This pattern covers:
+    #   hackpton2026.vercel.app                              (production alias)
+    #   hackpton2026-<hash>-<team>.vercel.app                (deployment URLs)
+    #   hackpton2026-git-<branch>-<team>.vercel.app          (branch URLs)
+    # Override via env var if you rename the Vercel project.
+    ALLOWED_ORIGIN_REGEX: str | None = (
+        r"^https://hackpton2026(-[a-z0-9-]+)?\.vercel\.app$"
+    )
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def _split_allowed_origins(cls, v):
+        # pydantic-settings parses List[str] from env vars as JSON by default,
+        # which is awkward in deploy UIs. Accept a plain comma-separated string
+        # too: ALLOWED_ORIGINS=https://a.com,https://b.com
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
 
     # Postgres connection parts. We keep them split (rather than a single URL)
     # so docker-compose.yml and local dev can share the same defaults.
