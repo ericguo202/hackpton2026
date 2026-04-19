@@ -18,6 +18,7 @@ import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnaly
 import { useMe } from '../hooks/useMe';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
+import { getReplayFaceLandmarker } from '../lib/faceLandmarker';
 import type { InterviewSummary } from '../lib/faceHeuristics';
 import type { Scores, TurnResult } from '../types/session';
 
@@ -187,10 +188,85 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
   return insights.slice(0, 4);
 }
 
+function ReplayLandmarkOverlay({ videoRef }: { videoRef: React.RefObject<HTMLVideoElement | null> }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let rafId: number | null = null;
+    let lastTickMs = 0;
+    const DRAW_MIN_MS = 1000 / 10;
+
+    const draw = async (tMs: number) => {
+      if (cancelled) return;
+      rafId = requestAnimationFrame(draw);
+      const deltaMs = lastTickMs === 0 ? DRAW_MIN_MS : tMs - lastTickMs;
+      if (deltaMs < DRAW_MIN_MS) return;
+      lastTickMs = tMs;
+
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas || video.readyState < 2) return;
+
+      const width = video.videoWidth || 0;
+      const height = video.videoHeight || 0;
+      if (!width || !height) return;
+
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      try {
+        const landmarker = await getReplayFaceLandmarker();
+        const result = landmarker.detect(video);
+        const face = result.faceLandmarks[0];
+        if (!face?.length) return;
+
+        ctx.save();
+        for (let index = 0; index < face.length; index += 1) {
+          const landmark = face[index];
+          const x = landmark.x * canvas.width;
+          const y = landmark.y * canvas.height;
+          const isIris = index >= 468;
+          ctx.beginPath();
+          ctx.arc(x, y, isIris ? 2.2 : 1.1, 0, Math.PI * 2);
+          ctx.fillStyle = isIris
+            ? 'rgba(255, 214, 102, 0.95)'
+            : 'rgba(84, 200, 255, 0.85)';
+          ctx.fill();
+        }
+        ctx.restore();
+      } catch (error) {
+        console.warn('[ReplayLandmarkOverlay] draw failed:', error);
+      }
+    };
+
+    rafId = requestAnimationFrame(draw);
+    return () => {
+      cancelled = true;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [videoRef]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+    />
+  );
+}
+
 function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNum: number }) {
   const [showOverlay, setShowOverlay] = useState(true);
+  const [showLandmarks, setShowLandmarks] = useState(false);
   const insights = buildReplayInsights(result);
   const scoreEntries = getScoreEntries(result.scores);
+  const replayVideoRef = useRef<HTMLVideoElement | null>(null);
 
   return (
     <div className="mt-10 max-w-[70rem] border-t border-border pt-10">
@@ -212,6 +288,15 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
         >
           {showOverlay ? 'Hide coach overlay' : 'Show coach overlay'}
         </button>
+        {result.replayUrl && (
+          <button
+            type="button"
+            onClick={() => setShowLandmarks((value) => !value)}
+            className="inline-flex items-center rounded-full border border-border px-4 py-2 text-sm text-text-muted transition-colors hover:border-border-strong hover:text-text"
+          >
+            {showLandmarks ? 'Hide AI face landmarks' : 'Show AI face landmarks'}
+          </button>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.9fr)]">
@@ -219,6 +304,7 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
           {result.replayUrl ? (
             <div className="relative aspect-video overflow-hidden rounded-2xl bg-surface-sunken">
               <video
+                ref={replayVideoRef}
                 src={result.replayUrl}
                 controls
                 preload="metadata"
@@ -244,6 +330,11 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+              {showLandmarks && (
+                <div className="pointer-events-none absolute inset-0">
+                  <ReplayLandmarkOverlay videoRef={replayVideoRef} />
                 </div>
               )}
             </div>
