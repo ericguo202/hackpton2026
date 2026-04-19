@@ -1297,60 +1297,42 @@ export default function Home({ onNavigateHistory }: Props) {
 
                 <div className="mt-12 flex flex-wrap items-center gap-3">
                   {stepIndex > 0 && (
-                    <button
+                    <FlowHoverButton
+                      variant="dark"
                       type="button"
                       onClick={() => goToResultsStep(stepIndex - 1)}
-                      className="group inline-flex items-baseline gap-2 rounded-full border border-border px-7 py-3.5 text-[15px] text-text transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
                     >
-                      <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-x-1">←</span>
                       Back
-                    </button>
+                    </FlowHoverButton>
                   )}
 
                   {!isLastStep && (
-                    <button
+                    <FlowHoverButton
                       type="button"
                       onClick={() => goToResultsStep(stepIndex + 1)}
-                      className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
                     >
                       Review turn {stepIndex + 1}
-                      <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
-                    </button>
+                    </FlowHoverButton>
                   )}
 
                   {isLastStep && (
                     <>
-                      <button
+                      <FlowHoverButton
+                        type="button"
                         onClick={handleNewSession}
-                        className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
                       >
                         Start another session
-                        <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
-                      </button>
-                      <button
+                      </FlowHoverButton>
+                      <FlowHoverButton
+                        variant="dark"
+                        type="button"
                         onClick={onNavigateHistory}
-                        className="group inline-flex items-baseline gap-2 rounded-full border border-border px-7 py-3.5 text-[15px] text-text transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
                       >
                         View history
-                        <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
-                      </button>
+                      </FlowHoverButton>
                     </>
                   )}
                 </div>
-              <div className="mt-12 flex flex-wrap gap-3">
-                <FlowHoverButton
-                  type="button"
-                  onClick={handleNewSession}
-                >
-                  Start another session
-                </FlowHoverButton>
-                <FlowHoverButton
-                  variant="dark"
-                  type="button"
-                  onClick={onNavigateHistory}
-                >
-                  View history
-                </FlowHoverButton>
               </div>
             </div>
           );
