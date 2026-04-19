@@ -22,6 +22,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:8080",
+        "https://hackpton2026.vercel.app",
     ]
 
     # Postgres connection parts. We keep them split (rather than a single URL)
