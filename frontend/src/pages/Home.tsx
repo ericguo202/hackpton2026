@@ -188,6 +188,13 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
   return insights.slice(0, 4);
 }
 
+function turnAverage(result: TurnResult): number {
+  const vals = Object.values(result.scores).filter(
+    (v): v is number => typeof v === 'number',
+  );
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
 function ReplayLandmarkOverlay({ videoRef }: { videoRef: React.RefObject<HTMLVideoElement | null> }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -296,54 +303,6 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
           >
             {showLandmarks ? 'Hide AI face landmarks' : 'Show AI face landmarks'}
           </button>
-function turnAverage(result: TurnResult): number {                                                                                                                    
-  // Delivery is nullable (camera-declined path) — averaging `null` into                                                                                              
-  // the mix would yield NaN, so we drop it before the reduce.                                                                                                        
-  const vals = Object.values(result.scores).filter(                                                                                                                   
-    (v): v is number => typeof v === 'number',                                                                                                                        
-  );                                                                                                                                                                  
-  return vals.reduce((a, b) => a + b, 0) / vals.length;                                                                                                               
-}    
-
-function TurnResultCard({ result, turnNum }: { result: TurnResult; turnNum: number }) {
-  // `delivery` is the 6th dimension from browser webcam analytics; the
-  // row is conditionally rendered below so camera-declined turns still
-  // show a clean 5-score card.
-  const scoreKeys = [
-    ['directness', 'Directness'],
-    ['star', 'STAR structure'],
-    ['specificity', 'Specificity'],
-    ['impact', 'Impact'],
-    ['conciseness', 'Conciseness'],
-  ] as const;
-  const avg = turnAverage(result);
-
-  return (
-    <div className="mt-10 pt-10 border-t border-border max-w-[56ch]">
-      <div className="flex items-baseline justify-between gap-4 mb-6">                                                                                                
-        <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">                                                                                       
-          Turn {turnNum}                                                                                                                                              
-        </p>                                                                                                                                                          
-        <p className="text-sm text-text-muted">                                                                                                                       
-          Average:{' '}                                                                                                                                               
-          <span className="text-text font-medium tabular-nums">                                                                                                       
-            {avg.toFixed(1)}                                                                                                                                          
-          </span>                                                                                                                                                     
-          <span className="text-text-subtle">/10</span>                                                                                                               
-        </p>                                                                                                                                                          
-      </div>    
-      <div className="space-y-3 mb-6">
-        {scoreKeys.map(([key, label]) => (
-          <div key={key} className="flex items-center justify-between gap-4">
-            <span className="text-sm text-text-muted">{label}</span>
-            <ScoreBar value={result.scores[key]} />
-          </div>
-        ))}
-        {result.scores.delivery != null && (
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-sm text-text-muted">Delivery</span>
-            <ScoreBar value={result.scores.delivery} />
-          </div>
         )}
       </div>
 
