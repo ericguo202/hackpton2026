@@ -11,6 +11,7 @@
 import { UserButton } from '@clerk/react';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
+import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useSessionDetail } from '../hooks/useSessionDetail';
 import type { TurnDetail } from '../types/history';
 
@@ -143,13 +144,16 @@ export default function SessionDetail({ sessionId, onBack, onNavigate }: Props) 
 
       <main className="flex-1">
         <div className="w-full max-w-[80rem] mx-auto px-8 md:px-16 py-12 md:py-16">
-          <button
-            type="button"
-            onClick={onBack}
-            className="mb-10 inline-flex items-baseline gap-2 text-eyebrow uppercase tracking-eyebrow text-text-muted hover:text-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded-sm"
-          >
-            <span aria-hidden>←</span> Back to history
-          </button>
+          <div className="mb-10">
+            <FlowHoverButton
+              variant="dark"
+              type="button"
+              onClick={onBack}
+              icon={<span aria-hidden>←</span>}
+            >
+              Back to history
+            </FlowHoverButton>
+          </div>
 
           {isLoading && (
             <p className="text-sm text-text-muted">Loading session…</p>

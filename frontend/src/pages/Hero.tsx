@@ -11,6 +11,7 @@
  * CTA call onSignInClick.
  */
 
+import { ImageDithering } from '@paper-design/shaders-react';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar from '../components/TopBar';
 import { GetStartedButton } from '../components/ui/get-started-button';
@@ -34,8 +35,34 @@ export default function Hero({ onSignInClick }: HeroProps) {
         }
       />
 
-      <main className="flex-1 flex items-center">
-        <div className="w-full max-w-[80rem] mx-auto px-8 md:px-16 py-16 md:py-24">
+      <main className="relative flex-1 flex items-center overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none hidden xl:block absolute inset-y-0 right-0 aspect-[478/357] bg-[#17150F] overflow-hidden"
+          style={{
+            WebkitMaskImage:
+              'linear-gradient(to right, transparent 0%, black 85%)',
+            maskImage:
+              'linear-gradient(to right, transparent 0%, black 85%)',
+          }}
+        >
+          <ImageDithering
+            originalColors={false}
+            inverted={false}
+            type="8x8"
+            size={2.5}
+            colorSteps={2}
+            image="/hero-sculpture.png"
+            scale={1}
+            fit="cover"
+            colorBack="#00000000"
+            colorFront="#F1E9D2"
+            colorHighlight="#EAFF94"
+            className="absolute inset-0 w-full h-full"
+          />
+        </div>
+
+        <div className="relative z-10 w-full max-w-[80rem] mx-auto px-8 md:px-16 py-16 md:py-24">
           <div className="max-w-[54rem]">
             <p
               className="anim-reveal text-eyebrow uppercase tracking-eyebrow text-text-muted mb-10 md:mb-12"

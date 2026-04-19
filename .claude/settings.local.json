@@ -9,7 +9,8 @@
       "Bash(./venv/Scripts/pytest.exe tests/test_opening_question.py -v)",
       "Bash(./venv/Scripts/python.exe -c ' *)",
       "Bash(./venv/Scripts/pytest.exe tests/ -v)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(npm install *)"
     ]
   }
 }

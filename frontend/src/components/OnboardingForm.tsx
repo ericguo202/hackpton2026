@@ -17,13 +17,14 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
-import { useUser } from '@clerk/react';
+import { UserButton, useUser } from '@clerk/react';
 
 import { useApi } from '../hooks/useApi';
 import { ApiError } from '../lib/api';
 import type { ExperienceLevel, MeResponse } from '../types/user';
 import { FlowHoverButton } from './ui/flow-hover-button';
 import { Progress } from './ui/progress';
+import TopBar from './TopBar';
 
 const EXPERIENCE_LEVELS: ExperienceLevel[] = [
   'internship',
@@ -159,14 +160,16 @@ export default function OnboardingForm({ onDone }: Props) {
   }
 
   return (
-    <main className="min-h-screen bg-surface flex items-center justify-center px-4 py-12">
-      <div className="fixed top-40 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 space-y-2">
-        <p className="text-[length:var(--text-eyebrow)] uppercase tracking-eyebrow text-text-muted">
-          Step {Math.min(step + 1, TOTAL_STEPS)} of {TOTAL_STEPS}
-        </p>
-        <Progress value={progressPct} />
-      </div>
-      <div className="w-full max-w-lg space-y-10">
+    <div className="min-h-screen flex flex-col bg-surface text-text">
+      <TopBar rightSlot={<UserButton />} />
+      <main className="flex-1 flex items-center justify-center px-4 py-12 relative">
+        <div className="fixed top-40 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 space-y-2">
+          <p className="text-[length:var(--text-eyebrow)] uppercase tracking-eyebrow text-text-muted">
+            Step {Math.min(step + 1, TOTAL_STEPS)} of {TOTAL_STEPS}
+          </p>
+          <Progress value={progressPct} />
+        </div>
+        <div className="w-full max-w-lg space-y-10">
         <section
           key={stepKey}
           className={`${direction === 'back' ? 'anim-slide-in-right' : 'anim-slide-in-left'} space-y-6`}
@@ -279,7 +282,8 @@ export default function OnboardingForm({ onDone }: Props) {
             </form>
           )}
         </div>
-      </div>
-    </main>
+        </div>
+      </main>
+    </div>
   );
 }

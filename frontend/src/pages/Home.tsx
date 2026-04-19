@@ -13,6 +13,7 @@ import { CameraPreview } from '../components/CameraPreview';
 import QuestionPlayer from '../components/QuestionPlayer';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
+import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnalyzer';
 import { useMe } from '../hooks/useMe';
@@ -682,19 +683,12 @@ export default function Home({ onNavigateHistory }: Props) {
                 className="anim-reveal mt-10 flex flex-wrap items-baseline gap-x-8 gap-y-4"
                 style={{ animationDelay: '240ms' }}
               >
-                <button
+                <FlowHoverButton
                   type="submit"
                   disabled={!company.trim() || submitting}
-                  className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {submitting ? 'Starting...' : 'Begin session'}
-                  <span
-                    aria-hidden
-                    className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1"
-                  >
-                    {'->'}
-                  </span>
-                </button>
+                </FlowHoverButton>
 
                 {me?.target_role && (
                   <p className="text-[13px] text-text-subtle">
@@ -780,12 +774,13 @@ export default function Home({ onNavigateHistory }: Props) {
                           <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
                           Recording
                         </span>
-                        <button
+                        <FlowHoverButton
+                          variant="dark"
+                          type="button"
                           onClick={recorder.stop}
-                          className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-[14px] text-text transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
                         >
                           Stop recording
-                        </button>
+                        </FlowHoverButton>
                       </div>
                     )}
 
@@ -799,19 +794,19 @@ export default function Home({ onNavigateHistory }: Props) {
                           <audio src={recorder.audioUrl} controls className="w-full" />
                         )}
                         <div className="flex flex-wrap gap-3">
-                          <button
+                          <FlowHoverButton
+                            type="button"
                             onClick={handleSubmitTurn}
-                            className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
                           >
                             Submit answer
-                            <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">{'->'}</span>
-                          </button>
-                          <button
+                          </FlowHoverButton>
+                          <FlowHoverButton
+                            variant="dark"
+                            type="button"
                             onClick={recorder.reset}
-                            className="inline-flex items-center rounded-full border border-border px-5 py-2.5 text-[14px] text-text-muted transition-colors hover:border-border-strong hover:text-text"
                           >
                             Re-record
-                          </button>
+                          </FlowHoverButton>
                         </div>
                         <p className="text-xs text-text-subtle">
                           {analyzer.diagnostics.framesProcessed > 0
@@ -879,20 +874,19 @@ export default function Home({ onNavigateHistory }: Props) {
               ))}
 
               <div className="mt-12 flex flex-wrap gap-3">
-                <button
+                <FlowHoverButton
+                  type="button"
                   onClick={handleNewSession}
-                  className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
                 >
                   Start another session
-                  <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
-                </button>
-                <button
+                </FlowHoverButton>
+                <FlowHoverButton
+                  variant="dark"
+                  type="button"
                   onClick={onNavigateHistory}
-                  className="group inline-flex items-baseline gap-2 rounded-full border border-border px-7 py-3.5 text-[15px] text-text transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
                 >
                   View history
-                  <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
-                </button>
+                </FlowHoverButton>
               </div>
             </div>
           </div>
