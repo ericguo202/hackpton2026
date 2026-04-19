@@ -1,0 +1,316 @@
+{
+  "created_at": "2026-04-18T23:06:02.747369",
+  "labels": {
+    "neutral": {
+      "frames_captured": 188,
+      "face_found_frames": 188,
+      "issue_counts": {
+        "low_energy": 97
+      },
+      "metrics": {
+        "eye_contact_raw_score": {
+          "min": 67.96,
+          "p05": 69.0135,
+          "p25": 69.715,
+          "p50": 70.07,
+          "p75": 70.15,
+          "p95": 70.68,
+          "max": 71.87,
+          "mean": 69.9709
+        },
+        "expression_raw_score": {
+          "min": 39.67,
+          "p05": 50.712,
+          "p25": 59.0425,
+          "p50": 60.96,
+          "p75": 62.4225,
+          "p95": 62.803,
+          "max": 65.18,
+          "mean": 59.8586
+        },
+        "head_alignment_score": {
+          "min": 91.57,
+          "p05": 91.57,
+          "p25": 92.68,
+          "p50": 93.33,
+          "p75": 93.33,
+          "p95": 93.9,
+          "max": 95.12,
+          "mean": 93.0318
+        },
+        "smile_score": {
+          "min": 33.49,
+          "p05": 35.1935,
+          "p25": 37.73,
+          "p50": 39.41,
+          "p75": 40.27,
+          "p95": 41.85,
+          "max": 41.87,
+          "mean": 39.0465
+        },
+        "eye_open_ratio": {
+          "min": 0.0111,
+          "p05": 0.0461,
+          "p25": 0.0605,
+          "p50": 0.064,
+          "p75": 0.0644,
+          "p95": 0.0677,
+          "max": 0.0708,
+          "mean": 0.061
+        }
+      }
+    },
+    "engaged": {
+      "frames_captured": 159,
+      "face_found_frames": 159,
+      "issue_counts": {},
+      "metrics": {
+        "eye_contact_raw_score": {
+          "min": 69.41,
+          "p05": 69.85,
+          "p25": 70.435,
+          "p50": 70.98,
+          "p75": 71.35,
+          "p95": 72.002,
+          "max": 72.42,
+          "mean": 70.9402
+        },
+        "expression_raw_score": {
+          "min": 53.79,
+          "p05": 63.759,
+          "p25": 65.005,
+          "p50": 66.4,
+          "p75": 67.68,
+          "p95": 69.171,
+          "max": 69.81,
+          "mean": 66.0999
+        },
+        "head_alignment_score": {
+          "min": 91.13,
+          "p05": 91.77,
+          "p25": 92.31,
+          "p50": 93.33,
+          "p75": 93.98,
+          "p95": 95.18,
+          "max": 95.81,
+          "mean": 93.1806
+        },
+        "smile_score": {
+          "min": 52.89,
+          "p05": 53.858,
+          "p25": 55.61,
+          "p50": 56.41,
+          "p75": 58.58,
+          "p95": 59.577,
+          "max": 61.07,
+          "mean": 56.8313
+        },
+        "eye_open_ratio": {
+          "min": 0.0368,
+          "p05": 0.0549,
+          "p25": 0.057,
+          "p50": 0.0592,
+          "p75": 0.0603,
+          "p95": 0.0614,
+          "max": 0.0632,
+          "mean": 0.0583
+        }
+      }
+    },
+    "looked_away": {
+      "frames_captured": 270,
+      "face_found_frames": 270,
+      "issue_counts": {
+        "looked_away": 233,
+        "posture_drift": 263,
+        "low_energy": 242
+      },
+      "metrics": {
+        "eye_contact_raw_score": {
+          "min": 6.14,
+          "p05": 22.6365,
+          "p25": 31.215,
+          "p50": 44.325,
+          "p75": 47.39,
+          "p95": 66.171,
+          "max": 71.31,
+          "mean": 42.2657
+        },
+        "head_alignment_score": {
+          "min": 0.0,
+          "p05": 0.0,
+          "p25": 0.0,
+          "p50": 34.86,
+          "p75": 43.21,
+          "p95": 83.54,
+          "max": 95.35,
+          "mean": 31.2027
+        },
+        "midpoint_offset": {
+          "min": 0.0023,
+          "p05": 0.0933,
+          "p25": 0.3524,
+          "p50": 0.388,
+          "p75": 0.7019,
+          "p95": 1.0187,
+          "max": 1.1751,
+          "mean": 0.4892
+        },
+        "left_gaze_ratio": {
+          "min": 0.0,
+          "p05": 0.2316,
+          "p25": 0.3836,
+          "p50": 0.5343,
+          "p75": 0.6412,
+          "p95": 0.6706,
+          "max": 0.7161,
+          "mean": 0.5022
+        },
+        "right_gaze_ratio": {
+          "min": 6.2,
+          "p05": 8.4,
+          "p25": 11.0,
+          "p50": 15.8,
+          "p75": 18.0,
+          "p95": 19.4,
+          "max": 22.8,
+          "mean": 14.7533
+        }
+      }
+    },
+    "posture_drift": {
+      "frames_captured": 236,
+      "face_found_frames": 206,
+      "issue_counts": {
+        "looked_away": 124,
+        "posture_drift": 190,
+        "low_energy": 165,
+        "face_missing": 30
+      },
+      "metrics": {
+        "head_alignment_score": {
+          "min": 3.03,
+          "p05": 14.6825,
+          "p25": 61.975,
+          "p50": 64.34,
+          "p75": 85.14,
+          "p95": 94.015,
+          "max": 98.78,
+          "mean": 64.0047
+        },
+        "vertical_posture": {
+          "min": 0.0,
+          "p05": 0.0133,
+          "p25": 0.0593,
+          "p50": 0.1551,
+          "p75": 0.4743,
+          "p95": 0.5743,
+          "max": 0.6365,
+          "mean": 0.2335
+        },
+        "midpoint_offset": {
+          "min": 0.0045,
+          "p05": 0.0433,
+          "p25": 0.1031,
+          "p50": 0.4667,
+          "p75": 0.5328,
+          "p95": 0.8187,
+          "max": 0.9045,
+          "mean": 0.3776
+        },
+        "posture_score": {
+          "min": 55.44,
+          "p05": 59.795,
+          "p25": 66.8,
+          "p50": 89.15,
+          "p75": 95.8525,
+          "p95": 99.0675,
+          "max": 100.0,
+          "mean": 83.6562
+        },
+        "eye_contact_raw_score": {
+          "min": 11.92,
+          "p05": 17.1275,
+          "p25": 48.395,
+          "p50": 55.41,
+          "p75": 65.2275,
+          "p95": 69.2975,
+          "max": 73.76,
+          "mean": 52.2803
+        }
+      }
+    },
+    "low_energy": {
+      "frames_captured": 204,
+      "face_found_frames": 204,
+      "issue_counts": {
+        "low_energy": 204
+      },
+      "metrics": {
+        "expression_raw_score": {
+          "min": 35.82,
+          "p05": 37.86,
+          "p25": 52.31,
+          "p50": 53.86,
+          "p75": 54.73,
+          "p95": 56.014,
+          "max": 56.89,
+          "mean": 52.1081
+        },
+        "smile_score": {
+          "min": 22.46,
+          "p05": 24.92,
+          "p25": 27.36,
+          "p50": 27.47,
+          "p75": 29.81,
+          "p95": 31.57,
+          "max": 32.28,
+          "mean": 28.303
+        },
+        "mouth_open_ratio": {
+          "min": 0.0,
+          "p05": 0.0,
+          "p25": 0.0,
+          "p50": 0.0,
+          "p75": 0.0058,
+          "p95": 0.0083,
+          "max": 0.0084,
+          "mean": 0.0024
+        },
+        "eye_open_ratio": {
+          "min": 0.0134,
+          "p05": 0.0302,
+          "p25": 0.0584,
+          "p50": 0.0592,
+          "p75": 0.0621,
+          "p95": 0.0625,
+          "max": 0.065,
+          "mean": 0.0563
+        },
+        "brow_relax_ratio": {
+          "min": 0.6139,
+          "p05": 0.614,
+          "p25": 0.6141,
+          "p50": 0.6198,
+          "p75": 0.6213,
+          "p95": 0.6257,
+          "max": 0.6257,
+          "mean": 0.6189
+        }
+      }
+    }
+  },
+  "suggested_thresholds": {
+    "eye_contact_score_red_below": 67.286,
+    "head_alignment_red_below": 90.89,
+    "vertical_posture_red_above": 0.0928,
+    "midpoint_offset_red_above": 0.0517,
+    "smile_score_red_below": 33.8,
+    "mouth_open_ratio_low_energy_below": 0.0029
+  },
+  "notes": [
+    "Use neutral + engaged captures as your personal normal baseline.",
+    "Use the egregious captures to set red-box thresholds where bad behavior is clearly separated from your baseline.",
+    "Suggested thresholds are midpoint heuristics between your normal and bad percentile bands, not final truth."
+  ]
+}
