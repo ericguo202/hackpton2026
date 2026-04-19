@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
+import { ImageDithering } from '@paper-design/shaders-react';
 
 import { CameraPreview } from '../components/CameraPreview';
 import PageMorphTransition from '../components/PageMorphTransition';
@@ -923,11 +924,38 @@ export default function Home({ onNavigateHistory }: Props) {
 
       <main className="flex-1">
         {!sessionId && (
-          <form
-            onSubmit={handleStart}
-            className="mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16 md:py-24"
-          >
-            <div className="max-w-[54rem]">
+          <div className="relative flex min-h-full items-center overflow-hidden">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none hidden xl:block absolute inset-y-0 right-0 aspect-[563/484] bg-[#17150F] overflow-hidden"
+              style={{
+                WebkitMaskImage:
+                  'linear-gradient(to right, transparent 0%, black 85%)',
+                maskImage:
+                  'linear-gradient(to right, transparent 0%, black 85%)',
+              }}
+            >
+              <ImageDithering
+                originalColors={false}
+                inverted={false}
+                type="8x8"
+                size={2.5}
+                colorSteps={2}
+                image="/home-sculpture.png"
+                scale={1}
+                fit="cover"
+                colorBack="#00000000"
+                colorFront="#F1E9D2"
+                colorHighlight="#EAFF94"
+                className="absolute inset-0 w-full h-full"
+              />
+            </div>
+
+            <form
+              onSubmit={handleStart}
+              className="relative z-10 mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16 md:py-24"
+            >
+              <div className="max-w-[54rem]">
               <p
                 className="anim-reveal mb-10 text-eyebrow uppercase tracking-eyebrow text-text-muted md:mb-12"
                 style={{ animationDelay: '0ms' }}
@@ -988,8 +1016,9 @@ export default function Home({ onNavigateHistory }: Props) {
                   {setupError}
                 </p>
               )}
-            </div>
-          </form>
+              </div>
+            </form>
+          </div>
         )}
 
         {sessionId && !isDone && currentQ && (

@@ -65,14 +65,19 @@ export default function Hero({ onSignInClick }: HeroProps) {
         <div className="relative z-10 w-full max-w-[80rem] mx-auto px-8 md:px-16 py-16 md:py-24">
           <div className="max-w-[54rem]">
             <p
-              className="anim-reveal text-eyebrow uppercase tracking-eyebrow text-text-muted mb-10 md:mb-12"
-              style={{ animationDelay: '0ms' }}
+              className="anim-reveal font-display font-medium text-text mb-0"
+              style={{
+                animationDelay: '0ms',
+                fontSize: 'clamp(1.75rem, 3vw, 2.5rem)',
+                letterSpacing: '-0.02em',
+                lineHeight: 1,
+              }}
             >
-              A quiet room for behavioral practice
+              LOGOS
             </p>
 
             <h1
-              className="anim-reveal font-display font-medium tracking-[-0.022em] leading-[1.02] text-text mb-8 md:mb-10"
+              className="anim-reveal font-display font-medium tracking-[-0.022em] leading-[1.02] text-text -mt-2 md:-mt-3 mb-8 md:mb-10"
               style={{
                 animationDelay: '80ms',
                 fontSize: 'clamp(2.75rem, 6.5vw, 5.5rem)',

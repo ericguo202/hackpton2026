@@ -15,7 +15,12 @@
       "mcp__context7__resolve-library-id",
       "mcp__context7__query-docs",
       "Bash(npx tsc *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "mcp__paper__get_basic_info",
+      "mcp__paper__get_node_info",
+      "mcp__paper__get_jsx",
+      "mcp__paper__get_screenshot",
+      "Bash(curl -sL \"https://app.paper.design/file-assets/01KMY8503D1GDQQ5818EXJP384/01KPJEKZ2RT474SDENHRSKDSMG.png\" -o frontend/public/home-sculpture.png)"
     ]
   }
 }
