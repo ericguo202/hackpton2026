@@ -25,6 +25,7 @@ import {
 } from 'recharts';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
+import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useMeStats } from '../hooks/useMeStats';
 import { useSessions } from '../hooks/useSessions';
 import type {
@@ -439,13 +440,12 @@ export default function History({ onNavigate, onOpenSession }: Props) {
                 <p className="text-sm text-text-muted mb-6">
                   Start a mock interview from Practice to see it here.
                 </p>
-                <button
+                <FlowHoverButton
+                  type="button"
                   onClick={() => onNavigate('home')}
-                  className="group inline-flex items-baseline gap-2 bg-accent text-accent-fg rounded-full px-6 py-3 text-[14px] font-medium hover:bg-accent-hover transition-colors"
                 >
                   Start a session
-                  <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
-                </button>
+                </FlowHoverButton>
               </div>
             )}
 

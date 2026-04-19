@@ -13,8 +13,10 @@ import { CameraPreview } from '../components/CameraPreview';
 import QuestionPlayer from '../components/QuestionPlayer';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
+import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnalyzer';
+import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
@@ -658,6 +660,7 @@ export default function Home({ onNavigateHistory }: Props) {
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
+  const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentQ, setCurrentQ] = useState<CurrentQ | null>(null);
@@ -999,19 +1002,12 @@ export default function Home({ onNavigateHistory }: Props) {
                 className="anim-reveal mt-10 flex flex-wrap items-baseline gap-x-8 gap-y-4"
                 style={{ animationDelay: '280ms' }}
               >
-                <button
+                <FlowHoverButton
                   type="submit"
                   disabled={!company.trim() || submitting}
-                  className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {submitting ? 'Starting...' : 'Begin session'}
-                  <span
-                    aria-hidden
-                    className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1"
-                  >
-                    {'->'}
-                  </span>
-                </button>
+                </FlowHoverButton>
 
                 {me?.target_role && (
                   <p className="text-[13px] text-text-subtle">
@@ -1037,6 +1033,8 @@ export default function Home({ onNavigateHistory }: Props) {
                 question={currentQ.text}
                 audioUrl={currentQ.audioUrl}
                 questionNum={currentQ.num}
+                showQuestion={showQuestionText}
+                onToggleShowQuestion={() => setShowQuestionText((v) => !v)}
                 onEnded={() => {
                   recorder.start().catch((err: Error) => {
                     setTurnError(`Could not start recording: ${err.message}`);
@@ -1126,20 +1124,45 @@ export default function Home({ onNavigateHistory }: Props) {
                           <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
                           Recording
                         </span>
-                        <button
-                          onClick={() => {
-                            // Latch first, stop second: the spinner has
-                            // to be on screen before MediaRecorder
-                            // flushes its blob, otherwise the state
-                            // briefly drops back to "Recording will
-                            // start..." copy on the next render.
-                            setEndingTurn(true);
-                            recorder.stop();
-                          }}
-                          className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-[14px] text-text transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
+                        <FlowHoverButton
+                          variant="dark"
+                          type="button"
+                          onClick={recorder.stop}
                         >
-                          End answer
-                        </button>
+                          Stop recording
+                        </FlowHoverButton>
+                      </div>
+                    )}
+
+                    {recorder.state === 'stopped' && recorder.audioUrl && (
+                      <div className="space-y-4">
+                        {recorder.replayUrl ? (
+                          <div className="aspect-video overflow-hidden rounded-2xl bg-surface-sunken">
+                            <video src={recorder.replayUrl} controls className="h-full w-full object-cover" />
+                          </div>
+                        ) : (
+                          <audio src={recorder.audioUrl} controls className="w-full" />
+                        )}
+                        <div className="flex flex-wrap gap-3">
+                          <FlowHoverButton
+                            type="button"
+                            onClick={handleSubmitTurn}
+                          >
+                            Submit answer
+                          </FlowHoverButton>
+                          <FlowHoverButton
+                            variant="dark"
+                            type="button"
+                            onClick={recorder.reset}
+                          >
+                            Re-record
+                          </FlowHoverButton>
+                        </div>
+                        <p className="text-xs text-text-subtle">
+                          {analyzer.diagnostics.framesProcessed > 0
+                            ? `Delivery capture armed: ${analyzer.diagnostics.framesProcessed} analyzer frames processed.`
+                            : 'No analyzer frames were processed for this take, so delivery may come back unavailable.'}
+                        </p>
                       </div>
                     )}
                   </>
@@ -1314,6 +1337,20 @@ export default function Home({ onNavigateHistory }: Props) {
                     </>
                   )}
                 </div>
+              <div className="mt-12 flex flex-wrap gap-3">
+                <FlowHoverButton
+                  type="button"
+                  onClick={handleNewSession}
+                >
+                  Start another session
+                </FlowHoverButton>
+                <FlowHoverButton
+                  variant="dark"
+                  type="button"
+                  onClick={onNavigateHistory}
+                >
+                  View history
+                </FlowHoverButton>
               </div>
             </div>
           );

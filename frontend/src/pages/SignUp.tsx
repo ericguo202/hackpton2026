@@ -18,6 +18,8 @@ import { useSignUp } from '@clerk/react/legacy';
 import { Eye, EyeOff } from 'lucide-react';
 import { Suspense, lazy, useState, type FormEvent } from 'react';
 
+import { FlowHoverButton } from '../components/ui/flow-hover-button';
+
 const Dithering = lazy(() =>
   import('@paper-design/shaders-react').then((mod) => ({ default: mod.Dithering })),
 );
@@ -186,13 +188,14 @@ export default function SignUp({ onBack, onSignInClick }: SignUpProps) {
                   </p>
                 )}
 
-                <button
+                <FlowHoverButton
                   type="submit"
+                  size="lg"
                   disabled={submitting || !isLoaded}
-                  className="w-full rounded bg-accent py-4 font-medium text-accent-fg hover:bg-accent-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full py-4"
                 >
                   {submitting ? 'Verifying…' : 'Verify and continue'}
-                </button>
+                </FlowHoverButton>
               </form>
             </div>
           ) : (
@@ -270,13 +273,14 @@ export default function SignUp({ onBack, onSignInClick }: SignUpProps) {
                   </p>
                 )}
 
-                <button
+                <FlowHoverButton
                   type="submit"
+                  size="lg"
                   disabled={submitting || !isLoaded}
-                  className="w-full rounded bg-accent py-4 font-medium text-accent-fg hover:bg-accent-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full py-4"
                 >
                   {submitting ? 'Creating account…' : 'Create account'}
-                </button>
+                </FlowHoverButton>
               </form>
 
               <div className="relative flex items-center justify-center py-1">
@@ -286,15 +290,17 @@ export default function SignUp({ onBack, onSignInClick }: SignUpProps) {
                 </span>
               </div>
 
-              <button
+              <FlowHoverButton
+                variant="dark"
+                size="lg"
                 type="button"
                 onClick={handleGoogle}
                 disabled={!isLoaded}
-                className="w-full flex items-center justify-center gap-3 border border-border bg-surface-raised rounded py-4 text-text hover:bg-surface-sunken transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-60 disabled:cursor-not-allowed"
+                icon={<GoogleIcon />}
+                className="w-full py-4"
               >
-                <GoogleIcon />
                 Continue with Google
-              </button>
+              </FlowHoverButton>
 
               <p className="text-center text-sm text-text-muted">
                 Already have an account?{' '}

@@ -247,3 +247,25 @@ h3 { font-size: 1.25rem;                            line-height: 1.3;  letter-sp
     opacity: 1;
   }
 }
+
+/* Clerk overrides: hide branding footer (covers both "Secured by clerk" and
+   the "Development mode" banner) and recolor the generated initials avatar
+   to match the earth-tone palette. The popover itself is themed via the
+   <ClerkProvider appearance> prop in main.tsx; these rules cover cases
+   appearance variables don't reach. */
+.cl-userButtonPopoverFooter {
+  display: none !important;
+}
+
+.cl-userButtonAvatarBox,
+.cl-userPreviewAvatarBox,
+.cl-avatarBox {
+  background-color: var(--color-primary-700) !important;
+  color: var(--color-primary-100) !important;
+}
+
+.cl-userButtonAvatarBox .cl-avatarImageActions,
+.cl-userButtonAvatarBox > div,
+.cl-userPreviewAvatarBox > div {
+  color: var(--color-primary-100) !important;
+}

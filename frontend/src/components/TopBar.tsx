@@ -21,7 +21,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
   return (
     <header className="flex items-baseline justify-between gap-6 px-8 md:px-16 pt-8 pb-4">
       <div className="flex items-baseline gap-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-        <span className="font-medium text-text tabular-nums">No. 01</span>
+        <span className="font-medium text-text tabular-nums">Logos</span>
         <span aria-hidden>·</span>
         <span>Interview Practice</span>
         <span aria-hidden className="hidden sm:inline">·</span>
@@ -40,7 +40,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
 /**
  * Single nav link for the TopBar — rendered as a link-styled <button> since
  * the app drives navigation via state, not URLs. Active state uses the same
- * full-strength `text` token the masthead "No. 01" uses.
+ * full-strength `text` token the masthead "Logos" uses.
  */
 type NavLinkProps = {
   active: boolean;
