@@ -445,9 +445,10 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
               </div>
             </div>
           )}
+
         </div>
 
-        {/* Right column: coach prose + insights + collapsible transcript */}
+        {/* Right column: coach prose + insights */}
         <div className="space-y-10">
           {result.feedback && (
             <div>
@@ -475,29 +476,35 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
               </ul>
             </div>
           )}
-
-          {result.transcript && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowTranscript((v) => !v)}
-                aria-expanded={showTranscript}
-                className="group inline-flex items-center gap-2 rounded text-eyebrow uppercase tracking-eyebrow text-text-muted transition hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-              >
-                {showTranscript ? 'Hide transcript' : 'Show transcript'}
-                <span aria-hidden className={`transition-transform ${showTranscript ? 'rotate-180' : ''}`}>
-                  ↓
-                </span>
-              </button>
-              {showTranscript && (
-                <p className="mt-4 text-sm leading-7 text-text-muted">
-                  {result.transcript}
-                </p>
-              )}
-            </div>
-          )}
         </div>
       </div>
+
+      {/*
+        Transcript lives outside the 2-column grid so it spans the full card
+        width (72rem) instead of being clamped to either column. Long answers
+        otherwise force vertical scrolling inside a narrow rail; full-width
+        prose with a sane reading max-width keeps everything above the fold.
+      */}
+      {result.transcript && (
+        <div className="mt-10">
+          <button
+            type="button"
+            onClick={() => setShowTranscript((v) => !v)}
+            aria-expanded={showTranscript}
+            className="group inline-flex items-center gap-2 rounded text-eyebrow uppercase tracking-eyebrow text-text-muted transition hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          >
+            {showTranscript ? 'Hide transcript' : 'Show transcript'}
+            <span aria-hidden className={`transition-transform ${showTranscript ? 'rotate-180' : ''}`}>
+              ↓
+            </span>
+          </button>
+          {showTranscript && (
+            <p className="mt-4 max-w-[72ch] text-sm leading-7 text-text-muted">
+              {result.transcript}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
