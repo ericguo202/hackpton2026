@@ -64,6 +64,29 @@ class EvaluatorOutput(BaseModel):
             return 0
         return max(0, min(10, n))
 
+
+def _compute_delivery_fallback(cv_summary: dict) -> int:
+    """Derive a stable 0-10 delivery score from webcam analytics.
+
+    The prompt already tells Gemma to map the overall 0-100 webcam score
+    linearly while also considering eye contact vs expression separately.
+    When the model omits `delivery` despite having `cv_summary`, we apply
+    that same logic deterministically instead of returning null.
+    """
+    overall = float(cv_summary.get("overall_interview_score", 0.0) or 0.0)
+    eye = float(cv_summary.get("eye_contact_score", overall) or overall)
+    expression = float(cv_summary.get("expression_score", overall) or overall)
+    face_visible = float(cv_summary.get("face_visible_pct", 100.0) or 100.0)
+
+    # Start from the overall heuristic, then temper it with the split
+    # between eye contact and expression so a flat face doesn't receive
+    # an unrealistically high delivery score.
+    blended = (overall * 0.5) + (eye * 0.3) + (expression * 0.2)
+    if face_visible < 90:
+        blended -= min(15.0, (90 - face_visible) * 0.35)
+
+    return max(0, min(10, round(blended / 10)))
+
     @field_validator("delivery", mode="before")
     @classmethod
     def _clamp_optional(cls, v: int | None) -> int | None:
@@ -204,4 +227,11 @@ async def evaluate_turn(
         },
         request_options={"timeout": 180},
     )
-    return EvaluatorOutput.model_validate_json(extract_json_object(response.text))
+    result = EvaluatorOutput.model_validate_json(extract_json_object(response.text))
+    if cv_summary is not None and result.delivery is None:
+        result.delivery = _compute_delivery_fallback(cv_summary)
+        logger.info(
+            "Evaluator omitted delivery despite cv_summary; using fallback delivery=%s",
+            result.delivery,
+        )
+    return result
