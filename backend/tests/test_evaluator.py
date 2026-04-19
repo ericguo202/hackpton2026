@@ -180,3 +180,46 @@ async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
     # model can't score delivery and we'd be lying to Gemma.
     assert "Webcam analytics" in captured_prompt["value"]
     assert "67.9" in captured_prompt["value"]
+
+
+async def test_delivery_falls_back_when_model_omits_it_despite_cv_summary(monkeypatch):
+    class _MissingDeliveryModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def generate_content_async(self, *args, **kwargs):
+            return _fake_response(
+                {
+                    "directness": 6,
+                    "star": 5,
+                    "specificity": 6,
+                    "impact": 5,
+                    "conciseness": 7,
+                    "notes": "Content is decent, but delivery needs more warmth.",
+                }
+            )
+
+    monkeypatch.setattr("app.services.evaluator.genai.GenerativeModel", _MissingDeliveryModel)
+
+    cv_summary = {
+        "frames_processed": 149,
+        "face_visible_pct": 100.0,
+        "eye_contact_score": 65.4,
+        "expression_score": 32.2,
+        "overall_interview_score": 53.8,
+        "eye_contact_rating": "good",
+        "expression_rating": "needs work",
+        "interview_rating": "fair",
+        "best_eye_contact_frame_score": 74.0,
+        "best_expression_frame_score": 51.1,
+        "coaching_tip": "Add a slight smile and keep your eyes more open to look engaged.",
+    }
+
+    result = await evaluate_turn(
+        question="Tell me about a technical challenge.",
+        transcript="I worked through a debugging issue with my team.",
+        cv_summary=cv_summary,
+    )
+
+    assert result.delivery is not None
+    assert 0 <= result.delivery <= 10

@@ -25,33 +25,50 @@ const MODEL_URL = '/models/face_landmarker.task';
 
 let instance: FaceLandmarker | null = null;
 let pending: Promise<FaceLandmarker> | null = null;
+let replayInstance: FaceLandmarker | null = null;
+let replayPending: Promise<FaceLandmarker> | null = null;
+
+async function createLandmarker(runningMode: 'VIDEO' | 'IMAGE'): Promise<FaceLandmarker> {
+  const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL);
+  return FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath: MODEL_URL,
+      delegate: 'GPU',
+    },
+    runningMode,
+    numFaces: 1,
+    minFaceDetectionConfidence: 0.5,
+    minFacePresenceConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: false,
+  });
+}
 
 export async function getFaceLandmarker(): Promise<FaceLandmarker> {
   if (instance) return instance;
   if (pending) return pending;
 
   pending = (async () => {
-    const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL);
-    const landmarker = await FaceLandmarker.createFromOptions(fileset, {
-      baseOptions: {
-        modelAssetPath: MODEL_URL,
-        // GPU gives ~2-3x the FPS on supported devices; falls back to CPU
-        // transparently when WebGL is unavailable (older Safari).
-        delegate: 'GPU',
-      },
-      runningMode: 'VIDEO',
-      numFaces: 1,
-      minFaceDetectionConfidence: 0.5,
-      minFacePresenceConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-      outputFaceBlendshapes: false,
-      outputFacialTransformationMatrixes: false,
-    });
+    const landmarker = await createLandmarker('VIDEO');
     instance = landmarker;
     return landmarker;
   })();
 
   return pending;
+}
+
+export async function getReplayFaceLandmarker(): Promise<FaceLandmarker> {
+  if (replayInstance) return replayInstance;
+  if (replayPending) return replayPending;
+
+  replayPending = (async () => {
+    const landmarker = await createLandmarker('IMAGE');
+    replayInstance = landmarker;
+    return landmarker;
+  })();
+
+  return replayPending;
 }
 
 export type { FaceLandmarkerResult };
