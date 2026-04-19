@@ -4,19 +4,26 @@
  * Rendered by `App.tsx` when the /me response has
  * `completed_registration === false`. On successful submit, calls
  * `onDone()`; the parent refetches /me, the gate flips, and this component
- * unmounts.
+ * unmounts (which is the implicit "redirect to homepage" — no router exists).
  *
- * email + name come straight from Clerk's `useUser()` and are rendered
- * read-only — the backend accepts them in the form body but the user
- * doesn't get to edit them here (their authoritative source is Clerk).
+ * UI is a stepped flow: one field per screen with a thin wayfinding
+ * indicator at the top. Email + name are read from Clerk and posted with
+ * the rest of the FormData, but never rendered — Clerk is the source of
+ * truth, so showing them as read-only fields was dead weight.
  */
 
-import { useState, type FormEvent } from 'react';
+import {
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import { useUser } from '@clerk/react';
 
 import { useApi } from '../hooks/useApi';
 import { ApiError } from '../lib/api';
 import type { ExperienceLevel, MeResponse } from '../types/user';
+import { FlowHoverButton } from './ui/flow-hover-button';
+import { Progress } from './ui/progress';
 
 const EXPERIENCE_LEVELS: ExperienceLevel[] = [
   'internship',
@@ -26,6 +33,31 @@ const EXPERIENCE_LEVELS: ExperienceLevel[] = [
   'staff',
   'executive',
 ];
+
+const HEADINGS = [
+  'What industry are you targeting?',
+  'What role are you going after?',
+  'Where are you in your career?',
+  'Tell us a bit about yourself.',
+  'Upload your résumé.',
+] as const;
+
+const DESCRIPTIONS: (string | null)[] = [
+  'For example, software, finance, biotech.',
+  'For example, backend engineer, product manager.',
+  null,
+  'Two or three sentences. Background and what you’re looking for.',
+  'PDF only.',
+];
+
+const TOTAL_STEPS = HEADINGS.length;
+
+const inputClass =
+  'w-full rounded border border-border bg-surface-sunken px-3 py-2 text-text ' +
+  'placeholder:text-text-subtle ' +
+  'focus-visible:outline-none focus-visible:ring-2 ' +
+  'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
+  'focus-visible:ring-offset-surface';
 
 type Props = { onDone: () => void };
 
@@ -43,15 +75,53 @@ export default function OnboardingForm({ onDone }: Props) {
   const [shortBio, setShortBio] = useState('');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
 
+  const [step, setStep] = useState(0);
+  const [stepKey, setStepKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const validators: Array<() => boolean> = [
+    () => industry.trim().length > 0,
+    () => targetRole.trim().length > 0,
+    () => true,
+    () => shortBio.trim().length > 0,
+    () => resumeFile !== null,
+  ];
+  const canAdvance = validators[step]();
+
+  const progressPct = 50;
+
+  function advance() {
+    if (!canAdvance) return;
+    setStep((s) => s + 1);
+    setStepKey((k) => k + 1);
+    setError(null);
+  }
+
+  function retreat() {
+    setStep((s) => s - 1);
+    setStepKey((k) => k + 1);
+    setError(null);
+  }
+
+  function handleEnterAdvance(
+    e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) {
+    // Only single-line inputs advance on Enter; textareas keep newline behavior.
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    if (e.currentTarget.tagName === 'TEXTAREA') return;
+    if (step >= TOTAL_STEPS - 1) return;
+    e.preventDefault();
+    advance();
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 
     if (!resumeFile) {
-      setError('Please attach a PDF resume.');
+      setError('Please attach a PDF résumé.');
       return;
     }
     if (!email) {
@@ -74,6 +144,7 @@ export default function OnboardingForm({ onDone }: Props) {
         method: 'POST',
         body,
       });
+      setDone(true);
       onDone();
     } catch (err) {
       if (err instanceof ApiError) {
@@ -87,111 +158,124 @@ export default function OnboardingForm({ onDone }: Props) {
   }
 
   return (
-    <main>
-      <form onSubmit={handleSubmit} className="max-w-xl mx-auto p-6 space-y-4">
-        <h1 className="text-2xl font-bold">Tell us about yourself</h1>
-
-      <div>
-        <label className="block text-sm font-medium">Email (from Clerk)</label>
-        <input
-          type="email"
-          value={email}
-          readOnly
-          className="mt-1 w-full border rounded px-3 py-2 bg-gray-50 text-gray-700"
-        />
+    <main className="min-h-screen bg-surface flex items-center justify-center px-4 py-12">
+      <div className="fixed top-40 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 space-y-2">
+        <p className="text-[length:var(--text-eyebrow)] uppercase tracking-eyebrow text-text-muted">
+          Step {Math.min(step + 1, TOTAL_STEPS)} of {TOTAL_STEPS}
+        </p>
+        <Progress value={progressPct} />
       </div>
+      <div className="w-full max-w-lg space-y-10">
+        <section key={stepKey} className="anim-reveal space-y-6">
+          <h2>{HEADINGS[step]}</h2>
+          {DESCRIPTIONS[step] && (
+            <p className="text-text-subtle text-sm">{DESCRIPTIONS[step]}</p>
+          )}
 
-      <div>
-        <label className="block text-sm font-medium">Name (from Clerk)</label>
-        <input
-          type="text"
-          value={name}
-          readOnly
-          className="mt-1 w-full border rounded px-3 py-2 bg-gray-50 text-gray-700"
-        />
-      </div>
+          {step === 0 && (
+            <input
+              type="text"
+              autoFocus
+              maxLength={200}
+              value={industry}
+              onChange={(e) => setIndustry(e.target.value)}
+              onKeyDown={handleEnterAdvance}
+              placeholder="Industry"
+              className={inputClass}
+            />
+          )}
 
-      <div>
-        <label className="block text-sm font-medium">Industry</label>
-        <input
-          type="text"
-          required
-          maxLength={200}
-          value={industry}
-          onChange={(e) => setIndustry(e.target.value)}
-          placeholder="e.g. Software, Finance, Biotech"
-          className="mt-1 w-full border rounded px-3 py-2"
-        />
-      </div>
+          {step === 1 && (
+            <input
+              type="text"
+              autoFocus
+              maxLength={200}
+              value={targetRole}
+              onChange={(e) => setTargetRole(e.target.value)}
+              onKeyDown={handleEnterAdvance}
+              placeholder="Target role"
+              className={inputClass}
+            />
+          )}
 
-      <div>
-        <label className="block text-sm font-medium">Target role</label>
-        <input
-          type="text"
-          required
-          maxLength={200}
-          value={targetRole}
-          onChange={(e) => setTargetRole(e.target.value)}
-          placeholder="e.g. Backend Engineer, Product Manager"
-          className="mt-1 w-full border rounded px-3 py-2"
-        />
-      </div>
+          {step === 2 && (
+            <select
+              autoFocus
+              value={experienceLevel}
+              onChange={(e) =>
+                setExperienceLevel(e.target.value as ExperienceLevel)
+              }
+              className={inputClass}
+            >
+              {EXPERIENCE_LEVELS.map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {lvl}
+                </option>
+              ))}
+            </select>
+          )}
 
-      <div>
-        <label className="block text-sm font-medium">Experience level</label>
-        <select
-          value={experienceLevel}
-          onChange={(e) =>
-            setExperienceLevel(e.target.value as ExperienceLevel)
-          }
-          className="mt-1 w-full border rounded px-3 py-2"
-        >
-          {EXPERIENCE_LEVELS.map((lvl) => (
-            <option key={lvl} value={lvl}>
-              {lvl}
-            </option>
-          ))}
-        </select>
-      </div>
+          {step === 3 && (
+            <textarea
+              autoFocus
+              maxLength={2000}
+              rows={5}
+              value={shortBio}
+              onChange={(e) => setShortBio(e.target.value)}
+              placeholder="A sentence or two about your background and what you’re looking for."
+              className={inputClass}
+            />
+          )}
 
-      <div>
-        <label className="block text-sm font-medium">Short bio</label>
-        <textarea
-          required
-          maxLength={2000}
-          rows={4}
-          value={shortBio}
-          onChange={(e) => setShortBio(e.target.value)}
-          placeholder="A sentence or two about your background and what you're looking for."
-          className="mt-1 w-full border rounded px-3 py-2"
-        />
-      </div>
+          {step === 4 && (
+            <div className="space-y-2">
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+                className="block text-sm text-text-muted file:mr-3 file:rounded file:border file:border-border file:bg-surface-raised file:px-3 file:py-1.5 file:text-text hover:file:bg-surface-sunken"
+              />
+              {resumeFile && (
+                <p className="text-text-subtle text-sm">
+                  Selected: {resumeFile.name}
+                </p>
+              )}
+            </div>
+          )}
+        </section>
 
-      <div>
-        <label className="block text-sm font-medium">Résumé (PDF, ≤5 MB)</label>
-        <input
-          type="file"
-          accept="application/pdf"
-          required
-          onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
-          className="mt-1 block"
-        />
-      </div>
+        {error && (
+          <p className="text-sm text-text-muted border border-border bg-surface-raised rounded px-3 py-2">
+            {error}
+          </p>
+        )}
 
-      {error && (
-        <div className="text-sm text-red-600 border border-red-200 bg-red-50 p-2 rounded">
-          {error}
+        <div className="flex items-center justify-between">
+          {step > 0 ? (
+            <FlowHoverButton variant="dark" type="button" onClick={retreat}>
+              Back
+            </FlowHoverButton>
+          ) : (
+            <span />
+          )}
+
+          {step < TOTAL_STEPS - 1 ? (
+            <FlowHoverButton
+              type="button"
+              onClick={advance}
+              disabled={!canAdvance}
+            >
+              Continue
+            </FlowHoverButton>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              <FlowHoverButton type="submit" disabled={submitting || !canAdvance}>
+                {submitting ? 'Submitting…' : 'Finish setup'}
+              </FlowHoverButton>
+            </form>
+          )}
         </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={submitting}
-        className="px-4 py-2 rounded bg-black text-white disabled:opacity-50"
-      >
-        {submitting ? 'Submitting…' : 'Finish setup'}
-      </button>
-      </form>
+      </div>
     </main>
   );
 }
