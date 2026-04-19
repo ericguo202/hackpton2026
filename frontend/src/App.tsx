@@ -4,6 +4,7 @@ import { useState } from 'react';
 import OnboardingForm from './components/OnboardingForm';
 import PageMorphTransition from './components/PageMorphTransition';
 import { useMe } from './hooks/useMe';
+import { useMorphTransition } from './hooks/useMorphTransition';
 import Hero from './pages/Hero';
 import History from './pages/History';
 import Home from './pages/Home';
@@ -14,8 +15,6 @@ import SsoCallback from './pages/SsoCallback';
 
 type View = 'hero' | 'signin' | 'signup';
 type SignedInView = 'home' | 'history' | 'session';
-const TRANSITION_MS = 900;
-const SWAP_AT_MS = 450;
 
 function SignedInApp() {
   const { me, isReady, isLoading, refetch } = useMe();
@@ -74,38 +73,23 @@ function SignedInApp() {
 
 function SignedOutApp() {
   const [content, setContent] = useState<View>('hero');
-  const [transitioning, setTransitioning] = useState(false);
-  const [transitionKey, setTransitionKey] = useState(0);
+  const { trigger, transitioning, transitionKey } = useMorphTransition();
 
-  const prefersReducedMotion =
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  const trigger = (next: View) => {
-    if (transitioning) return;
-    if (prefersReducedMotion) {
-      setContent(next);
-      return;
-    }
-    setTransitioning(true);
-    setTransitionKey((k) => k + 1);
-    window.setTimeout(() => setContent(next), SWAP_AT_MS);
-    window.setTimeout(() => setTransitioning(false), TRANSITION_MS);
-  };
+  const swapTo = (next: View) => trigger(() => setContent(next));
 
   return (
     <>
-      {content === 'hero' && <Hero onSignInClick={() => trigger('signin')} />}
+      {content === 'hero' && <Hero onSignInClick={() => swapTo('signin')} />}
       {content === 'signin' && (
         <SignIn
-          onBack={() => trigger('hero')}
-          onCreateAccount={() => trigger('signup')}
+          onBack={() => swapTo('hero')}
+          onCreateAccount={() => swapTo('signup')}
         />
       )}
       {content === 'signup' && (
         <SignUp
-          onBack={() => trigger('hero')}
-          onSignInClick={() => trigger('signin')}
+          onBack={() => swapTo('hero')}
+          onSignInClick={() => swapTo('signin')}
         />
       )}
       {transitioning && <PageMorphTransition key={transitionKey} />}

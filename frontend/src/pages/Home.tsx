@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
 
 import { CameraPreview } from '../components/CameraPreview';
+import PageMorphTransition from '../components/PageMorphTransition';
 import QuestionPlayer from '../components/QuestionPlayer';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
@@ -18,6 +19,7 @@ import { useApi } from '../hooks/useApi';
 import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnalyzer';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
+import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
 import { getReplayFaceLandmarker } from '../lib/faceLandmarker';
@@ -650,6 +652,17 @@ export default function Home({ onNavigateHistory }: Props) {
     recorder.videoStream,
     recorder.state === 'recording',
   );
+  // Morph overlay for phase changes (setup -> interview -> done).
+  // In-phase state swaps (recorder idle/recording/stopped/submitting)
+  // use the lighter `anim-crossfade` class instead, since a full-screen
+  // morph would be disruptive for sub-second UI updates.
+  const { trigger: triggerMorph, transitioning, transitionKey } = useMorphTransition();
+  // Direction of the active morph. Setup -> interview sweeps right-to-left
+  // (feels like stepping forward into the session); interview -> done
+  // keeps the default bottom-to-top sweep. Set before `triggerMorph` so
+  // React batches both state updates into the render that mounts the
+  // overlay with the correct direction.
+  const [morphDirection, setMorphDirection] = useState<'up' | 'left'>('up');
   const turnResultsRef = useRef<ReplayTurnResult[]>([]);
 
   const [company, setCompany] = useState('');
@@ -748,8 +761,14 @@ export default function Home({ onNavigateHistory }: Props) {
           ...(voiceId ? { voice_id: voiceId } : {}),
         }),
       });
-      setSessionId(data.session_id);
-      setCurrentQ({ text: data.first_question, audioUrl: data.first_question_audio_url, num: 1 });
+      // Phase 1 -> Phase 2: commit the new session state mid-morph so
+      // the user sees the question panel only after the overlay covers
+      // the screen. The overlay clears ~450ms later on its own.
+      setMorphDirection('left');
+      triggerMorph(() => {
+        setSessionId(data.session_id);
+        setCurrentQ({ text: data.first_question, audioUrl: data.first_question_audio_url, num: 1 });
+      });
     } catch (err) {
       setSetupError(
         err instanceof ApiError
@@ -874,8 +893,15 @@ export default function Home({ onNavigateHistory }: Props) {
             err,
           );
         }
-        setIsDone(true);
-        setCurrentQ(null);
+        // Phase 2 -> Phase 3: the session-complete screen lands with
+        // the overlay covering the spinner-to-results swap. Default
+        // 'up' direction — reserves the right-to-left sweep for the
+        // "starting the interview" gesture.
+        setMorphDirection('up');
+        triggerMorph(() => {
+          setIsDone(true);
+          setCurrentQ(null);
+        });
       } else {
         setCurrentQ({
           text: result.next_question!,
@@ -1043,7 +1069,7 @@ export default function Home({ onNavigateHistory }: Props) {
               />
 
               {recorder.videoStream && (
-                <div className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
+                <div className="anim-crossfade mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
                   <CameraPreview stream={recorder.videoStream} />
                   <div className="rounded-2xl bg-surface-raised p-5">
                     <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
@@ -1101,7 +1127,7 @@ export default function Home({ onNavigateHistory }: Props) {
                   <div
                     role="status"
                     aria-live="polite"
-                    className="flex items-center gap-3 py-4 text-text-muted"
+                    className="anim-crossfade flex items-center gap-3 py-4 text-text-muted"
                   >
                     <Spinner size={20} />
                     <p className="text-sm">
@@ -1113,13 +1139,13 @@ export default function Home({ onNavigateHistory }: Props) {
                 ) : (
                   <>
                     {recorder.state === 'idle' && (
-                      <p className="text-sm text-text-subtle">
+                      <p className="anim-crossfade text-sm text-text-subtle">
                         Recording will start automatically when the question finishes.
                       </p>
                     )}
 
                     {recorder.state === 'recording' && (
-                      <div className="flex flex-wrap items-center gap-4">
+                      <div className="anim-crossfade flex flex-wrap items-center gap-4">
                         <span className="flex items-center gap-2 text-sm text-text">
                           <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
                           Recording
@@ -1135,7 +1161,7 @@ export default function Home({ onNavigateHistory }: Props) {
                     )}
 
                     {recorder.state === 'stopped' && recorder.audioUrl && (
-                      <div className="space-y-4">
+                      <div className="anim-crossfade space-y-4">
                         {recorder.replayUrl ? (
                           <div className="aspect-video overflow-hidden rounded-2xl bg-surface-sunken">
                             <video src={recorder.replayUrl} controls className="h-full w-full object-cover" />
@@ -1177,7 +1203,10 @@ export default function Home({ onNavigateHistory }: Props) {
               </div>
 
               {turnResults.length > 0 && (
-                <div className="mt-8 rounded-lg bg-surface-raised p-4">
+                <div
+                  key={`transcript-${turnResults.length}`}
+                  className="anim-crossfade mt-8 rounded-lg bg-surface-raised p-4"
+                >
                   <p className="mb-1 text-[11px] uppercase tracking-eyebrow text-text-subtle">
                     Transcript (turn {turnResults.length})
                   </p>
@@ -1340,6 +1369,9 @@ export default function Home({ onNavigateHistory }: Props) {
       </main>
 
       <ScoreDimensions tagline="One opening question. One follow-up. Then the scores." />
+      {transitioning && (
+        <PageMorphTransition key={transitionKey} direction={morphDirection} />
+      )}
     </div>
   );
 }
