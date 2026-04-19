@@ -15,6 +15,7 @@ import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { useApi } from '../hooks/useApi';
 import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnalyzer';
+import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
@@ -615,6 +616,7 @@ export default function Home({ onNavigateHistory }: Props) {
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
+  const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentQ, setCurrentQ] = useState<CurrentQ | null>(null);
@@ -977,6 +979,8 @@ export default function Home({ onNavigateHistory }: Props) {
                 question={currentQ.text}
                 audioUrl={currentQ.audioUrl}
                 questionNum={currentQ.num}
+                showQuestion={showQuestionText}
+                onToggleShowQuestion={() => setShowQuestionText((v) => !v)}
                 onEnded={() => {
                   recorder.start().catch((err: Error) => {
                     setTurnError(`Could not start recording: ${err.message}`);
