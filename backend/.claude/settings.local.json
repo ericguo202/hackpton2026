@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker exec backend-db-1 *)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist /FI \"PID eq 8520\" /FO TABLE)",
+      "Bash(tasklist /FI \"PID eq 35992\" /FO TABLE)",
+      "PowerShell(Stop-Service *)",
+      "Bash(venv/Scripts/alembic.exe upgrade *)",
+      "Bash(venv/Scripts/alembic.exe current *)"
+    ]
+  }
+}
