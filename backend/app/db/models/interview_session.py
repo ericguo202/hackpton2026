@@ -64,6 +64,15 @@ class InterviewSession(Base):
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ElevenLabs voice ID resolved at session-create time (either from the
+    # candidate's pick on the start form or the deterministic fallback in
+    # `voice_pool.voice_for_session`). Persisted so turn 2's TTS reads the
+    # same value without re-deriving — a refresh between turns won't
+    # rotate the voice. Nullable for legacy rows created before this
+    # column existed; the TTS call site falls back to
+    # `voice_for_session(session.id)` in that case.
+    voice_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(
