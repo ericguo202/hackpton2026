@@ -10,7 +10,11 @@
       "Bash(./venv/Scripts/python.exe -c ' *)",
       "Bash(./venv/Scripts/pytest.exe tests/ -v)",
       "Bash(node *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(git restore *)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(npx tsc *)"
     ]
   }
 }
