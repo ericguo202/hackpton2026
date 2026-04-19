@@ -11,7 +11,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.evaluator import EvaluatorOutput, evaluate_turn
+from app.services.evaluator import (
+    EvaluatorOutput,
+    _compute_delivery_score,
+    evaluate_turn,
+)
 from app.services.filler_words import count_filler_words
 
 
@@ -133,8 +137,8 @@ async def test_delivery_absent_when_no_cv_summary(monkeypatch):
 
 
 async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
-    """With cv_summary provided, the evaluator returns a 0-10 delivery
-    score, clamped like the other rubric fields."""
+    """With cv_summary provided, delivery is computed from analytics, not
+    trusted from the model output."""
     captured_prompt: dict[str, str] = {}
 
     class _DeliveryModel:
@@ -175,9 +179,9 @@ async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
         transcript="There was a teammate who kept missing standups...",
         cv_summary=cv_summary,
     )
-    assert result.delivery == 7
+    assert result.delivery == _compute_delivery_score(cv_summary)
     # The analytics block must actually reach the prompt — otherwise the
-    # model can't score delivery and we'd be lying to Gemma.
+    # model can't write an analytics-aware coaching note.
     assert "Webcam analytics" in captured_prompt["value"]
     assert "67.9" in captured_prompt["value"]
 
@@ -221,5 +225,39 @@ async def test_delivery_falls_back_when_model_omits_it_despite_cv_summary(monkey
         cv_summary=cv_summary,
     )
 
-    assert result.delivery is not None
-    assert 0 <= result.delivery <= 10
+    assert result.delivery == _compute_delivery_score(cv_summary)
+
+
+def test_compute_delivery_score_penalizes_sustained_issues():
+    strong = {
+        "frames_processed": 180,
+        "face_visible_pct": 99.0,
+        "eye_contact_score": 78.0,
+        "expression_score": 72.0,
+        "overall_interview_score": 75.0,
+        "eye_contact_stability": 90.0,
+        "expression_stability": 88.0,
+        "looked_away_pct": 4.0,
+        "posture_drift_pct": 5.0,
+        "low_energy_pct": 6.0,
+        "longest_looked_away_streak_frames": 4,
+        "longest_posture_drift_streak_frames": 5,
+        "longest_low_energy_streak_frames": 5,
+    }
+    weak = {
+        "frames_processed": 180,
+        "face_visible_pct": 94.0,
+        "eye_contact_score": 63.0,
+        "expression_score": 48.0,
+        "overall_interview_score": 57.0,
+        "eye_contact_stability": 58.0,
+        "expression_stability": 52.0,
+        "looked_away_pct": 28.0,
+        "posture_drift_pct": 22.0,
+        "low_energy_pct": 35.0,
+        "longest_looked_away_streak_frames": 42,
+        "longest_posture_drift_streak_frames": 31,
+        "longest_low_energy_streak_frames": 58,
+    }
+
+    assert _compute_delivery_score(strong) > _compute_delivery_score(weak)
