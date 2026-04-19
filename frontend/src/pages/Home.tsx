@@ -622,6 +622,14 @@ export default function Home({ onNavigateHistory }: Props) {
   const [submittingTurn, setSubmittingTurn] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [isDone, setIsDone] = useState(false);
+  // Stepped summary view. Step 0 is the session overview, steps 1..N map
+  // to each turn's ReplayCoachCard. `stepKey` force-remounts the section
+  // so the slide animation replays on every navigation, same pattern as
+  // `OnboardingForm`. `direction` picks slide-in-left (forward) vs
+  // slide-in-right (back).
+  const [resultsStep, setResultsStep] = useState(0);
+  const [resultsStepKey, setResultsStepKey] = useState(0);
+  const [resultsDirection, setResultsDirection] = useState<'forward' | 'back'>('forward');
   // Latched as soon as the user clicks "End answer" so the spinner shows
   // immediately instead of flashing the (now-removed) preview UI for the
   // tens-of-ms it takes MediaRecorder to flush its final chunk and
@@ -862,6 +870,15 @@ export default function Home({ onNavigateHistory }: Props) {
     analyzer.reset();
     setCompany('');
     setVoiceId(null);
+    setResultsStep(0);
+    setResultsDirection('forward');
+  }
+
+  function goToResultsStep(next: number) {
+    if (next === resultsStep) return;
+    setResultsDirection(next > resultsStep ? 'forward' : 'back');
+    setResultsStep(next);
+    setResultsStepKey((k) => k + 1);
   }
 
   // Refresh the auto-submit ref DURING render so by the time the
@@ -1107,58 +1124,129 @@ export default function Home({ onNavigateHistory }: Props) {
           </div>
         )}
 
-        {isDone && (
-          <div className="mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16">
-            <div className="max-w-[72rem]">
-              <p className="mb-6 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-                Session complete
-              </p>
-              <h2
-                className="mb-2 font-display font-medium leading-[1.05] tracking-[-0.02em] text-text"
-                style={{ fontSize: 'clamp(2rem, 4vw, 3.25rem)' }}
-              >
-                Here is how you did.
-              </h2>
-              <p className="mb-2 text-sm text-text-muted">
-                Overall:{' '}
-                <span className="font-medium text-text">
-                  {turnResults.length > 0
-                    ? (                                                                                                                                              
-                        turnResults.reduce((sum, r) => sum + turnAverage(r), 0) /                                                                                    
-                        turnResults.length                                                                                                                           
-                      ).toFixed(1)
-                    : '—'}
-                  /10
-                </span>{' '}
-                averaged across {turnResults.length} turn{turnResults.length === 1 ? '' : 's'}   
-              </p>
-              <p className="max-w-[54ch] text-sm leading-6 text-text-subtle">
-                Each replay keeps your actual recording, the model feedback, and the delivery analytics together so you can review what to tighten on the next run instead of guessing.
-              </p>
+        {isDone && (() => {
+          // One step for the overview, one per turn. With the locked
+          // 2-turn plan that's 3 steps, but the math is general.
+          const resultsTotalSteps = 1 + turnResults.length;
+          const stepIndex = Math.min(resultsStep, resultsTotalSteps - 1);
+          const isLastStep = stepIndex === resultsTotalSteps - 1;
+          const isOverviewStep = stepIndex === 0;
+          const activeTurn = isOverviewStep ? null : turnResults[stepIndex - 1];
+          return (
+            <div className="mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16">
+              <div className="max-w-[72rem]">
+                <div className="mb-10 flex items-center gap-3" role="tablist" aria-label="Results sections">
+                  {Array.from({ length: resultsTotalSteps }).map((_, i) => {
+                    const active = i === stepIndex;
+                    const label = i === 0 ? 'Overview' : `Turn ${i}`;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        aria-label={label}
+                        onClick={() => goToResultsStep(i)}
+                        className={`h-2 rounded-full transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+                          active ? 'w-10 bg-accent' : 'w-2 bg-border hover:bg-border-strong'
+                        }`}
+                      />
+                    );
+                  })}
+                  <span className="ml-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                    {isOverviewStep ? 'Overview' : `Turn ${stepIndex} of ${turnResults.length}`}
+                  </span>
+                </div>
 
-              {turnResults.map((r, i) => (
-                <ReplayCoachCard key={`${i}-${r.question}`} result={r} turnNum={i + 1} />
-              ))}
+                <section
+                  key={resultsStepKey}
+                  className={resultsDirection === 'back' ? 'anim-slide-in-right' : 'anim-slide-in-left'}
+                >
+                  {isOverviewStep && (
+                    <>
+                      <p className="mb-6 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                        Session complete
+                      </p>
+                      <h2
+                        className="mb-2 font-display font-medium leading-[1.05] tracking-[-0.02em] text-text"
+                        style={{ fontSize: 'clamp(2rem, 4vw, 3.25rem)' }}
+                      >
+                        Here is how you did.
+                      </h2>
+                      <p className="mb-2 text-sm text-text-muted">
+                        Overall:{' '}
+                        <span className="font-medium text-text">
+                          {turnResults.length > 0
+                            ? (
+                                turnResults.reduce((sum, r) => sum + turnAverage(r), 0) /
+                                turnResults.length
+                              ).toFixed(1)
+                            : '—'}
+                          /10
+                        </span>{' '}
+                        averaged across {turnResults.length} turn{turnResults.length === 1 ? '' : 's'}
+                      </p>
+                      <p className="max-w-[54ch] text-sm leading-6 text-text-subtle">
+                        Each replay keeps your actual recording, the model feedback, and the delivery analytics together so you can review what to tighten on the next run instead of guessing.
+                      </p>
+                    </>
+                  )}
 
-              <div className="mt-12 flex flex-wrap gap-3">
-                <button
-                  onClick={handleNewSession}
-                  className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
-                >
-                  Start another session
-                  <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
-                </button>
-                <button
-                  onClick={onNavigateHistory}
-                  className="group inline-flex items-baseline gap-2 rounded-full border border-border px-7 py-3.5 text-[15px] text-text transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
-                >
-                  View history
-                  <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
-                </button>
+                  {!isOverviewStep && activeTurn && (
+                    <ReplayCoachCard
+                      key={`${stepIndex}-${activeTurn.question}`}
+                      result={activeTurn}
+                      turnNum={stepIndex}
+                    />
+                  )}
+                </section>
+
+                <div className="mt-12 flex flex-wrap items-center gap-3">
+                  {stepIndex > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => goToResultsStep(stepIndex - 1)}
+                      className="group inline-flex items-baseline gap-2 rounded-full border border-border px-7 py-3.5 text-[15px] text-text transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
+                    >
+                      <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-x-1">←</span>
+                      Back
+                    </button>
+                  )}
+
+                  {!isLastStep && (
+                    <button
+                      type="button"
+                      onClick={() => goToResultsStep(stepIndex + 1)}
+                      className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
+                    >
+                      Review turn {stepIndex + 1}
+                      <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
+                    </button>
+                  )}
+
+                  {isLastStep && (
+                    <>
+                      <button
+                        onClick={handleNewSession}
+                        className="group inline-flex items-baseline gap-2 rounded-full bg-accent px-7 py-3.5 text-[15px] font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
+                      >
+                        Start another session
+                        <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
+                      </button>
+                      <button
+                        onClick={onNavigateHistory}
+                        className="group inline-flex items-baseline gap-2 rounded-full border border-border px-7 py-3.5 text-[15px] text-text transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
+                      >
+                        View history
+                        <span aria-hidden className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1">→</span>
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </main>
 
       <ScoreDimensions tagline="One opening question. One follow-up. Then the scores." />
