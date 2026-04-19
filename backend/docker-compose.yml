@@ -21,8 +21,8 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: always
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     env_file:
       - .env
     environment:
@@ -40,5 +40,20 @@ services:
       start_period: 60s
       retries: 3
 
+  caddy:
+    image: caddy:2
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
