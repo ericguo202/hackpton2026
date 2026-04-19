@@ -90,7 +90,7 @@ export default function OnboardingForm({ onDone }: Props) {
   ];
   const canAdvance = validators[step]();
 
-  const progressPct = 50;
+  const progressPct = ((step + 1) / TOTAL_STEPS) * 100;
 
   function advance() {
     if (!canAdvance) return;
