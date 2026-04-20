@@ -851,6 +851,10 @@ export default function Home({ onNavigateHistory, onNavigatePersonalize }: Props
   const [turnResults, setTurnResults] = useState<ReplayTurnResult[]>([]);
   const [submittingTurn, setSubmittingTurn] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
+  // Brief gating state shown between an auto-submit failure and the
+  // single auto-retry that follows. Keeps the spinner up so the UI
+  // doesn't flash the (autoSubmit-hidden) preview block in the gap.
+  const [retryingTurn, setRetryingTurn] = useState(false);
   const [isDone, setIsDone] = useState(false);
   // Stepped summary view. Step 0 is the session overview, steps 1..N map
   // to each turn's ReplayCoachCard. `stepKey` force-remounts the section
@@ -915,6 +919,16 @@ export default function Home({ onNavigateHistory, onNavigatePersonalize }: Props
       submitTurnRef.current();
     }
   }, [endingTurn, recorder.state, recorder.audioBlob, submittingTurn]);
+
+  // One auto-retry per audio blob. Gemini occasionally returns transient
+  // 429/503s; in autoSubmit mode the user has no manual Submit button to
+  // re-try with, so we silently give it one more attempt before surfacing
+  // the error. The ref resets whenever the recorder produces a new blob
+  // (next turn or re-record), so each unique recording gets its own budget.
+  const autoRetriedRef = useRef(false);
+  useEffect(() => {
+    autoRetriedRef.current = false;
+  }, [recorder.audioBlob]);
 
   async function handleStart(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -1100,6 +1114,21 @@ export default function Home({ onNavigateHistory, onNavigatePersonalize }: Props
         error: err,
       });
       console.groupEnd();
+
+      // autoSubmit mode hides the manual preview/Submit block, so a hard
+      // failure would strand the user with no way back in. Try once more
+      // after a short pause; if that also fails, fall through to the
+      // error banner where the manual Retry button takes over.
+      if (autoSubmit && !autoRetriedRef.current && recorder.audioBlob) {
+        autoRetriedRef.current = true;
+        setRetryingTurn(true);
+        window.setTimeout(() => {
+          setRetryingTurn(false);
+          submitTurnRef.current();
+        }, 1500);
+        return;
+      }
+
       setTurnError(
         err instanceof ApiError
           ? `${err.status}: ${err.message}`
@@ -1130,6 +1159,7 @@ export default function Home({ onNavigateHistory, onNavigatePersonalize }: Props
     setTurnError(null);
     setSetupError(null);
     setEndingTurn(false);
+    setRetryingTurn(false);
     recorder.reset();
     analyzer.reset();
     setCompany('');
@@ -1341,7 +1371,7 @@ export default function Home({ onNavigateHistory, onNavigatePersonalize }: Props
                   is shown via the `endingTurn` branch so the UI never
                   flashes a stale state.
                 */}
-                {(submittingTurn || endingTurn) ? (
+                {(submittingTurn || endingTurn || retryingTurn) ? (
                   // Turn 1: STT + Flash + TTS only (~5-10s); Gemma 4 runs
                   // in the background, so the candidate moves on quickly.
                   // Turn 2: Gemma 4 is on the critical path (we await it
@@ -1354,9 +1384,11 @@ export default function Home({ onNavigateHistory, onNavigatePersonalize }: Props
                   >
                     <Spinner size={20} />
                     <p className="text-sm">
-                      {currentQ.num >= 2
-                        ? 'Scoring your interview — this can take up to 40 seconds.'
-                        : 'Analyzing your response — usually takes 5–10 seconds.'}
+                      {retryingTurn
+                        ? 'The model briefly rejected the request. Retrying…'
+                        : currentQ.num >= 2
+                          ? 'Scoring your interview — this can take up to 40 seconds.'
+                          : 'Analyzing your response — usually takes 5–10 seconds.'}
                     </p>
                   </div>
                 ) : (
@@ -1430,10 +1462,24 @@ export default function Home({ onNavigateHistory, onNavigatePersonalize }: Props
                 )}
 
                 {turnError && (
-                  <p role="alert" className="text-sm text-text-muted">
-                    <span className="mr-2 text-[10px] uppercase tracking-eyebrow text-text">Error</span>
-                    {turnError}
-                  </p>
+                  <div className="space-y-3">
+                    <p role="alert" className="text-sm text-text-muted">
+                      <span className="mr-2 text-[10px] uppercase tracking-eyebrow text-text">Error</span>
+                      {turnError}
+                    </p>
+                    {/* In autoSubmit OFF mode the preview block above already
+                        shows a Submit button against the same buffered blob,
+                        so this manual retry only needs to surface in the
+                        autoSubmit ON path where there's otherwise no way back. */}
+                    {autoSubmit && recorder.audioBlob && (
+                      <FlowHoverButton
+                        type="button"
+                        onClick={() => { void handleSubmitTurn(); }}
+                      >
+                        Retry submission
+                      </FlowHoverButton>
+                    )}
+                  </div>
                 )}
               </div>
 
