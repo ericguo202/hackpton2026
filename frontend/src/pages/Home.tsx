@@ -6,9 +6,17 @@
  * Phase 3 (done):    all scores from both turns revealed together, with replay coach overlays
  */
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
 import { ImageDithering } from '@paper-design/shaders-react';
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 import { CameraPreview } from '../components/CameraPreview';
 import PageMorphTransition from '../components/PageMorphTransition';
@@ -23,6 +31,7 @@ import { useMe } from '../hooks/useMe';
 import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
+import { fillerBreakdown, tokenizeTranscript } from '../lib/fillerWords';
 import { getReplayFaceLandmarker } from '../lib/faceLandmarker';
 import type { InterviewSummary } from '../lib/faceHeuristics';
 import { VOICE_PROFILES, type VoiceProfile } from '../lib/voices';
@@ -324,6 +333,103 @@ function ReplayLandmarkOverlay({ videoRef }: { videoRef: React.RefObject<HTMLVid
   );
 }
 
+/**
+ * Small horizontal bar chart of filler-word counts for a single turn.
+ *
+ * Rendered next to the expanded transcript so the candidate can see
+ * which crutch words dominated, not just the total count. Colors are
+ * aligned to the red highlight used inline in the transcript — same
+ * visual language, same meaning. Chart dimensions are intentionally
+ * compact: the transcript prose is the primary element; this is a
+ * secondary readout that complements it.
+ *
+ * Empty-state: if the transcript has zero detected fillers we still
+ * render a short line of text so the right column doesn't look broken
+ * or abandoned.
+ */
+function FillerBreakdownChart({ transcript }: { transcript: string }) {
+  const data = useMemo(() => fillerBreakdown(transcript), [transcript]);
+
+  if (data.length === 0) {
+    return (
+      <div className="flex items-start">
+        <p className="text-sm text-text-muted">
+          No filler words detected in this answer.
+        </p>
+      </div>
+    );
+  }
+
+  // One bar per detected filler, ~28px per row plus padding for the
+  // axis + title. Clamped so a runaway answer with every filler in the
+  // list doesn't blow out the column.
+  const rowHeight = 28;
+  const height = Math.min(Math.max(data.length * rowHeight + 48, 140), 320);
+  const maxCount = data[0]?.count ?? 1;
+
+  return (
+    <div>
+      <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+        Filler distribution
+      </p>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            layout="vertical"
+            data={data}
+            margin={{ top: 4, right: 24, bottom: 4, left: 0 }}
+            barCategoryGap={6}
+          >
+            <XAxis
+              type="number"
+              hide
+              domain={[0, Math.max(maxCount, 1)]}
+              allowDecimals={false}
+            />
+            <YAxis
+              type="category"
+              dataKey="word"
+              width={84}
+              tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip
+              cursor={{ fill: 'var(--color-surface-raised)' }}
+              contentStyle={{
+                background: 'var(--color-surface-raised)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 6,
+                fontSize: 12,
+              }}
+              labelStyle={{ color: 'var(--color-text)' }}
+              itemStyle={{ color: 'var(--color-text-muted)' }}
+              // recharts v3 types the incoming value as
+              // `ValueType | undefined` (number | string | array | undefined).
+              // Coerce defensively — our data is always numeric, but typing
+              // it as `number` here makes TS reject the Formatter signature.
+              formatter={(value) => [`${value ?? 0}×`, 'Count']}
+            />
+            <Bar
+              dataKey="count"
+              // red-500 at 60% matches the transcript highlight family
+              // (bg-red-500/30 on text) while being more saturated so
+              // the bars read clearly against the cream surface.
+              fill="rgb(239 68 68 / 0.6)"
+              radius={[0, 3, 3, 0]}
+              label={{
+                position: 'right',
+                fill: 'var(--color-text-muted)',
+                fontSize: 11,
+              }}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNum: number }) {
   const [showOverlay, setShowOverlay] = useState(true);
   const [showLandmarks, setShowLandmarks] = useState(false);
@@ -499,9 +605,36 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
             </span>
           </button>
           {showTranscript && (
-            <p className="mt-4 max-w-[72ch] text-sm leading-7 text-text-muted">
-              {result.transcript}
-            </p>
+            // Two-column reveal: transcript on the left (capped at a
+            // readable measure), filler-word distribution chart on the
+            // right. Right column is narrower and capped at ~18rem so
+            // the chart stays visually "secondary" to the transcript.
+            <div className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(16rem,0.7fr)]">
+              <p className="max-w-[72ch] text-sm leading-7 text-text-muted">
+                {tokenizeTranscript(result.transcript).map((tok, i) =>
+                  tok.kind === 'filler' ? (
+                    // Filler highlight: medium-opacity red wash with a slightly
+                    // stronger red text tone so the word still reads cleanly.
+                    // Match list lives in src/lib/fillerWords.ts and mirrors
+                    // the backend regex in app/services/filler_words.py.
+                    <span
+                      key={i}
+                      className="rounded-sm bg-red-500/30 px-1 text-red-900 decoration-red-700/50 underline-offset-2"
+                      title={`Filler word: "${tok.canonical}"`}
+                    >
+                      {tok.text}
+                    </span>
+                  ) : (
+                    // Plain text fragments are rendered as a Fragment so
+                    // whitespace and newlines inside the transcript are
+                    // preserved verbatim — wrapping them in a <span> would
+                    // collapse no visible characters but adds DOM noise.
+                    <span key={i}>{tok.text}</span>
+                  ),
+                )}
+              </p>
+              <FillerBreakdownChart transcript={result.transcript} />
+            </div>
           )}
         </div>
       )}
