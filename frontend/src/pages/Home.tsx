@@ -404,7 +404,11 @@ function FillerBreakdownChart({ transcript }: { transcript: string }) {
               }}
               labelStyle={{ color: 'var(--color-text)' }}
               itemStyle={{ color: 'var(--color-text-muted)' }}
-              formatter={(v: number) => [`${v}×`, 'Count']}
+              // recharts v3 types the incoming value as
+              // `ValueType | undefined` (number | string | array | undefined).
+              // Coerce defensively — our data is always numeric, but typing
+              // it as `number` here makes TS reject the Formatter signature.
+              formatter={(value) => [`${value ?? 0}×`, 'Count']}
             />
             <Bar
               dataKey="count"
