@@ -1,12 +1,11 @@
 """
-Unit tests for opening_question — Gemini call mocked.
+Unit tests for opening_question — OpenRouter call mocked.
 """
 
 from types import SimpleNamespace
 
 import pytest
 
-from app.services import opening_question
 from app.services.company_research import CompanyBrief
 from app.services.opening_question import (
     _strip_wrapping_quotes,
@@ -14,9 +13,19 @@ from app.services.opening_question import (
 )
 
 
-class _FakeResponse:
-    def __init__(self, text: str):
-        self.text = text
+def _fake_response(text: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=text))]
+    )
+
+
+def _make_fake_client(text: str):
+    async def _create(**kwargs):
+        return _fake_response(text)
+
+    return SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
 
 
 def _fake_user():
@@ -39,20 +48,13 @@ def _fake_brief():
 
 
 async def test_generate_opening_question_returns_plain_string(monkeypatch):
-    class _Model:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def generate_content_async(self, *args, **kwargs):
-            return _FakeResponse(
-                "Tell me about a time you designed an evaluation system under "
-                "safety constraints, and how you'd approach similar tradeoffs "
-                "at Anthropic."
-            )
-
-    monkeypatch.setattr(opening_question.genai, "GenerativeModel", _Model)
     monkeypatch.setattr(
-        "app.services._gemini_utils.ensure_configured", lambda: None
+        "app.services.opening_question.get_client",
+        lambda: _make_fake_client(
+            "Tell me about a time you designed an evaluation system under "
+            "safety constraints, and how you'd approach similar tradeoffs "
+            "at Anthropic."
+        ),
     )
 
     q = await generate_opening_question(
@@ -66,16 +68,9 @@ async def test_generate_opening_question_returns_plain_string(monkeypatch):
 
 
 async def test_wrapping_quotes_stripped(monkeypatch):
-    class _Model:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def generate_content_async(self, *args, **kwargs):
-            return _FakeResponse('"Walk me through a project you led."')
-
-    monkeypatch.setattr(opening_question.genai, "GenerativeModel", _Model)
     monkeypatch.setattr(
-        "app.services._gemini_utils.ensure_configured", lambda: None
+        "app.services.opening_question.get_client",
+        lambda: _make_fake_client('"Walk me through a project you led."'),
     )
 
     q = await generate_opening_question(

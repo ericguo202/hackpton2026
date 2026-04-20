@@ -39,7 +39,7 @@ from app.schemas.session import (
 )
 from app.services import eval_registry
 from app.services.company_research import CompanyBrief, research_company
-from app.services.evaluator import GEMMA_EVAL_MODEL, EvaluatorOutput, evaluate_turn
+from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words
 from app.services.followup import generate_followup
 from app.services.opening_question import generate_opening_question
@@ -186,7 +186,7 @@ def _apply_eval_to_turn(turn: InterviewTurn, eval_out: EvaluatorOutput) -> None:
     turn.conciseness_score = eval_out.conciseness
     turn.delivery_score    = eval_out.delivery
     turn.feedback          = eval_out.notes
-    turn.ai_model_used     = GEMMA_EVAL_MODEL
+    turn.ai_model_used     = EVAL_MODEL
     turn.evaluated_at      = datetime.utcnow()
 
 
