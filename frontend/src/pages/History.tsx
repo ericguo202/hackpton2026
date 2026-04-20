@@ -34,7 +34,7 @@ import type {
 } from '../types/history';
 
 type Props = {
-  onNavigate: (view: 'home' | 'history') => void;
+  onNavigate: (view: 'home' | 'history' | 'personalize') => void;
   onOpenSession: (id: string) => void;
 };
 
@@ -241,6 +241,12 @@ export default function History({ onNavigate, onOpenSession }: Props) {
             </TopBarNavLink>
             <TopBarNavLink active onClick={() => onNavigate('history')}>
               History
+            </TopBarNavLink>
+            <TopBarNavLink
+              active={false}
+              onClick={() => onNavigate('personalize')}
+            >
+              Personalize
             </TopBarNavLink>
           </>
         }

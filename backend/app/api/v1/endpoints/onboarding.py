@@ -8,10 +8,15 @@ Multipart form, because a PDF résumé may be part of the submission. Fields:
   resume_text_input                                    (optional, ≤5000 chars)
   skip_resume                                          (optional bool, wins over both)
 
-Exactly one of {resume_file, resume_text_input, skip_resume=true} is the
-résumé source. If `skip_resume` is true the stored `resume_text` is "" —
-the user can fill it in later. Otherwise, if a PDF is provided it's parsed
-with pdfplumber; otherwise pasted text is stored verbatim.
+Résumé source resolution, in precedence order:
+  1. `skip_resume=true`    → stored as ""
+  2. `resume_file`         → parsed with pdfplumber
+  3. `resume_text_input`   → stored verbatim (empty string = explicit clear)
+  4. none of the above     → existing `users.resume_text` is preserved
+
+Cases (1)–(3) are what the onboarding wizard submits (its frontend validator
+forces one of them). Case (4) is what the Personalize page submits when the
+user edits other fields without touching the résumé section.
 
 On success all profile fields are written to the caller's `users` row and
 `completed_registration` flips to True. The row is guaranteed to exist
@@ -24,7 +29,7 @@ Error codes:
   401 — missing / invalid bearer (handled upstream in `current_user`)
   413 — resume file exceeds 5 MB
   415 — non-PDF upload
-  422 — PDF parsed but produced no text, or no résumé source was supplied
+  422 — PDF parsed but produced no text
 """
 
 from io import BytesIO
@@ -87,7 +92,11 @@ async def onboarding(
 ) -> User:
     # Empty UploadFile entries arrive with no filename — treat those as absent.
     has_file = resume_file is not None and bool(resume_file.filename)
-    pasted = (resume_text_input or "").strip()
+    # Distinguish "field omitted" (preserve existing) from "field sent as empty
+    # string" (explicit clear). Needed by the Personalize page, which can
+    # submit without touching résumé input; FastAPI keeps `None` vs `""`
+    # distinct for `Form(None, ...)` multipart fields.
+    text_sent = resume_text_input is not None
 
     if skip_resume:
         final_resume_text = ""
@@ -123,13 +132,15 @@ async def onboarding(
             )
 
         final_resume_text = extracted_text
-    elif pasted:
-        final_resume_text = pasted
+    elif text_sent:
+        # Empty string here is an explicit clear from the Personalize page.
+        final_resume_text = (resume_text_input or "").strip()
     else:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Résumé required — upload a PDF, paste text, or check 'complete this step later'.",
-        )
+        # No résumé signal at all — preserve whatever is already on the row.
+        # Onboarding's frontend validator forces one of {file, text, skip},
+        # so this branch is only reached from Personalize edits that don't
+        # touch the résumé section.
+        final_resume_text = user.resume_text or ""
 
     # Mutate the already-attached ORM row. commit() fires the
     # `set_updated_at()` trigger defined in migration 0001_init.

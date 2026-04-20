@@ -19,7 +19,7 @@ import type { TurnDetail } from '../types/history';
 type Props = {
   sessionId: string;
   onBack: () => void;
-  onNavigate: (view: 'home' | 'history') => void;
+  onNavigate: (view: 'home' | 'history' | 'personalize') => void;
 };
 
 const SCORE_KEYS = [
@@ -149,6 +149,12 @@ export default function SessionDetail({ sessionId, onBack, onNavigate }: Props) 
             </TopBarNavLink>
             <TopBarNavLink active onClick={() => onNavigate('history')}>
               History
+            </TopBarNavLink>
+            <TopBarNavLink
+              active={false}
+              onClick={() => onNavigate('personalize')}
+            >
+              Personalize
             </TopBarNavLink>
           </>
         }

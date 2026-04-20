@@ -210,7 +210,7 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
   if (result.filler_word_count > 0) {
     insights.push({
       title: 'Trim filler words',
-      detail: `${result.filler_word_count} filler words showed up in this turn. Slow the first sentence down to create cleaner pauses.`,
+      detail: `${result.filler_word_count} filler words showed up in this turn. Click "Show Transcript" to view where you used them.`,
     });
   }
 
@@ -805,9 +805,11 @@ function mergeServerScores(
 type Props = {
   /** Switch to the History view via the TopBar nav link. */
   onNavigateHistory: () => void;
+  /** Switch to the Personalize view via the TopBar nav link. */
+  onNavigatePersonalize: () => void;
 };
 
-export default function Home({ onNavigateHistory }: Props) {
+export default function Home({ onNavigateHistory, onNavigatePersonalize }: Props) {
   const { user } = useUser();
   const { me } = useMe();
   const { apiFetch } = useApi();
@@ -1153,6 +1155,9 @@ export default function Home({ onNavigateHistory }: Props) {
             </TopBarNavLink>
             <TopBarNavLink active={false} onClick={onNavigateHistory}>
               History
+            </TopBarNavLink>
+            <TopBarNavLink active={false} onClick={onNavigatePersonalize}>
+              Personalize
             </TopBarNavLink>
           </>
         }
