@@ -1271,6 +1271,15 @@ export default function Home({ onNavigateHistory }: Props) {
                 showQuestion={showQuestionText}
                 onToggleShowQuestion={() => setShowQuestionText((v) => !v)}
                 onEnded={() => {
+                  // Only auto-start recording when the recorder is fresh.
+                  // QuestionPlayer stays mounted during the preview/Submit/
+                  // Re-record step, so if the user replays the question
+                  // there (state='stopped'), we must NOT kick off a new
+                  // take — that would wipe the blob they just recorded.
+                  // Valid entry paths both land on 'idle': initial mount
+                  // of a turn, and handleReRecord() which calls
+                  // recorder.reset() before bumping replayKey.
+                  if (recorder.state !== 'idle') return;
                   recorder.start().catch((err: Error) => {
                     setTurnError(`Could not start recording: ${err.message}`);
                   });
