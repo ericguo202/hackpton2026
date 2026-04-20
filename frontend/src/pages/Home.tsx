@@ -527,10 +527,14 @@ function VoicePicker({
   selectedId,
   onSelect,
   disabled,
+  autoSubmit,
+  onToggleAutoSubmit,
 }: {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   disabled: boolean;
+  autoSubmit: boolean;
+  onToggleAutoSubmit: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -539,7 +543,7 @@ function VoicePicker({
 
   return (
     <div className="anim-reveal mt-8 max-w-[42rem]" style={{ animationDelay: '200ms' }}>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
@@ -554,6 +558,25 @@ function VoicePicker({
             ? `${selected.name} (${selected.accent})`
             : 'Surprise me'}
         </span>
+        {/*
+          Auto-submit toggle lives next to the voice picker so both session
+          preferences are collected in one visual row. Pill style mirrors
+          the voice pills below for consistency. Default is OFF (per user
+          ask); pref is persisted via `useLocalStoragePref` on the parent.
+        */}
+        <button
+          type="button"
+          onClick={onToggleAutoSubmit}
+          disabled={disabled}
+          aria-pressed={autoSubmit}
+          className={
+            autoSubmit
+              ? 'rounded-full border border-accent bg-accent px-3 py-1 text-[12px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+              : 'cursor-pointer rounded-full border border-border bg-transparent px-3 py-1 text-[12px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+          }
+        >
+          Auto-submit: {autoSubmit ? 'On' : 'Off'}
+        </button>
       </div>
 
       {open && (
@@ -682,6 +705,11 @@ export default function Home({ onNavigateHistory }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
+  // Off by default. When on, tapping "End answer" while recording fires the
+  // auto-submit effect below and skips the preview/Re-record block entirely.
+  // When off, the flow falls back to the legacy review step where the user
+  // can replay their recording and choose to Submit or redo the turn.
+  const [autoSubmit, setAutoSubmit] = useLocalStoragePref('auto_submit_enabled', false);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentQ, setCurrentQ] = useState<CurrentQ | null>(null);
@@ -703,6 +731,12 @@ export default function Home({ onNavigateHistory }: Props) {
   // populate `recorder.audioBlob`. The auto-submit effect below clears
   // it implicitly by transitioning into `submittingTurn === true`.
   const [endingTurn, setEndingTurn] = useState(false);
+  // Bumped when the user clicks Re-record so the <QuestionPlayer> below
+  // remounts, retriggering its native `<audio autoPlay>` — after the
+  // replay ends, the existing `onEnded` handler starts the recorder
+  // again. Lets us reuse the same question without adding an imperative
+  // ref API to QuestionPlayer.
+  const [replayKey, setReplayKey] = useState(0);
 
   const firstName = user?.firstName ?? null;
 
@@ -720,17 +754,22 @@ export default function Home({ onNavigateHistory }: Props) {
   // final chunk and populates `recorder.audioBlob`, fire the turn
   // submission. We can't chain this synchronously off the Stop click
   // because `audioBlob` lands a beat later (set inside the recorder's
-  // `onstop` callback), and we don't want a preview window between them
-  // — that's the whole point of removing the Re-record path.
+  // `onstop` callback), and we don't want a preview window between them.
   //
   // `submitTurnRef` holds the latest `handleSubmitTurn` closure. It is
-  // assigned DURING render (just below) rather than in a `useEffect`
-  // so the ref is current by the time this effect fires post-render —
-  // an effect-based update would lag by one frame and cause the auto-
-  // submit to call a stale closure where `recorder.audioBlob` was
-  // still null, bailing out at the early-return guard inside
-  // `handleSubmitTurn` and never firing the network call.
+  // refreshed via a no-deps effect declared BEFORE the auto-submit effect
+  // below. React runs effects in declaration order after each render, so
+  // by the time the auto-submit effect reads `submitTurnRef.current`, it
+  // already points at this render's closure (which sees the latest
+  // `recorder.audioBlob`, `sessionId`, `currentQ`, etc.). That keeps the
+  // closure fresh without the write-during-render pattern that the
+  // `react-hooks/refs` rule flags.
   const submitTurnRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    submitTurnRef.current = () => {
+      void handleSubmitTurn();
+    };
+  });
   useEffect(() => {
     if (
       endingTurn
@@ -936,6 +975,16 @@ export default function Home({ onNavigateHistory }: Props) {
     }
   }
 
+  // Re-record: reset the recorder (drops the prior blob + revokes URLs)
+  // and bump `replayKey` so the QuestionPlayer below remounts and its
+  // `<audio autoPlay>` replays the same question audio from the top.
+  // The existing `onEnded` → `recorder.start()` handler then kicks a
+  // fresh recording, so the user effectively redoes the same turn.
+  function handleReRecord() {
+    recorder.reset();
+    setReplayKey((k) => k + 1);
+  }
+
   function handleNewSession() {
     revokeReplayUrls(turnResultsRef.current);
     turnResultsRef.current = [];
@@ -960,18 +1009,6 @@ export default function Home({ onNavigateHistory }: Props) {
     setResultsStep(next);
     setResultsStepKey((k) => k + 1);
   }
-
-  // Refresh the auto-submit ref DURING render so by the time the
-  // post-render auto-submit effect fires, the ref points at this
-  // render's closure (which sees the latest `recorder.audioBlob`,
-  // `sessionId`, `currentQ`, etc.). Updating the ref in a `useEffect`
-  // would lag by one frame and the effect would call a stale closure
-  // that captured `audioBlob === null`, hitting the early-return
-  // guard inside `handleSubmitTurn` and silently dropping the submit.
-  // Refs don't trigger re-renders, so write-during-render is safe.
-  submitTurnRef.current = () => {
-    void handleSubmitTurn();
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
@@ -1057,6 +1094,8 @@ export default function Home({ onNavigateHistory }: Props) {
                 selectedId={voiceId}
                 onSelect={setVoiceId}
                 disabled={submitting}
+                autoSubmit={autoSubmit}
+                onToggleAutoSubmit={() => setAutoSubmit((v) => !v)}
               />
 
               <div
@@ -1092,6 +1131,7 @@ export default function Home({ onNavigateHistory }: Props) {
           <div className="mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16">
             <div className="max-w-[70rem]">
               <QuestionPlayer
+                key={replayKey}
                 question={currentQ.text}
                 audioUrl={currentQ.audioUrl}
                 questionNum={currentQ.num}
@@ -1189,14 +1229,22 @@ export default function Home({ onNavigateHistory }: Props) {
                         <FlowHoverButton
                           variant="dark"
                           type="button"
-                          onClick={recorder.stop}
+                          onClick={() => {
+                            // Flip the latch BEFORE stopping so the auto-submit
+                            // effect's guard is armed by the time the recorder's
+                            // `onstop` populates `audioBlob`. When the pref is
+                            // off the latch stays down and the preview block
+                            // below renders as in the legacy flow.
+                            if (autoSubmit) setEndingTurn(true);
+                            recorder.stop();
+                          }}
                         >
-                          Stop recording
+                          {autoSubmit ? 'End answer' : 'Stop recording'}
                         </FlowHoverButton>
                       </div>
                     )}
 
-                    {recorder.state === 'stopped' && recorder.audioUrl && (
+                    {!autoSubmit && recorder.state === 'stopped' && recorder.audioUrl && (
                       <div className="anim-crossfade space-y-4">
                         {recorder.replayUrl ? (
                           // Thumbnail-sized preview so the Submit / Re-record
@@ -1219,7 +1267,7 @@ export default function Home({ onNavigateHistory }: Props) {
                           <FlowHoverButton
                             variant="dark"
                             type="button"
-                            onClick={recorder.reset}
+                            onClick={handleReRecord}
                           >
                             Re-record
                           </FlowHoverButton>

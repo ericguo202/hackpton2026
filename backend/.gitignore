@@ -3,6 +3,7 @@
 venv/
 .venv/
 interview_feedback_latest.json
+docker-compose.override.yml
 
 # test files and folders
 recordings/
