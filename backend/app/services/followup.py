@@ -1,22 +1,20 @@
 """
-Gemini 2.5 Flash follow-up question generator.
+Follow-up question generator (OpenRouter → `google/gemini-2.5-flash`).
 
-Separate from the Gemma 4 evaluator so both can run in parallel —
-follow-up generation only needs the question + transcript and uses a
-plain-text prompt (no JSON schema), keeping latency to ~0.5-1 s.
+Separate from the evaluator so both can run in parallel — follow-up
+generation only needs the question + transcript and uses a plain-text
+prompt (no JSON schema), keeping latency to ~0.5-1 s.
 """
 
 from __future__ import annotations
 
 import logging
 
-import google.generativeai as genai
-
-from app.services._gemini_utils import ensure_configured
+from app.services._openrouter import get_client
 
 logger = logging.getLogger(__name__)
 
-GEMINI_FLASH_MODEL = "gemini-2.0-flash"
+FOLLOWUP_MODEL = "google/gemini-2.5-flash"
 
 _PROMPT = """\
 You are a behavioral interviewer conducting a mock interview. The candidate \
@@ -48,16 +46,17 @@ Candidate's answer: {transcript}"""
 
 async def generate_followup(question: str, transcript: str) -> str:
     """Return a probing follow-up question via Gemini 2.5 Flash."""
-    ensure_configured()
-    model = genai.GenerativeModel(GEMINI_FLASH_MODEL)
+    client = get_client()
     prompt = _PROMPT.format(question=question, transcript=transcript)
     logger.warning("Followup prompt sent (question=%r, transcript_len=%d)", question, len(transcript))
-    response = await model.generate_content_async(
-        prompt,
-        generation_config={"temperature": 0.4, "max_output_tokens": 256},
-        request_options={"timeout": 30},
+    response = await client.chat.completions.create(
+        model=FOLLOWUP_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+        max_tokens=256,
+        timeout=30.0,
     )
-    raw = response.text
+    raw = response.choices[0].message.content or ""
     logger.warning("Followup raw response: %r", raw)
     result = raw.strip().strip('"')
     if "?" not in result or len(result) < 15:

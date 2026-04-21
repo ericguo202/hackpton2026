@@ -37,10 +37,11 @@ email-validator
 # FastAPI needs this to accept multipart/form-data (UploadFile + Form fields).
 python-multipart
 
-# Gemma 4 / Gemini client. Evaluator uses `gemma-4-26b-a4b-it` via this SDK;
-# later tasks (company research, opening question) use Gemini 2.5 Flash via
-# the same package.
-google-generativeai
+# OpenAI Python SDK, pointed at OpenRouter's OpenAI-compatible endpoint
+# (https://openrouter.ai/api/v1). Used by every LLM service: evaluator
+# (`deepseek/deepseek-v3.2`), follow-up / opening question / company
+# research (all `google/gemini-2.5-flash`). One SDK, many models.
+openai
 
 # Test runner. `pytest-asyncio` (with `asyncio_mode = auto` in pytest.ini)
 # lets `async def test_*` functions run without explicit decoration.

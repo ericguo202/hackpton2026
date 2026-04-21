@@ -4,11 +4,11 @@ Opening-question generator.
 Produces a single tailored behavioral-interview question that references both
 the candidate's profile (resume + declared target role/industry/bio) and the
 company brief produced by `company_research.research_company()`. Runs on
-Gemini 2.5 Flash per CLAUDE.md L95.
+`google/gemini-2.5-flash` via OpenRouter.
 
-Output is plain text — no JSON — so we skip `response_mime_type` and the
-client-side extractor. The prompt still constrains the model to a single
-question, and we strip any wrapping quotes defensively.
+Output is plain text — no JSON — so we skip JSON mode and the client-side
+extractor. The prompt still constrains the model to a single question, and
+we strip any wrapping quotes defensively.
 """
 
 from __future__ import annotations
@@ -16,15 +16,13 @@ from __future__ import annotations
 import logging
 import random
 
-import google.generativeai as genai
-
 from app.db.models.user import User
-from app.services._gemini_utils import ensure_configured
+from app.services._openrouter import get_client
 from app.services.company_research import CompanyBrief
 
 logger = logging.getLogger(__name__)
 
-GEMINI_FLASH_MODEL = "gemini-2.5-flash"
+OPENING_MODEL = "google/gemini-2.5-flash"
 _RESUME_CHAR_LIMIT = 1500
 
 
@@ -98,7 +96,7 @@ async def generate_opening_question(
     job_title: str,
 ) -> str:
     """Return a single opening interview question — standard or company-flavored."""
-    ensure_configured()
+    client = get_client()
 
     style = random.choice([_STYLE_STANDARD, _STYLE_COMPANY])
     prompt = (
@@ -108,13 +106,14 @@ async def generate_opening_question(
         "Now write the opening question."
     )
 
-    model = genai.GenerativeModel(
-        GEMINI_FLASH_MODEL,
-        system_instruction=_SYSTEM_INSTRUCTION,
+    response = await client.chat.completions.create(
+        model=OPENING_MODEL,
+        messages=[
+            {"role": "system", "content": _SYSTEM_INSTRUCTION},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.7,
+        timeout=60.0,
     )
-    response = await model.generate_content_async(
-        prompt,
-        generation_config={"temperature": 0.7},
-        request_options={"timeout": 60},
-    )
-    return _strip_wrapping_quotes(response.text)
+    text = response.choices[0].message.content or ""
+    return _strip_wrapping_quotes(text)

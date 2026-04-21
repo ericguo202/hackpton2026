@@ -1,5 +1,5 @@
 """
-Unit tests for company_research — Serper and Gemini calls fully mocked.
+Unit tests for company_research — Serper and OpenRouter calls fully mocked.
 """
 
 import json
@@ -33,36 +33,31 @@ def _fake_serp_payload() -> dict:
     }
 
 
-class _FakeResponse:
-    def __init__(self, text: str):
-        self.text = text
+def _fake_response(text: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=text))]
+    )
 
 
-class _FakeGeminiModel:
-    def __init__(self, *args, **kwargs):
-        pass
+def _make_fake_client(text: str):
+    async def _create(**kwargs):
+        return _fake_response(text)
 
-    async def generate_content_async(self, *args, **kwargs):
-        return _FakeResponse(
-            json.dumps(
-                {
-                    "description": "Acme Robotics builds autonomous warehouse robots.",
-                    "headlines": [
-                        "Raised $200M Series D",
-                        "Target partnership across 200 DCs",
-                    ],
-                    "values": ["safety-first autonomy"],
-                }
-            )
-        )
+    return SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
 
 
-class _MalformedGeminiModel:
-    def __init__(self, *args, **kwargs):
-        pass
-
-    async def generate_content_async(self, *args, **kwargs):
-        return _FakeResponse("no json here, just chain of thought nonsense")
+_WELL_FORMED_JSON = json.dumps(
+    {
+        "description": "Acme Robotics builds autonomous warehouse robots.",
+        "headlines": [
+            "Raised $200M Series D",
+            "Target partnership across 200 DCs",
+        ],
+        "values": ["safety-first autonomy"],
+    }
+)
 
 
 def _mock_serper(monkeypatch, payload: dict):
@@ -80,10 +75,9 @@ def _mock_serper(monkeypatch, payload: dict):
 async def test_research_company_happy_path(monkeypatch):
     monkeypatch.setattr(company_research.settings, "SERPER_API_KEY", "test-key")
     _mock_serper(monkeypatch, _fake_serp_payload())
-    monkeypatch.setattr(company_research.genai, "GenerativeModel", _FakeGeminiModel)
-    # Bypass lazy configure — no real key needed with the mocked model.
     monkeypatch.setattr(
-        "app.services._gemini_utils.ensure_configured", lambda: None
+        "app.services.company_research.get_client",
+        lambda: _make_fake_client(_WELL_FORMED_JSON),
     )
 
     brief = await research_company("Acme Robotics")
@@ -99,10 +93,8 @@ async def test_research_company_falls_back_on_malformed_json(monkeypatch):
     monkeypatch.setattr(company_research.settings, "SERPER_API_KEY", "test-key")
     _mock_serper(monkeypatch, _fake_serp_payload())
     monkeypatch.setattr(
-        company_research.genai, "GenerativeModel", _MalformedGeminiModel
-    )
-    monkeypatch.setattr(
-        "app.services._gemini_utils.ensure_configured", lambda: None
+        "app.services.company_research.get_client",
+        lambda: _make_fake_client("no json here, just chain of thought nonsense"),
     )
 
     brief = await research_company("Acme Robotics")
@@ -116,7 +108,8 @@ async def test_research_company_falls_back_on_malformed_json(monkeypatch):
 async def test_research_company_without_serper_key_raises(monkeypatch):
     monkeypatch.setattr(company_research.settings, "SERPER_API_KEY", None)
     monkeypatch.setattr(
-        "app.services._gemini_utils.ensure_configured", lambda: None
+        "app.services.company_research.get_client",
+        lambda: _make_fake_client(_WELL_FORMED_JSON),
     )
 
     with pytest.raises(RuntimeError, match="SERPER_API_KEY"):
