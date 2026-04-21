@@ -79,6 +79,15 @@ class Settings(BaseSettings):
     # real call is actually attempted.
     GEMINI_API_KEY: str | None = None
 
+    # OpenAI API key — authenticates calls to OpenAI's moderation endpoint
+    # (`omni-moderation-latest`) used as a pre-check on user-supplied text
+    # before it reaches the billed LLM calls. Kept separate from
+    # OPENROUTER_API_KEY because the moderation endpoint isn't proxied
+    # through OpenRouter. The moderation API is free and only requires an
+    # OpenAI account (no billing plan). Optional at boot; `moderation.py`
+    # fails open with a warning log when the key is absent.
+    OPENAI_API_KEY: str | None = None
+
     # serper.dev API key — feeds `POST https://google.serper.dev/search` in
     # the company-research service. Optional at boot for the same reason as
     # GEMINI_API_KEY: tests monkeypatch the httpx call, no key required.

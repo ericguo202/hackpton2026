@@ -44,6 +44,7 @@ from app.db.models.enums import ExperienceLevel
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.user import UserOut
+from app.services.moderation import check_moderation
 
 router = APIRouter()
 
@@ -141,6 +142,22 @@ async def onboarding(
         # so this branch is only reached from Personalize edits that don't
         # touch the résumé section.
         final_resume_text = user.resume_text or ""
+
+    # Moderation pre-check on every free-text field that will later feed
+    # an LLM prompt (opening question / evaluator / follow-up all consume
+    # the stored resume_text, short_bio, industry, target_role). Blocking
+    # here prevents a bad profile from poisoning every subsequent session
+    # and racking up policy hits on our API keys.
+    for field_value in (industry, target_role, short_bio, final_resume_text):
+        check = await check_moderation(field_value)
+        if check.flagged:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "One of your profile fields contains content that "
+                    "violates our usage policy. Please revise and resubmit."
+                ),
+            )
 
     # Mutate the already-attached ORM row. commit() fires the
     # `set_updated_at()` trigger defined in migration 0001_init.
