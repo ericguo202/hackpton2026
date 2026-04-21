@@ -1,11 +1,12 @@
 """
-Gemma 4 behavioral-interview evaluator.
+Behavioral-interview evaluator.
 
 Takes a question + candidate transcript (and optional prior-turn history +
 browser webcam analytics), returns the five rubric scores plus an optional
-6th `delivery` score and a short coaching note. Runs on `gemma-4-26b-a4b-it`
-per the hackathon sponsor track. Structured output is enforced via
-`response_mime_type="application/json"`, so no JSON-repair loop is needed.
+6th `delivery` score and a short coaching note. Runs on
+`deepseek/deepseek-v3.2` via OpenRouter. Structured output is enforced via
+`response_format={"type": "json_object"}`; the brace-counting extractor
+covers the occasional preamble that slips through.
 
 `delivery` is computed deterministically from `cv_summary` when available —
 camera-declined turns keep the legacy 5-score output shape.
@@ -19,14 +20,13 @@ from __future__ import annotations
 
 import logging
 
-import google.generativeai as genai
 from pydantic import BaseModel, field_validator
 
-from app.services._gemini_utils import ensure_configured, extract_json_object
+from app.services._openrouter import extract_json_object, get_client
 
 logger = logging.getLogger(__name__)
 
-GEMMA_EVAL_MODEL = "gemma-4-26b-a4b-it"
+EVAL_MODEL = "deepseek/deepseek-v3.2"
 
 # Personal calibration from `backend/recordings/calibration_20260418_230315`.
 # These are the bands that separated the user's normal / engaged delivery
@@ -47,14 +47,13 @@ def _normalize_band(value: float, bad: float, good: float) -> float:
 
 
 class EvaluatorOutput(BaseModel):
-    """Structured output the Gemma 4 evaluator returns for one interview turn.
+    """Structured output the evaluator returns for one interview turn.
 
     Field names match the `interview_turns` columns (minus the `_score`
     suffix) so the route handler can map directly without a translation
-    layer. Score bounds (0-10) are enforced by the `_clamp` validator, not
-    JSON-Schema `minimum`/`maximum` — the google-generativeai Schema proto
-    rejects those keywords when passed as `response_schema`. The system
-    prompt tells Gemma the intended range; `_clamp` is the safety net.
+    layer. Score bounds (0-10) are enforced by the `_clamp` validator; the
+    system prompt tells the model the intended range and `_clamp` is the
+    safety net for any fractional / out-of-range drift.
 
     `delivery` is nullable: when the caller passes no `cv_summary`, the
     prompt instructs the model to omit the key, preserving the original
@@ -75,8 +74,8 @@ class EvaluatorOutput(BaseModel):
     )
     @classmethod
     def _clamp(cls, v: int | float | None) -> int | None:
-        # `mode="before"` lets us accept the float scores Gemma sometimes
-        # returns (e.g. `5.6`) instead of the integers the prompt asks
+        # `mode="before"` lets us accept the float scores models sometimes
+        # return (e.g. `5.6`) instead of the integers the prompt asks
         # for — Pydantic 2's strict int validation would otherwise raise
         # on any fractional value and 500 the whole turn.
         if v is None:
@@ -290,31 +289,28 @@ async def evaluate_turn(
     history: list[dict] | None = None,
     cv_summary: dict | None = None,
 ) -> EvaluatorOutput:
-    """Score one interview turn with Gemma 4 and return structured JSON.
+    """Score one interview turn and return structured JSON.
 
     When `cv_summary` is provided (browser-computed MediaPipe analytics),
-    the model also returns a `delivery` 0-10 score and may reference
-    on-camera behaviour in `notes`.
+    the caller-side `_compute_delivery_score` replaces any model-returned
+    `delivery` with a deterministic derivation from the analytics.
     """
-    ensure_configured()
-    model = genai.GenerativeModel(
-        GEMMA_EVAL_MODEL,
-        system_instruction=_SYSTEM_INSTRUCTION,
+    client = get_client()
+    response = await client.chat.completions.create(
+        model=EVAL_MODEL,
+        messages=[
+            {"role": "system", "content": _SYSTEM_INSTRUCTION},
+            {
+                "role": "user",
+                "content": _build_prompt(question, transcript, history, cv_summary),
+            },
+        ],
+        temperature=0.2,
+        response_format={"type": "json_object"},
+        timeout=180.0,
     )
-    # We pass `response_mime_type` but NOT `response_schema`. Gemma 4 has
-    # extended-reasoning behavior that interacts badly with the schema
-    # constraint (server-side DEADLINE_EXCEEDED on plain eval prompts).
-    # The system prompt spells the shape out explicitly and Pydantic
-    # validates on the client side — equivalent guarantee, fast response.
-    response = await model.generate_content_async(
-        _build_prompt(question, transcript, history, cv_summary),
-        generation_config={
-            "response_mime_type": "application/json",
-            "temperature": 0.2,
-        },
-        request_options={"timeout": 180},
-    )
-    result = EvaluatorOutput.model_validate_json(extract_json_object(response.text))
+    text = response.choices[0].message.content or ""
+    result = EvaluatorOutput.model_validate_json(extract_json_object(text))
     if cv_summary is not None:
         result.delivery = _compute_delivery_score(cv_summary)
     return result
