@@ -55,6 +55,8 @@ _VOICE_POOL: tuple[VoiceProfile, ...] = (
     VoiceProfile("FUu5jJAN31dt6KeE1fk2", "Irene",    "Malaysian-American"),
     VoiceProfile("RBUtdrDRjER5aScqHwAS", "Ding",     "Chinese"),
     VoiceProfile("1cuDPO8sIMatoOE4Z2Zv", "Daniel",   "American"),
+    VoiceProfile("GCPLhb1XrVwcoKUJYcvz", "Alexandra", "Eastern European"),
+    VoiceProfile("K8nDX2f6wjv6bCh5UeZi", "Maxime",   "French")
 )
 
 
