@@ -513,6 +513,13 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                 >
                   {showLandmarks ? 'Hide landmarks' : 'Show landmarks'}
                 </button>
+                <a
+                  href={result.replayUrl}
+                  download={`turn-${turnNum}.webm`}
+                  className="cursor-pointer rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                >
+                  Download
+                </a>
               </div>
             </div>
           ) : result.audioReplayUrl ? (

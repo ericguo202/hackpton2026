@@ -281,11 +281,6 @@ export default function History({ onNavigate, onOpenSession }: Props) {
                 statsLoading ? '—'
                   : String(stats?.completed_sessions ?? 0)
               }
-              hint={
-                stats && stats.total_sessions !== stats.completed_sessions
-                  ? `${stats.total_sessions - stats.completed_sessions} in progress`
-                  : undefined
-              }
             />
             <StatCell
               label="Overall avg"
