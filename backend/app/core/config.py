@@ -71,17 +71,27 @@ class Settings(BaseSettings):
     CLERK_JWT_ISSUER: str
     CLERK_SECRET_KEY: str | None = None
 
-    # Google AI Studio API key — authenticates `google-generativeai` for the
-    # Gemma 4 evaluator call (and later Gemini 2.5 Flash for research +
-    # opening-question generation). Optional at app boot so tests (which
-    # mock the SDK) can import `settings` without a live key; the evaluator
-    # configures the SDK lazily and raises if the key is missing when a
-    # real call is actually attempted.
-    GEMINI_API_KEY: str | None = None
+    # OpenRouter API key — authenticates the OpenAI SDK pointed at
+    # `https://openrouter.ai/api/v1`. All LLM services (evaluator on
+    # `deepseek/deepseek-v3.2`; research / opening question / follow-up on
+    # `google/gemini-2.5-flash`) share this one key. Optional at app boot
+    # so tests (which monkeypatch the client) can import `settings` without
+    # a live key; the shared `_openrouter.get_client()` helper raises lazily
+    # if the key is missing when a real call is attempted.
+    OPENROUTER_API_KEY: str | None = None
+
+    # OpenAI API key — authenticates calls to OpenAI's moderation endpoint
+    # (`omni-moderation-latest`) used as a pre-check on user-supplied text
+    # before it reaches the billed LLM calls. Kept separate from
+    # OPENROUTER_API_KEY because the moderation endpoint isn't proxied
+    # through OpenRouter. The moderation API is free and only requires an
+    # OpenAI account (no billing plan). Optional at boot; `moderation.py`
+    # fails open with a warning log when the key is absent.
+    OPENAI_API_KEY: str | None = None
 
     # serper.dev API key — feeds `POST https://google.serper.dev/search` in
     # the company-research service. Optional at boot for the same reason as
-    # GEMINI_API_KEY: tests monkeypatch the httpx call, no key required.
+    # OPENROUTER_API_KEY: tests monkeypatch the httpx call, no key required.
     SERPER_API_KEY: str | None = None
 
     # ElevenLabs TTS (T+8-10). `VOICE_ID` picks which voice speaks the

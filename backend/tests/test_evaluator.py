@@ -1,9 +1,9 @@
 """
-Unit tests for the Gemma 4 evaluator.
+Unit tests for the behavioral-interview evaluator.
 
-The Gemma SDK call is fully mocked — these tests are hermetic and do not
-require a live API key. The real HTTP exchange is exercised by the optional
-manual smoke test documented in the plan file.
+The OpenRouter client call is fully mocked — these tests are hermetic and
+do not require a live API key. The real HTTP exchange is exercised by the
+optional manual smoke test documented in the plan file.
 """
 
 import json
@@ -20,28 +20,53 @@ from app.services.filler_words import count_filler_words
 
 
 def _fake_response(payload: dict) -> SimpleNamespace:
-    return SimpleNamespace(text=json.dumps(payload))
+    """Mimic the OpenAI Chat Completions response shape.
+
+    `response.choices[0].message.content` is the only field the evaluator
+    reads. Wrapping the payload as a JSON string mirrors what the real
+    model returns under `response_format={"type": "json_object"}`.
+    """
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))]
+    )
 
 
-class _FakeModel:
-    def __init__(self, *args, **kwargs):
-        pass
+def _make_fake_client(payload_or_fn):
+    """Build a stand-in for `AsyncOpenAI` that only implements the one
+    method our code calls: `client.chat.completions.create(...)`.
 
-    async def generate_content_async(self, *args, **kwargs):
-        return _fake_response(
-            {
-                "directness": 7,
-                "star": 6,
-                "specificity": 8,
-                "impact": 5,
-                "conciseness": 6,
-                "notes": "Good structure, but quantify the impact to strengthen it.",
-            }
-        )
+    Accepts either a static payload dict or a callable (`(**kwargs) -> dict`)
+    so tests that need to inspect the prompt can capture it.
+    """
+    if callable(payload_or_fn):
+        resolve = payload_or_fn
+    else:
+        def resolve(**_kwargs):
+            return payload_or_fn
+
+    async def _create(**kwargs):
+        return _fake_response(resolve(**kwargs))
+
+    return SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+
+
+_DEFAULT_PAYLOAD = {
+    "directness": 7,
+    "star": 6,
+    "specificity": 8,
+    "impact": 5,
+    "conciseness": 6,
+    "notes": "Good structure, but quantify the impact to strengthen it.",
+}
 
 
 async def test_evaluate_turn_returns_valid_output(monkeypatch):
-    monkeypatch.setattr("app.services.evaluator.genai.GenerativeModel", _FakeModel)
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(_DEFAULT_PAYLOAD),
+    )
 
     result = await evaluate_turn(
         question="Tell me about a time you resolved a conflict.",
@@ -60,7 +85,10 @@ async def test_evaluate_turn_returns_valid_output(monkeypatch):
 async def test_claude_md_verification_three_ums(monkeypatch):
     """CLAUDE.md L175: canned transcript with 3 'um's -> filler_word_count == 3,
     all scores are ints 0-10."""
-    monkeypatch.setattr("app.services.evaluator.genai.GenerativeModel", _FakeModel)
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(_DEFAULT_PAYLOAD),
+    )
 
     transcript = "So um, I led the project. Um, we hit um the deadline."
 
@@ -79,26 +107,21 @@ async def test_claude_md_verification_three_ums(monkeypatch):
 
 
 async def test_scores_clamped_to_range(monkeypatch):
-    class _OOBModel:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def generate_content_async(self, *args, **kwargs):
-            # Gemma occasionally returns out-of-range ints. Pydantic Field
-            # constraints would raise; our `_clamp` before-validator squashes
-            # them into [0, 10] before validation runs.
-            return _fake_response(
-                {
-                    "directness": 15,
-                    "star": -3,
-                    "specificity": 7,
-                    "impact": 100,
-                    "conciseness": 4,
-                    "notes": "n/a",
-                }
-            )
-
-    monkeypatch.setattr("app.services.evaluator.genai.GenerativeModel", _OOBModel)
+    # Models occasionally return out-of-range ints. Pydantic Field
+    # constraints would raise; our `_clamp` before-validator squashes
+    # them into [0, 10] before validation runs.
+    oob_payload = {
+        "directness": 15,
+        "star": -3,
+        "specificity": 7,
+        "impact": 100,
+        "conciseness": 4,
+        "notes": "n/a",
+    }
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(oob_payload),
+    )
 
     result = await evaluate_turn(question="q", transcript="a")
     assert result.directness == 10
@@ -126,7 +149,10 @@ def test_history_included_in_prompt():
 async def test_delivery_absent_when_no_cv_summary(monkeypatch):
     """When the caller passes no cv_summary, the model's 5-key response
     should round-trip with delivery=None — the camera-declined path."""
-    monkeypatch.setattr("app.services.evaluator.genai.GenerativeModel", _FakeModel)
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(_DEFAULT_PAYLOAD),
+    )
 
     result = await evaluate_turn(
         question="Tell me about a time you led a project.",
@@ -141,25 +167,23 @@ async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
     trusted from the model output."""
     captured_prompt: dict[str, str] = {}
 
-    class _DeliveryModel:
-        def __init__(self, *args, **kwargs):
-            pass
+    def _resolve(**kwargs):
+        # The user prompt is the second message in the `messages=` list.
+        captured_prompt["value"] = kwargs["messages"][1]["content"]
+        return {
+            "directness": 6,
+            "star": 7,
+            "specificity": 6,
+            "impact": 5,
+            "conciseness": 7,
+            "delivery": 7,
+            "notes": "Strong eye contact; expression could be warmer.",
+        }
 
-        async def generate_content_async(self, prompt, *args, **kwargs):
-            captured_prompt["value"] = prompt
-            return _fake_response(
-                {
-                    "directness": 6,
-                    "star": 7,
-                    "specificity": 6,
-                    "impact": 5,
-                    "conciseness": 7,
-                    "delivery": 7,
-                    "notes": "Strong eye contact; expression could be warmer.",
-                }
-            )
-
-    monkeypatch.setattr("app.services.evaluator.genai.GenerativeModel", _DeliveryModel)
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(_resolve),
+    )
 
     cv_summary = {
         "frames_processed": 4668,
@@ -187,23 +211,18 @@ async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
 
 
 async def test_delivery_falls_back_when_model_omits_it_despite_cv_summary(monkeypatch):
-    class _MissingDeliveryModel:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def generate_content_async(self, *args, **kwargs):
-            return _fake_response(
-                {
-                    "directness": 6,
-                    "star": 5,
-                    "specificity": 6,
-                    "impact": 5,
-                    "conciseness": 7,
-                    "notes": "Content is decent, but delivery needs more warmth.",
-                }
-            )
-
-    monkeypatch.setattr("app.services.evaluator.genai.GenerativeModel", _MissingDeliveryModel)
+    missing_delivery_payload = {
+        "directness": 6,
+        "star": 5,
+        "specificity": 6,
+        "impact": 5,
+        "conciseness": 7,
+        "notes": "Content is decent, but delivery needs more warmth.",
+    }
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(missing_delivery_payload),
+    )
 
     cv_summary = {
         "frames_processed": 149,

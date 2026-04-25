@@ -39,9 +39,10 @@ from app.schemas.session import (
 )
 from app.services import eval_registry
 from app.services.company_research import CompanyBrief, research_company
-from app.services.evaluator import GEMMA_EVAL_MODEL, EvaluatorOutput, evaluate_turn
+from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words
 from app.services.followup import generate_followup
+from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
 from app.services.tts import synthesize_speech
@@ -104,6 +105,26 @@ async def create_session(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> SessionCreateOut:
+    # Pre-flight moderation on the two user-authored string inputs that
+    # feed downstream LLM prompts. Blocking HERE means the content never
+    # reaches Serper, OpenRouter, or ElevenLabs — so a malicious company
+    # / job-title value can't cost us API-key reputation.
+    company_check = await check_moderation(body.company)
+    title_check = await check_moderation(body.job_title)
+    if company_check.flagged or title_check.flagged:
+        logger.warning(
+            "Session-create rejected by moderation clerk_user_id=%s "
+            "company_flagged=%s company_categories=%s "
+            "title_flagged=%s title_categories=%s",
+            user.clerk_user_id,
+            company_check.flagged, company_check.categories,
+            title_check.flagged, title_check.categories,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Input contains content that violates our usage policy.",
+        )
+
     brief = await research_company(body.company)
     opening_q = await generate_opening_question(user, brief, body.job_title)
 
@@ -186,7 +207,7 @@ def _apply_eval_to_turn(turn: InterviewTurn, eval_out: EvaluatorOutput) -> None:
     turn.conciseness_score = eval_out.conciseness
     turn.delivery_score    = eval_out.delivery
     turn.feedback          = eval_out.notes
-    turn.ai_model_used     = GEMMA_EVAL_MODEL
+    turn.ai_model_used     = EVAL_MODEL
     turn.evaluated_at      = datetime.utcnow()
 
 
@@ -382,6 +403,25 @@ async def submit_turn(
     # 3. Transcribe.
     audio_bytes = await audio.read()
     transcript = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+
+    # 3a. Moderation pre-check on the transcript. Running BEFORE we persist
+    # the row or spawn any LLM call means flagged content never reaches
+    # OpenRouter / downstream providers and never lands in `interview_turns`.
+    # The user gets a clean 422 instead of a scored turn; they can retry
+    # with different content on the same still-pending turn.
+    transcript_check = await check_moderation(transcript)
+    if transcript_check.flagged:
+        logger.info(
+            "Turn rejected by moderation for session=%s turn=%s categories=%s",
+            session_id, current_turn.id, transcript_check.categories,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Your answer contains content that violates our usage "
+                "policy. Please re-record and try again."
+            ),
+        )
 
     # 4. Filler words (regex ground truth per CLAUDE.md).
     filler_count, filler_breakdown = count_filler_words(transcript)

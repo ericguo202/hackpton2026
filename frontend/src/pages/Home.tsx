@@ -6,9 +6,17 @@
  * Phase 3 (done):    all scores from both turns revealed together, with replay coach overlays
  */
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
 import { ImageDithering } from '@paper-design/shaders-react';
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 import { CameraPreview } from '../components/CameraPreview';
 import PageMorphTransition from '../components/PageMorphTransition';
@@ -23,6 +31,7 @@ import { useMe } from '../hooks/useMe';
 import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
+import { fillerBreakdown, tokenizeTranscript } from '../lib/fillerWords';
 import { getReplayFaceLandmarker } from '../lib/faceLandmarker';
 import type { InterviewSummary } from '../lib/faceHeuristics';
 import { VOICE_PROFILES, type VoiceProfile } from '../lib/voices';
@@ -201,7 +210,7 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
   if (result.filler_word_count > 0) {
     insights.push({
       title: 'Trim filler words',
-      detail: `${result.filler_word_count} filler words showed up in this turn. Slow the first sentence down to create cleaner pauses.`,
+      detail: `${result.filler_word_count} filler words showed up in this turn. Click "Show Transcript" to view where you used them.`,
     });
   }
 
@@ -324,6 +333,103 @@ function ReplayLandmarkOverlay({ videoRef }: { videoRef: React.RefObject<HTMLVid
   );
 }
 
+/**
+ * Small horizontal bar chart of filler-word counts for a single turn.
+ *
+ * Rendered next to the expanded transcript so the candidate can see
+ * which crutch words dominated, not just the total count. Colors are
+ * aligned to the red highlight used inline in the transcript — same
+ * visual language, same meaning. Chart dimensions are intentionally
+ * compact: the transcript prose is the primary element; this is a
+ * secondary readout that complements it.
+ *
+ * Empty-state: if the transcript has zero detected fillers we still
+ * render a short line of text so the right column doesn't look broken
+ * or abandoned.
+ */
+function FillerBreakdownChart({ transcript }: { transcript: string }) {
+  const data = useMemo(() => fillerBreakdown(transcript), [transcript]);
+
+  if (data.length === 0) {
+    return (
+      <div className="flex items-start">
+        <p className="text-sm text-text-muted">
+          No filler words detected in this answer.
+        </p>
+      </div>
+    );
+  }
+
+  // One bar per detected filler, ~28px per row plus padding for the
+  // axis + title. Clamped so a runaway answer with every filler in the
+  // list doesn't blow out the column.
+  const rowHeight = 28;
+  const height = Math.min(Math.max(data.length * rowHeight + 48, 140), 320);
+  const maxCount = data[0]?.count ?? 1;
+
+  return (
+    <div>
+      <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+        Filler distribution
+      </p>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            layout="vertical"
+            data={data}
+            margin={{ top: 4, right: 24, bottom: 4, left: 0 }}
+            barCategoryGap={6}
+          >
+            <XAxis
+              type="number"
+              hide
+              domain={[0, Math.max(maxCount, 1)]}
+              allowDecimals={false}
+            />
+            <YAxis
+              type="category"
+              dataKey="word"
+              width={84}
+              tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip
+              cursor={{ fill: 'var(--color-surface-raised)' }}
+              contentStyle={{
+                background: 'var(--color-surface-raised)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 6,
+                fontSize: 12,
+              }}
+              labelStyle={{ color: 'var(--color-text)' }}
+              itemStyle={{ color: 'var(--color-text-muted)' }}
+              // recharts v3 types the incoming value as
+              // `ValueType | undefined` (number | string | array | undefined).
+              // Coerce defensively — our data is always numeric, but typing
+              // it as `number` here makes TS reject the Formatter signature.
+              formatter={(value) => [`${value ?? 0}×`, 'Count']}
+            />
+            <Bar
+              dataKey="count"
+              // red-500 at 60% matches the transcript highlight family
+              // (bg-red-500/30 on text) while being more saturated so
+              // the bars read clearly against the cream surface.
+              fill="rgb(239 68 68 / 0.6)"
+              radius={[0, 3, 3, 0]}
+              label={{
+                position: 'right',
+                fill: 'var(--color-text-muted)',
+                fontSize: 11,
+              }}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNum: number }) {
   const [showOverlay, setShowOverlay] = useState(true);
   const [showLandmarks, setShowLandmarks] = useState(false);
@@ -395,7 +501,7 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                   type="button"
                   onClick={() => setShowOverlay((v) => !v)}
                   aria-pressed={showOverlay}
-                  className="rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  className="cursor-pointer rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 >
                   {showOverlay ? 'Hide notes' : 'Show notes'}
                 </button>
@@ -403,10 +509,17 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                   type="button"
                   onClick={() => setShowLandmarks((v) => !v)}
                   aria-pressed={showLandmarks}
-                  className="rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  className="cursor-pointer rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 >
                   {showLandmarks ? 'Hide landmarks' : 'Show landmarks'}
                 </button>
+                <a
+                  href={result.replayUrl}
+                  download={`turn-${turnNum}.webm`}
+                  className="cursor-pointer rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                >
+                  Download
+                </a>
               </div>
             </div>
           ) : result.audioReplayUrl ? (
@@ -445,9 +558,10 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
               </div>
             </div>
           )}
+
         </div>
 
-        {/* Right column: coach prose + insights + collapsible transcript */}
+        {/* Right column: coach prose + insights */}
         <div className="space-y-10">
           {result.feedback && (
             <div>
@@ -475,29 +589,62 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
               </ul>
             </div>
           )}
+        </div>
+      </div>
 
-          {result.transcript && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowTranscript((v) => !v)}
-                aria-expanded={showTranscript}
-                className="group inline-flex items-center gap-2 rounded text-eyebrow uppercase tracking-eyebrow text-text-muted transition hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-              >
-                {showTranscript ? 'Hide transcript' : 'Show transcript'}
-                <span aria-hidden className={`transition-transform ${showTranscript ? 'rotate-180' : ''}`}>
-                  ↓
-                </span>
-              </button>
-              {showTranscript && (
-                <p className="mt-4 text-sm leading-7 text-text-muted">
-                  {result.transcript}
-                </p>
-              )}
+      {/*
+        Transcript lives outside the 2-column grid so it spans the full card
+        width (72rem) instead of being clamped to either column. Long answers
+        otherwise force vertical scrolling inside a narrow rail; full-width
+        prose with a sane reading max-width keeps everything above the fold.
+      */}
+      {result.transcript && (
+        <div className="mt-10">
+          <button
+            type="button"
+            onClick={() => setShowTranscript((v) => !v)}
+            aria-expanded={showTranscript}
+            className="group inline-flex items-center gap-2 rounded text-eyebrow uppercase tracking-eyebrow text-text-muted transition hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          >
+            {showTranscript ? 'Hide transcript' : 'Show transcript'}
+            <span aria-hidden className={`transition-transform ${showTranscript ? 'rotate-180' : ''}`}>
+              ↓
+            </span>
+          </button>
+          {showTranscript && (
+            // Two-column reveal: transcript on the left (capped at a
+            // readable measure), filler-word distribution chart on the
+            // right. Right column is narrower and capped at ~18rem so
+            // the chart stays visually "secondary" to the transcript.
+            <div className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(16rem,0.7fr)]">
+              <p className="max-w-[72ch] text-sm leading-7 text-text-muted">
+                {tokenizeTranscript(result.transcript).map((tok, i) =>
+                  tok.kind === 'filler' ? (
+                    // Filler highlight: medium-opacity red wash with a slightly
+                    // stronger red text tone so the word still reads cleanly.
+                    // Match list lives in src/lib/fillerWords.ts and mirrors
+                    // the backend regex in app/services/filler_words.py.
+                    <span
+                      key={i}
+                      className="rounded-sm bg-red-500/30 px-1 text-red-900 decoration-red-700/50 underline-offset-2"
+                      title={`Filler word: "${tok.canonical}"`}
+                    >
+                      {tok.text}
+                    </span>
+                  ) : (
+                    // Plain text fragments are rendered as a Fragment so
+                    // whitespace and newlines inside the transcript are
+                    // preserved verbatim — wrapping them in a <span> would
+                    // collapse no visible characters but adds DOM noise.
+                    <span key={i}>{tok.text}</span>
+                  ),
+                )}
+              </p>
+              <FillerBreakdownChart transcript={result.transcript} />
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -520,10 +667,14 @@ function VoicePicker({
   selectedId,
   onSelect,
   disabled,
+  autoSubmit,
+  onToggleAutoSubmit,
 }: {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   disabled: boolean;
+  autoSubmit: boolean;
+  onToggleAutoSubmit: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -532,21 +683,40 @@ function VoicePicker({
 
   return (
     <div className="anim-reveal mt-8 max-w-[42rem]" style={{ animationDelay: '200ms' }}>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
           disabled={disabled}
           aria-expanded={open}
-          className="text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          className="text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {open ? 'Hide interviewer voice' : 'Choose interviewer voice'}
+          {open ? 'Hide interviewer voice (accent)' : 'Choose interviewer voice (accent)'}
         </button>
         <span className="text-text-subtle">
           {selected
             ? `${selected.name} (${selected.accent})`
             : 'Surprise me'}
         </span>
+        {/*
+          Auto-submit toggle lives next to the voice picker so both session
+          preferences are collected in one visual row. Pill style mirrors
+          the voice pills below for consistency. Default is OFF (per user
+          ask); pref is persisted via `useLocalStoragePref` on the parent.
+        */}
+        <button
+          type="button"
+          onClick={onToggleAutoSubmit}
+          disabled={disabled}
+          aria-pressed={autoSubmit}
+          className={
+            autoSubmit
+              ? 'rounded-full border border-accent bg-accent px-3 py-1 text-[12px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+              : 'cursor-pointer rounded-full border border-border bg-transparent px-3 py-1 text-[12px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+          }
+        >
+          Auto-submit: {autoSubmit ? 'On' : 'Off'}
+        </button>
       </div>
 
       {open && (
@@ -566,7 +736,7 @@ function VoicePicker({
               className={
                 selected === null
                   ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-                  : 'rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+                  : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
               }
             >
               Surprise me
@@ -583,7 +753,7 @@ function VoicePicker({
                   className={
                     active
                       ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-                      : 'rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+                      : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
                   }
                 >
                   <span>{voice.name}</span>
@@ -642,9 +812,11 @@ function mergeServerScores(
 type Props = {
   /** Switch to the History view via the TopBar nav link. */
   onNavigateHistory: () => void;
+  /** Switch to the Personalize view via the TopBar nav link. */
+  onNavigatePersonalize: () => void;
 };
 
-export default function Home({ onNavigateHistory }: Props) {
+export default function Home({ onNavigateHistory, onNavigatePersonalize }: Props) {
   const { user } = useUser();
   const { me } = useMe();
   const { apiFetch } = useApi();
@@ -675,12 +847,21 @@ export default function Home({ onNavigateHistory }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
+  // Off by default. When on, tapping "End answer" while recording fires the
+  // auto-submit effect below and skips the preview/Re-record block entirely.
+  // When off, the flow falls back to the legacy review step where the user
+  // can replay their recording and choose to Submit or redo the turn.
+  const [autoSubmit, setAutoSubmit] = useLocalStoragePref('auto_submit_enabled', false);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentQ, setCurrentQ] = useState<CurrentQ | null>(null);
   const [turnResults, setTurnResults] = useState<ReplayTurnResult[]>([]);
   const [submittingTurn, setSubmittingTurn] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
+  // Brief gating state shown between an auto-submit failure and the
+  // single auto-retry that follows. Keeps the spinner up so the UI
+  // doesn't flash the (autoSubmit-hidden) preview block in the gap.
+  const [retryingTurn, setRetryingTurn] = useState(false);
   const [isDone, setIsDone] = useState(false);
   // Stepped summary view. Step 0 is the session overview, steps 1..N map
   // to each turn's ReplayCoachCard. `stepKey` force-remounts the section
@@ -696,6 +877,12 @@ export default function Home({ onNavigateHistory }: Props) {
   // populate `recorder.audioBlob`. The auto-submit effect below clears
   // it implicitly by transitioning into `submittingTurn === true`.
   const [endingTurn, setEndingTurn] = useState(false);
+  // Bumped when the user clicks Re-record so the <QuestionPlayer> below
+  // remounts, retriggering its native `<audio autoPlay>` — after the
+  // replay ends, the existing `onEnded` handler starts the recorder
+  // again. Lets us reuse the same question without adding an imperative
+  // ref API to QuestionPlayer.
+  const [replayKey, setReplayKey] = useState(0);
 
   const firstName = user?.firstName ?? null;
 
@@ -713,17 +900,22 @@ export default function Home({ onNavigateHistory }: Props) {
   // final chunk and populates `recorder.audioBlob`, fire the turn
   // submission. We can't chain this synchronously off the Stop click
   // because `audioBlob` lands a beat later (set inside the recorder's
-  // `onstop` callback), and we don't want a preview window between them
-  // — that's the whole point of removing the Re-record path.
+  // `onstop` callback), and we don't want a preview window between them.
   //
   // `submitTurnRef` holds the latest `handleSubmitTurn` closure. It is
-  // assigned DURING render (just below) rather than in a `useEffect`
-  // so the ref is current by the time this effect fires post-render —
-  // an effect-based update would lag by one frame and cause the auto-
-  // submit to call a stale closure where `recorder.audioBlob` was
-  // still null, bailing out at the early-return guard inside
-  // `handleSubmitTurn` and never firing the network call.
+  // refreshed via a no-deps effect declared BEFORE the auto-submit effect
+  // below. React runs effects in declaration order after each render, so
+  // by the time the auto-submit effect reads `submitTurnRef.current`, it
+  // already points at this render's closure (which sees the latest
+  // `recorder.audioBlob`, `sessionId`, `currentQ`, etc.). That keeps the
+  // closure fresh without the write-during-render pattern that the
+  // `react-hooks/refs` rule flags.
   const submitTurnRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    submitTurnRef.current = () => {
+      void handleSubmitTurn();
+    };
+  });
   useEffect(() => {
     if (
       endingTurn
@@ -734,6 +926,16 @@ export default function Home({ onNavigateHistory }: Props) {
       submitTurnRef.current();
     }
   }, [endingTurn, recorder.state, recorder.audioBlob, submittingTurn]);
+
+  // One auto-retry per audio blob. Gemini occasionally returns transient
+  // 429/503s; in autoSubmit mode the user has no manual Submit button to
+  // re-try with, so we silently give it one more attempt before surfacing
+  // the error. The ref resets whenever the recorder produces a new blob
+  // (next turn or re-record), so each unique recording gets its own budget.
+  const autoRetriedRef = useRef(false);
+  useEffect(() => {
+    autoRetriedRef.current = false;
+  }, [recorder.audioBlob]);
 
   async function handleStart(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -919,6 +1121,21 @@ export default function Home({ onNavigateHistory }: Props) {
         error: err,
       });
       console.groupEnd();
+
+      // autoSubmit mode hides the manual preview/Submit block, so a hard
+      // failure would strand the user with no way back in. Try once more
+      // after a short pause; if that also fails, fall through to the
+      // error banner where the manual Retry button takes over.
+      if (autoSubmit && !autoRetriedRef.current && recorder.audioBlob) {
+        autoRetriedRef.current = true;
+        setRetryingTurn(true);
+        window.setTimeout(() => {
+          setRetryingTurn(false);
+          submitTurnRef.current();
+        }, 1500);
+        return;
+      }
+
       setTurnError(
         err instanceof ApiError
           ? `${err.status}: ${err.message}`
@@ -927,6 +1144,16 @@ export default function Home({ onNavigateHistory }: Props) {
     } finally {
       setSubmittingTurn(false);
     }
+  }
+
+  // Re-record: reset the recorder (drops the prior blob + revokes URLs)
+  // and bump `replayKey` so the QuestionPlayer below remounts and its
+  // `<audio autoPlay>` replays the same question audio from the top.
+  // The existing `onEnded` → `recorder.start()` handler then kicks a
+  // fresh recording, so the user effectively redoes the same turn.
+  function handleReRecord() {
+    recorder.reset();
+    setReplayKey((k) => k + 1);
   }
 
   function handleNewSession() {
@@ -939,6 +1166,7 @@ export default function Home({ onNavigateHistory }: Props) {
     setTurnError(null);
     setSetupError(null);
     setEndingTurn(false);
+    setRetryingTurn(false);
     recorder.reset();
     analyzer.reset();
     setCompany('');
@@ -954,18 +1182,6 @@ export default function Home({ onNavigateHistory }: Props) {
     setResultsStepKey((k) => k + 1);
   }
 
-  // Refresh the auto-submit ref DURING render so by the time the
-  // post-render auto-submit effect fires, the ref points at this
-  // render's closure (which sees the latest `recorder.audioBlob`,
-  // `sessionId`, `currentQ`, etc.). Updating the ref in a `useEffect`
-  // would lag by one frame and the effect would call a stale closure
-  // that captured `audioBlob === null`, hitting the early-return
-  // guard inside `handleSubmitTurn` and silently dropping the submit.
-  // Refs don't trigger re-renders, so write-during-render is safe.
-  submitTurnRef.current = () => {
-    void handleSubmitTurn();
-  };
-
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
       <TopBar
@@ -976,6 +1192,9 @@ export default function Home({ onNavigateHistory }: Props) {
             </TopBarNavLink>
             <TopBarNavLink active={false} onClick={onNavigateHistory}>
               History
+            </TopBarNavLink>
+            <TopBarNavLink active={false} onClick={onNavigatePersonalize}>
+              Personalize
             </TopBarNavLink>
           </>
         }
@@ -1050,6 +1269,8 @@ export default function Home({ onNavigateHistory }: Props) {
                 selectedId={voiceId}
                 onSelect={setVoiceId}
                 disabled={submitting}
+                autoSubmit={autoSubmit}
+                onToggleAutoSubmit={() => setAutoSubmit((v) => !v)}
               />
 
               <div
@@ -1085,12 +1306,22 @@ export default function Home({ onNavigateHistory }: Props) {
           <div className="mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16">
             <div className="max-w-[70rem]">
               <QuestionPlayer
+                key={replayKey}
                 question={currentQ.text}
                 audioUrl={currentQ.audioUrl}
                 questionNum={currentQ.num}
                 showQuestion={showQuestionText}
                 onToggleShowQuestion={() => setShowQuestionText((v) => !v)}
                 onEnded={() => {
+                  // Only auto-start recording when the recorder is fresh.
+                  // QuestionPlayer stays mounted during the preview/Submit/
+                  // Re-record step, so if the user replays the question
+                  // there (state='stopped'), we must NOT kick off a new
+                  // take — that would wipe the blob they just recorded.
+                  // Valid entry paths both land on 'idle': initial mount
+                  // of a turn, and handleReRecord() which calls
+                  // recorder.reset() before bumping replayKey.
+                  if (recorder.state !== 'idle') return;
                   recorder.start().catch((err: Error) => {
                     setTurnError(`Could not start recording: ${err.message}`);
                   });
@@ -1147,7 +1378,7 @@ export default function Home({ onNavigateHistory }: Props) {
                   is shown via the `endingTurn` branch so the UI never
                   flashes a stale state.
                 */}
-                {(submittingTurn || endingTurn) ? (
+                {(submittingTurn || endingTurn || retryingTurn) ? (
                   // Turn 1: STT + Flash + TTS only (~5-10s); Gemma 4 runs
                   // in the background, so the candidate moves on quickly.
                   // Turn 2: Gemma 4 is on the critical path (we await it
@@ -1160,9 +1391,11 @@ export default function Home({ onNavigateHistory }: Props) {
                   >
                     <Spinner size={20} />
                     <p className="text-sm">
-                      {currentQ.num >= 2
-                        ? 'Scoring your interview — this can take up to 40 seconds.'
-                        : 'Analyzing your response — usually takes 5–10 seconds.'}
+                      {retryingTurn
+                        ? 'The model briefly rejected the request. Retrying…'
+                        : currentQ.num >= 2
+                          ? 'Scoring your interview — this can take up to 40 seconds.'
+                          : 'Analyzing your response — usually takes 5–10 seconds.'}
                     </p>
                   </div>
                 ) : (
@@ -1182,21 +1415,33 @@ export default function Home({ onNavigateHistory }: Props) {
                         <FlowHoverButton
                           variant="dark"
                           type="button"
-                          onClick={recorder.stop}
+                          onClick={() => {
+                            // Flip the latch BEFORE stopping so the auto-submit
+                            // effect's guard is armed by the time the recorder's
+                            // `onstop` populates `audioBlob`. When the pref is
+                            // off the latch stays down and the preview block
+                            // below renders as in the legacy flow.
+                            if (autoSubmit) setEndingTurn(true);
+                            recorder.stop();
+                          }}
                         >
-                          Stop recording
+                          {autoSubmit ? 'End answer' : 'Stop recording'}
                         </FlowHoverButton>
                       </div>
                     )}
 
-                    {recorder.state === 'stopped' && recorder.audioUrl && (
+                    {!autoSubmit && recorder.state === 'stopped' && recorder.audioUrl && (
                       <div className="anim-crossfade space-y-4">
                         {recorder.replayUrl ? (
-                          <div className="aspect-video overflow-hidden rounded-2xl bg-surface-sunken">
+                          // Thumbnail-sized preview so the Submit / Re-record
+                          // buttons stay above the fold. Full-bleed `aspect-video`
+                          // at the parent's 70rem max-width pushes them below
+                          // the viewport on a 1080p monitor.
+                          <div className="aspect-video w-full max-w-md overflow-hidden rounded-2xl bg-surface-sunken">
                             <video src={recorder.replayUrl} controls className="h-full w-full object-cover" />
                           </div>
                         ) : (
-                          <audio src={recorder.audioUrl} controls className="w-full" />
+                          <audio src={recorder.audioUrl} controls className="w-full max-w-md" />
                         )}
                         <div className="flex flex-wrap gap-3">
                           <FlowHoverButton
@@ -1208,7 +1453,7 @@ export default function Home({ onNavigateHistory }: Props) {
                           <FlowHoverButton
                             variant="dark"
                             type="button"
-                            onClick={recorder.reset}
+                            onClick={handleReRecord}
                           >
                             Re-record
                           </FlowHoverButton>
@@ -1224,10 +1469,24 @@ export default function Home({ onNavigateHistory }: Props) {
                 )}
 
                 {turnError && (
-                  <p role="alert" className="text-sm text-text-muted">
-                    <span className="mr-2 text-[10px] uppercase tracking-eyebrow text-text">Error</span>
-                    {turnError}
-                  </p>
+                  <div className="space-y-3">
+                    <p role="alert" className="text-sm text-text-muted">
+                      <span className="mr-2 text-[10px] uppercase tracking-eyebrow text-text">Error</span>
+                      {turnError}
+                    </p>
+                    {/* In autoSubmit OFF mode the preview block above already
+                        shows a Submit button against the same buffered blob,
+                        so this manual retry only needs to surface in the
+                        autoSubmit ON path where there's otherwise no way back. */}
+                    {autoSubmit && recorder.audioBlob && (
+                      <FlowHoverButton
+                        type="button"
+                        onClick={() => { void handleSubmitTurn(); }}
+                      >
+                        Retry submission
+                      </FlowHoverButton>
+                    )}
+                  </div>
                 )}
               </div>
 

@@ -13,12 +13,13 @@ import { UserButton } from '@clerk/react';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useSessionDetail } from '../hooks/useSessionDetail';
+import { tokenizeTranscript } from '../lib/fillerWords';
 import type { TurnDetail } from '../types/history';
 
 type Props = {
   sessionId: string;
   onBack: () => void;
-  onNavigate: (view: 'home' | 'history') => void;
+  onNavigate: (view: 'home' | 'history' | 'personalize') => void;
 };
 
 const SCORE_KEYS = [
@@ -80,7 +81,19 @@ function TurnCard({ turn }: { turn: TurnDetail }) {
             Your answer
           </p>
           <p className="text-sm text-text-muted leading-relaxed">
-            {turn.transcript_text}
+            {tokenizeTranscript(turn.transcript_text).map((tok, i) =>
+              tok.kind === 'filler' ? (
+                <span
+                  key={i}
+                  className="rounded-sm bg-red-500/30 px-1 text-red-900"
+                  title={`Filler word: "${tok.canonical}"`}
+                >
+                  {tok.text}
+                </span>
+              ) : (
+                <span key={i}>{tok.text}</span>
+              ),
+            )}
           </p>
         </div>
       )}
@@ -136,6 +149,12 @@ export default function SessionDetail({ sessionId, onBack, onNavigate }: Props) 
             </TopBarNavLink>
             <TopBarNavLink active onClick={() => onNavigate('history')}>
               History
+            </TopBarNavLink>
+            <TopBarNavLink
+              active={false}
+              onClick={() => onNavigate('personalize')}
+            >
+              Personalize
             </TopBarNavLink>
           </>
         }

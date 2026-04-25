@@ -8,13 +8,14 @@ import { useMorphTransition } from './hooks/useMorphTransition';
 import Hero from './pages/Hero';
 import History from './pages/History';
 import Home from './pages/Home';
+import Personalize from './pages/Personalize';
 import SessionDetail from './pages/SessionDetail';
 import SignIn from './pages/SignIn';
 import SignUp from './pages/SignUp';
 import SsoCallback from './pages/SsoCallback';
 
 type View = 'hero' | 'signin' | 'signup';
-type SignedInView = 'home' | 'history' | 'session';
+type SignedInView = 'home' | 'history' | 'session' | 'personalize';
 
 function SignedInApp() {
   const { me, isReady, isLoading, refetch } = useMe();
@@ -38,7 +39,7 @@ function SignedInApp() {
     return <OnboardingForm onDone={refetch} />;
   }
 
-  const navigate = (next: 'home' | 'history') => {
+  const navigate = (next: 'home' | 'history' | 'personalize') => {
     setOpenSessionId(null);
     setView(next);
   };
@@ -68,7 +69,16 @@ function SignedInApp() {
     );
   }
 
-  return <Home onNavigateHistory={() => setView('history')} />;
+  if (view === 'personalize') {
+    return <Personalize onNavigate={navigate} />;
+  }
+
+  return (
+    <Home
+      onNavigateHistory={() => setView('history')}
+      onNavigatePersonalize={() => setView('personalize')}
+    />
+  );
 }
 
 function SignedOutApp() {

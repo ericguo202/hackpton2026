@@ -18,10 +18,12 @@ export type VoiceProfile = {
 };
 
 export const VOICE_PROFILES: readonly VoiceProfile[] = [
-  { id: 'MwUMLXurEzSN7bIfIdXF', name: 'Divya',    accent: 'Indian' },
   { id: 'DODLEQrClDo8wCz460ld', name: 'Jennifer', accent: 'American' },
+  { id: '1cuDPO8sIMatoOE4Z2Zv', name: 'Daniel',   accent: 'American' },    
+  { id: 'MwUMLXurEzSN7bIfIdXF', name: 'Divya',    accent: 'Indian' },                                                                                                                           
+  { id: 'K8nDX2f6wjv6bCh5UeZi', name: 'Maxime',    accent: 'French' },   
   { id: 'Fahco4VZzobUeiPqni1S', name: 'David',    accent: 'British' },
-  { id: 'FUu5jJAN31dt6KeE1fk2', name: 'Irene',    accent: 'Malaysian-American' },
+  { id: 'FUu5jJAN31dt6KeE1fk2', name: 'Irene',    accent: 'South Asian' },
+  { id: 'GCPLhb1XrVwcoKUJYcvz', name: 'Alexandra', accent: 'Eastern European' },
   { id: 'RBUtdrDRjER5aScqHwAS', name: 'Ding',     accent: 'Chinese' },
-  { id: '1cuDPO8sIMatoOE4Z2Zv', name: 'Daniel',   accent: 'American' },
 ] as const;

@@ -48,7 +48,7 @@ const DESCRIPTIONS: (string | null)[] = [
   'For example, backend engineer, product manager.',
   null,
   'Two or three sentences. Background and what you’re looking for.',
-  'PDF only.',
+  'Upload a PDF or paste text. Optional — you can finish later.',
 ];
 
 const TOTAL_STEPS = HEADINGS.length;
@@ -75,6 +75,9 @@ export default function OnboardingForm({ onDone }: Props) {
     useState<ExperienceLevel>('entry');
   const [shortBio, setShortBio] = useState('');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [resumeMode, setResumeMode] = useState<'pdf' | 'text'>('pdf');
+  const [resumeText, setResumeText] = useState('');
+  const [skipResume, setSkipResume] = useState(false);
 
   const [step, setStep] = useState(0);
   const [stepKey, setStepKey] = useState(0);
@@ -87,7 +90,10 @@ export default function OnboardingForm({ onDone }: Props) {
     () => targetRole.trim().length > 0,
     () => true,
     () => shortBio.trim().length > 0,
-    () => resumeFile !== null,
+    () =>
+      skipResume ||
+      (resumeMode === 'pdf' && resumeFile !== null) ||
+      (resumeMode === 'text' && resumeText.trim().length > 0),
   ];
   const canAdvance = validators[step]();
 
@@ -123,8 +129,14 @@ export default function OnboardingForm({ onDone }: Props) {
     event.preventDefault();
     setError(null);
 
-    if (!resumeFile) {
-      setError('Please attach a PDF résumé.');
+    const hasResumeSource =
+      skipResume ||
+      (resumeMode === 'pdf' && resumeFile !== null) ||
+      (resumeMode === 'text' && resumeText.trim().length > 0);
+    if (!hasResumeSource) {
+      setError(
+        'Attach a PDF, paste résumé text, or check "I’ll complete this step later."',
+      );
       return;
     }
     if (!email) {
@@ -139,7 +151,13 @@ export default function OnboardingForm({ onDone }: Props) {
     body.append('short_bio', shortBio);
     body.append('email', email);
     if (name) body.append('name', name);
-    body.append('resume_file', resumeFile);
+    if (skipResume) {
+      body.append('skip_resume', 'true');
+    } else if (resumeMode === 'pdf' && resumeFile) {
+      body.append('resume_file', resumeFile);
+    } else if (resumeMode === 'text') {
+      body.append('resume_text_input', resumeText);
+    }
 
     setSubmitting(true);
     try {
@@ -162,8 +180,8 @@ export default function OnboardingForm({ onDone }: Props) {
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
       <TopBar rightSlot={<UserButton />} />
-      <main className="flex-1 flex items-center justify-center px-4 py-12 relative">
-        <div className="fixed top-40 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 space-y-2">
+      <main className="flex-1 flex items-start justify-center px-4 pt-56 pb-12 relative">
+        <div className="absolute top-40 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 space-y-2">
           <p className="text-[length:var(--text-eyebrow)] uppercase tracking-eyebrow text-text-muted">
             Step {Math.min(step + 1, TOTAL_STEPS)} of {TOTAL_STEPS}
           </p>
@@ -235,18 +253,80 @@ export default function OnboardingForm({ onDone }: Props) {
           )}
 
           {step === 4 && (
-            <div className="space-y-2">
-              <input
-                type="file"
-                accept="application/pdf"
-                onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
-                className="block text-sm text-text-muted file:mr-3 file:rounded file:border file:border-border file:bg-surface-raised file:px-3 file:py-1.5 file:text-text hover:file:bg-surface-sunken"
-              />
-              {resumeFile && (
-                <p className="text-text-subtle text-sm">
-                  Selected: {resumeFile.name}
-                </p>
+            <div className="space-y-4">
+              <div
+                role="tablist"
+                aria-label="Résumé input mode"
+                className="inline-flex rounded border border-border bg-surface-raised p-0.5"
+              >
+                {(['pdf', 'text'] as const).map((mode) => {
+                  const active = resumeMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      disabled={skipResume}
+                      onClick={() => setResumeMode(mode)}
+                      className={
+                        'rounded px-3 py-1.5 text-sm transition-colors ' +
+                        'focus-visible:outline-none focus-visible:ring-2 ' +
+                        'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
+                        'focus-visible:ring-offset-surface ' +
+                        'disabled:opacity-50 disabled:cursor-not-allowed ' +
+                        (active
+                          ? 'bg-accent text-accent-fg'
+                          : 'text-text-muted hover:text-text')
+                      }
+                    >
+                      {mode === 'pdf' ? 'Upload PDF' : 'Paste text'}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {resumeMode === 'pdf' ? (
+                <div className="space-y-2">
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    disabled={skipResume}
+                    onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+                    className="block text-sm text-text-muted file:mr-3 file:rounded file:border file:border-border file:bg-surface-raised file:px-3 file:py-1.5 file:text-text hover:file:bg-surface-sunken disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  {resumeFile && (
+                    <p className="text-text-subtle text-sm">
+                      Selected: {resumeFile.name}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <textarea
+                    maxLength={5000}
+                    rows={8}
+                    disabled={skipResume}
+                    value={resumeText}
+                    onChange={(e) => setResumeText(e.target.value)}
+                    placeholder="Paste your résumé text here."
+                    className={`${inputClass} resize-none disabled:opacity-50 disabled:cursor-not-allowed`}
+                  />
+                  <p className="text-right text-xs text-text-subtle">
+                    {resumeText.length} / 5000
+                  </p>
+                </div>
               )}
+
+              <label className="flex items-center gap-2 cursor-pointer text-text-muted text-sm">
+                <input
+                  type="checkbox"
+                  checked={skipResume}
+                  onChange={(e) => setSkipResume(e.target.checked)}
+                  className="h-4 w-4 rounded-xs border border-border-strong bg-surface-sunken accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                />
+                <span>I’ll complete this step later</span>
+              </label>
             </div>
           )}
         </section>

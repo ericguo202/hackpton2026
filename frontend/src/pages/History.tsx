@@ -34,7 +34,7 @@ import type {
 } from '../types/history';
 
 type Props = {
-  onNavigate: (view: 'home' | 'history') => void;
+  onNavigate: (view: 'home' | 'history' | 'personalize') => void;
   onOpenSession: (id: string) => void;
 };
 
@@ -183,7 +183,7 @@ function SessionRow({
     <button
       type="button"
       onClick={onClick}
-      className="group w-full text-left grid grid-cols-12 gap-4 items-baseline py-5 border-t border-border hover:bg-surface-raised transition-colors px-2 -mx-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+      className="group w-full text-left grid grid-cols-12 gap-4 items-baseline py-5 border-t border-border hover:bg-surface-raised transition-colors px-2 -mx-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface cursor-pointer"
     >
       <span className="col-span-1 text-eyebrow uppercase tracking-eyebrow text-text-subtle tabular-nums">
         {String(ordinal).padStart(2, '0')}
@@ -242,6 +242,12 @@ export default function History({ onNavigate, onOpenSession }: Props) {
             <TopBarNavLink active onClick={() => onNavigate('history')}>
               History
             </TopBarNavLink>
+            <TopBarNavLink
+              active={false}
+              onClick={() => onNavigate('personalize')}
+            >
+              Personalize
+            </TopBarNavLink>
           </>
         }
         rightSlot={<UserButton />}
@@ -274,11 +280,6 @@ export default function History({ onNavigate, onOpenSession }: Props) {
               value={
                 statsLoading ? '—'
                   : String(stats?.completed_sessions ?? 0)
-              }
-              hint={
-                stats && stats.total_sessions !== stats.completed_sessions
-                  ? `${stats.total_sessions - stats.completed_sessions} in progress`
-                  : undefined
               }
             />
             <StatCell
@@ -485,7 +486,7 @@ function ToggleChip({
       onClick={onClick}
       aria-pressed={active}
       className={
-        'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
+        'cursor-pointer inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
         (active
           ? 'border-border-strong text-text bg-surface-raised'
           : 'border-border text-text-subtle hover:text-text-muted')
