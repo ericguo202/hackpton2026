@@ -43,7 +43,7 @@ Three files work together — don't bypass them:
 
 ### App shell
 
-`src/main.tsx` wraps `<App />` in `<ClerkProvider>`. `src/App.tsx` splits on `<Show when="signed-out">` → `SignInPage`, `<Show when="signed-in">` → `SignedInApp`, which then gates on `me.completed_registration` to show `OnboardingForm` vs. the dashboard. `OnboardingForm` calls `onDone` → parent `refetch()` on `useMe` → gate flips without a page reload.
+`src/main.tsx` wraps `<App />` in `<ClerkProvider>` then `<BrowserRouter>` (react-router v7). `src/App.tsx` is a route table; auth and onboarding gates live in `src/components/route-guards.tsx` (`RequireAuth`, `RequireOnboarded`, `RedirectIfOnboarded`) and compose via nested layout routes. `/` is the only auth-bivalent route — `HomeRoute` branches on Clerk `<Show>`: signed-out → `<Hero />`, signed-in → either `<Navigate to="/onboarding" />` (if not yet onboarded) or `<Home />`. Full route table + the Setup-→-Practice handoff via `useLocation().state` are documented in `../CLAUDE.md` under "Frontend Routing".
 
 ### Type contract with backend
 

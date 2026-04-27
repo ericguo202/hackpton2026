@@ -15,6 +15,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
+import { Link, matchPath, useLocation } from 'react-router';
 
 type Props = {
   rightSlot?: ReactNode;
@@ -98,21 +99,26 @@ export default function TopBar({ rightSlot, nav }: Props) {
 }
 
 /**
- * Single nav link for the TopBar — rendered as a link-styled <button> since
- * the app drives navigation via state, not URLs. Active state uses the same
- * full-strength `text` token the masthead "Logos" uses.
+ * Single nav link for the TopBar. Active state is computed from the URL via
+ * react-router's `matchPath`. Pass extra `matchPatterns` for routes that
+ * should highlight this link without sharing its href — e.g. the History
+ * link stays active on `/sessions/:id`, and the Practice link stays active
+ * on `/practice` even though it links to `/`.
  */
 type NavLinkProps = {
-  active: boolean;
-  onClick: () => void;
+  to: string;
+  matchPatterns?: string[];
   children: ReactNode;
 };
 
-export function TopBarNavLink({ active, onClick, children }: NavLinkProps) {
+export function TopBarNavLink({ to, matchPatterns, children }: NavLinkProps) {
+  const { pathname } = useLocation();
+  const patterns = [to, ...(matchPatterns ?? [])];
+  const active = patterns.some((p) => matchPath(p, pathname) !== null);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <Link
+      to={to}
       aria-current={active ? 'page' : undefined}
       className={
         'cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 ' +
@@ -124,6 +130,6 @@ export function TopBarNavLink({ active, onClick, children }: NavLinkProps) {
       }
     >
       {children}
-    </button>
+    </Link>
   );
 }
