@@ -1,7 +1,7 @@
-# AI Behavioral Interview Coach
+# Logos: AI Behavioral Interview Coach
 
-Hackathon MVP. Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-out → metrics persisted.
-Submit to: **Best Education** (primary), Best Overall (auto), as well as the **Gemini API**, **Elevenlabs** sponsor tracks.
+MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-out → metrics persisted.
+Future plans: Migrate to React Router, terms and conditions, security, add LiveAvatar, gamification with XP
 
 ## What the MVP ships
 
