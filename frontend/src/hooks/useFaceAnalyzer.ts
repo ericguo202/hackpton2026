@@ -53,7 +53,6 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
   const statusRef = useRef<AnalyzerStatus>('warming');
   const lastSummaryRef = useRef<InterviewSummary | null>(null);
   const publishCounterRef = useRef(0);
-  const lastLoggedStatusRef = useRef<string>('');
 
   const publishDiagnostics = useCallback((force = false) => {
     publishCounterRef.current += 1;
@@ -130,42 +129,6 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
     publishDiagnostics(true);
   }, [isReady, publishDiagnostics]);
 
-  useEffect(() => {
-    const summarySnapshot = diagnostics.lastSummary
-      ? {
-          frames_processed: diagnostics.lastSummary.frames_processed,
-          face_visible_pct: diagnostics.lastSummary.face_visible_pct,
-          eye_contact_score: diagnostics.lastSummary.eye_contact_score,
-          expression_score: diagnostics.lastSummary.expression_score,
-          overall_interview_score: diagnostics.lastSummary.overall_interview_score,
-        }
-      : null;
-
-    const nextLogKey = JSON.stringify({
-      active,
-      hasStream: Boolean(stream),
-      isReady,
-      status: diagnostics.status,
-      framesProcessed: diagnostics.framesProcessed,
-      faceFrames: diagnostics.faceFrames,
-      initError: diagnostics.initError,
-      summary: summarySnapshot,
-    });
-    if (lastLoggedStatusRef.current === nextLogKey) return;
-    lastLoggedStatusRef.current = nextLogKey;
-
-    console.log('[useFaceAnalyzer] diagnostics', {
-      active,
-      hasStream: Boolean(stream),
-      isReady,
-      status: diagnostics.status,
-      framesProcessed: diagnostics.framesProcessed,
-      faceFrames: diagnostics.faceFrames,
-      initError: diagnostics.initError,
-      lastSummary: summarySnapshot,
-    });
-  }, [active, diagnostics, isReady, stream]);
-
   // The actual analyzer rAF loop. Only alive while `active` is true AND
   // we have a stream AND the landmarker is ready — any missing piece
   // drops to a cheap idle state.
@@ -226,23 +189,11 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
   const buildSummary = useCallback((): InterviewSummary | null => {
     const summary = summaryRef.current.buildSummary();
     lastSummaryRef.current = summary;
-    console.log('[useFaceAnalyzer] buildSummary()', {
-      returnedNull: summary == null,
-      status: statusRef.current,
-      framesProcessed: frameCountRef.current,
-      faceFrames: faceFrameCountRef.current,
-      summary,
-    });
     publishDiagnostics(true);
     return summary;
   }, [publishDiagnostics]);
 
   const reset = useCallback(() => {
-    console.log('[useFaceAnalyzer] reset()', {
-      previousFramesProcessed: frameCountRef.current,
-      previousFaceFrames: faceFrameCountRef.current,
-      previousSummary: lastSummaryRef.current,
-    });
     summaryRef.current.reset();
     frameCountRef.current = 0;
     faceFrameCountRef.current = 0;

@@ -18,7 +18,7 @@ type GetStartedButtonProps = ComponentProps<typeof Button>
 export function GetStartedButton({
   className,
   size = 'lg',
-  children = 'Start Cooking',
+  children = 'Get started',
   ...props
 }: GetStartedButtonProps) {
   return (

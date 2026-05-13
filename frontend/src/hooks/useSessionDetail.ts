@@ -6,41 +6,11 @@
  * before the user has selected a session.
  */
 
-import { useCallback, useEffect, useState } from 'react';
-
-import { useApi } from './useApi';
+import { useApiFetch } from './useApiFetch';
 import type { SessionDetail } from '../types/history';
 
 export function useSessionDetail(sessionId: string | null) {
-  const { apiFetch, isReady } = useApi();
-  const [session, setSession] = useState<SessionDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const fetchSession = useCallback(async () => {
-    if (!sessionId) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await apiFetch<SessionDetail>(
-        `/api/v1/sessions/${sessionId}`,
-      );
-      setSession(data);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [apiFetch, sessionId]);
-
-  // Standard fetch-on-mount + clear-on-unset; matches the pattern in
-  // `useMe`. Restructuring to avoid setState in the effect body would
-  // require a sentinel ref dance with no real benefit at this scale.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (isReady && sessionId) void fetchSession();
-    if (!sessionId) setSession(null);
-  }, [isReady, sessionId, fetchSession]);
-
-  return { session, isLoading, error, refetch: fetchSession };
+  const path = sessionId ? `/api/v1/sessions/${sessionId}` : null;
+  const { data, isLoading, error, refetch } = useApiFetch<SessionDetail>(path);
+  return { session: data, isLoading, error, refetch };
 }

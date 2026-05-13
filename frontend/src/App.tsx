@@ -68,7 +68,12 @@ function SignedInApp() {
     );
   }
 
-  return <Home onNavigateHistory={() => setView('history')} />;
+  return (
+    <Home
+      onNavigateHistory={() => setView('history')}
+      targetRole={me?.target_role ?? null}
+    />
+  );
 }
 
 function SignedOutApp() {

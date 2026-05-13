@@ -28,10 +28,7 @@ import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useMeStats } from '../hooks/useMeStats';
 import { useSessions } from '../hooks/useSessions';
-import type {
-  DimensionAverages,
-  SessionListItem,
-} from '../types/history';
+import type { SessionListItem } from '../types/history';
 
 type Props = {
   onNavigate: (view: 'home' | 'history') => void;
@@ -503,6 +500,3 @@ function ToggleChip({
     </button>
   );
 }
-
-// Re-export so the page module is the single import surface.
-export type { DimensionAverages };

@@ -106,6 +106,14 @@
   --color-accent-hover:   var(--color-primary-600);
   --color-focus-ring:     var(--color-primary-700);
 
+  /* State tokens — earth-tone-tuned so they sit on the cream surface
+     without shouting. Borrowed from the chart palette, which is already
+     contrast-checked against --color-surface. */
+  --color-success: #4a7a4a;  /* forest  */
+  --color-warning: #b58a2c;  /* amber   */
+  --color-danger:  #b25a39;  /* brick   */
+  --color-info:    #48538e;  /* indigo  */
+
   /* ---------- Chart series ----------
      Six categorically distinct hues tuned for the warm cream surface
      (--color-surface = #F1E9D2). The primary/secondary/etc. ramps are

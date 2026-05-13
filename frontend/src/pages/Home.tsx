@@ -8,18 +8,18 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
-import { ImageDithering } from '@paper-design/shaders-react';
 
 import { CameraPreview } from '../components/CameraPreview';
+import { DecoPanel } from '../components/DecoPanel';
 import PageMorphTransition from '../components/PageMorphTransition';
 import QuestionPlayer from '../components/QuestionPlayer';
+import { ScoreGrid } from '../components/ScoreGrid';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnalyzer';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
-import { useMe } from '../hooks/useMe';
 import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
@@ -152,13 +152,13 @@ function getAnalyzerStatusLabel(status: AnalyzerDiagnostics['status']) {
 function getAnalyzerStatusClass(status: AnalyzerDiagnostics['status']) {
   switch (status) {
     case 'running':
-      return 'bg-green-600';
+      return 'bg-success';
     case 'no-face':
-      return 'bg-amber-500';
+      return 'bg-warning';
     case 'error':
-      return 'bg-red-500';
+      return 'bg-danger';
     case 'warming':
-      return 'bg-blue-500';
+      return 'bg-info';
     case 'ready':
       return 'bg-accent';
     default:
@@ -425,24 +425,14 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
               <p className="mb-5 text-eyebrow uppercase tracking-eyebrow text-text-muted">
                 Scores
               </p>
-              <div className="grid grid-cols-3 gap-x-6 gap-y-7 sm:grid-cols-6">
-                {scoreEntries.map((entry) => (
-                  <div key={entry.key}>
-                    <div className="font-display text-[2.25rem] font-medium leading-none tabular-nums text-text">
-                      {entry.value}
-                    </div>
-                    <div className="mt-3 h-[2px] w-full overflow-hidden rounded-full bg-border">
-                      <div
-                        className="h-full bg-accent"
-                        style={{ width: `${entry.value * 10}%` }}
-                      />
-                    </div>
-                    <div className="mt-2 text-[11px] uppercase tracking-eyebrow text-text-muted">
-                      {entry.label}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <ScoreGrid
+                entries={scoreEntries.map((e) => ({
+                  key: e.key,
+                  label: e.label,
+                  value: e.value,
+                  display: String(e.value),
+                }))}
+              />
             </div>
           )}
         </div>
@@ -642,11 +632,12 @@ function mergeServerScores(
 type Props = {
   /** Switch to the History view via the TopBar nav link. */
   onNavigateHistory: () => void;
+  /** Current user's target role, threaded from SignedInApp's useMe. */
+  targetRole: string | null;
 };
 
-export default function Home({ onNavigateHistory }: Props) {
+export default function Home({ onNavigateHistory, targetRole }: Props) {
   const { user } = useUser();
-  const { me } = useMe();
   const { apiFetch } = useApi();
   const recorder = useRecorder();
   const analyzer = useFaceAnalyzer(
@@ -755,7 +746,7 @@ export default function Home({ onNavigateHistory }: Props) {
         method: 'POST',
         body: JSON.stringify({
           company: trimmed,
-          job_title: me?.target_role ?? 'Software Engineer',
+          job_title: targetRole ?? 'Software Engineer',
           // Backend treats null/missing as "use the deterministic
           // fallback from session UUID," so we only send a string
           // when the candidate explicitly picked a voice.
@@ -795,57 +786,12 @@ export default function Home({ onNavigateHistory }: Props) {
       const cvSummary = analyzer.buildSummary();
       if (cvSummary) {
         form.append('cv_summary', JSON.stringify(cvSummary));
-      } else {
-        console.warn('[Home] cv_summary missing on submit', analyzer.diagnostics);
       }
-
-      const formEntries = Array.from(form.entries()).map(([key, value]) => {
-        if (value instanceof File) {
-          return {
-            key,
-            kind: 'file',
-            name: value.name,
-            type: value.type,
-            size: value.size,
-          };
-        }
-        const textValue = String(value);
-        return {
-          key,
-          kind: 'text',
-          length: textValue.length,
-          preview: textValue.slice(0, 160),
-        };
-      });
-
-      console.groupCollapsed(`[Home] submit turn ${currentQ.num}`);
-      console.log('[Home] current question', currentQ.text);
-      console.log('[Home] recorder state before submit', {
-        hasAudioBlob: Boolean(recorder.audioBlob),
-        audioBlobSize: recorder.audioBlob?.size ?? 0,
-        audioBlobType: recorder.audioBlob?.type ?? null,
-        hasReplayBlob: Boolean(recorder.replayBlob),
-        replayBlobSize: recorder.replayBlob?.size ?? 0,
-        replayBlobType: recorder.replayBlob?.type ?? null,
-      });
-      console.log('[Home] analyzer diagnostics before submit', analyzer.diagnostics);
-      console.log('[Home] cvSummary before submit', cvSummary);
-      console.log('[Home] FormData entries', formEntries);
 
       const result = await apiFetch<TurnResult>(
         `/api/v1/sessions/${sessionId}/turns`,
         { method: 'POST', body: form },
       );
-
-      console.log('[Home] API result', result);
-      console.log('[Home] delivery returned', {
-        // `result.scores` is null on non-final turns while the
-        // evaluator runs in the background; we surface that explicitly
-        // here instead of crashing on a property access.
-        delivery: result.scores?.delivery ?? null,
-        evaluationPending: result.evaluation_pending,
-        hasCvSummary: cvSummary != null,
-      });
 
       const replayUrl = recorder.replayBlob ? URL.createObjectURL(recorder.replayBlob) : null;
       const audioReplayUrl = recorder.audioBlob ? URL.createObjectURL(recorder.audioBlob) : null;
@@ -860,16 +806,6 @@ export default function Home({ onNavigateHistory }: Props) {
           lastSummary: cvSummary,
         },
       };
-
-      console.log('[Home] enriched replay turn result', {
-        question: enriched.question,
-        scores: enriched.scores,
-        hasReplayUrl: Boolean(enriched.replayUrl),
-        hasAudioReplayUrl: Boolean(enriched.audioReplayUrl),
-        analyzerDiagnostics: enriched.analyzerDiagnostics,
-        cvSummary: enriched.cvSummary,
-      });
-      console.groupEnd();
 
       setTurnResults((prev) => [...prev, enriched]);
 
@@ -985,31 +921,7 @@ export default function Home({ onNavigateHistory }: Props) {
       <main className="flex-1">
         {!sessionId && (
           <div className="relative flex min-h-full items-center overflow-hidden">
-            <div
-              aria-hidden="true"
-              className="pointer-events-none hidden xl:block absolute inset-y-0 right-0 aspect-[563/484] bg-[#17150F] overflow-hidden"
-              style={{
-                WebkitMaskImage:
-                  'linear-gradient(to right, transparent 0%, black 85%)',
-                maskImage:
-                  'linear-gradient(to right, transparent 0%, black 85%)',
-              }}
-            >
-              <ImageDithering
-                originalColors={false}
-                inverted={false}
-                type="8x8"
-                size={2.5}
-                colorSteps={2}
-                image="/home-sculpture.png"
-                scale={1}
-                fit="cover"
-                colorBack="#00000000"
-                colorFront="#F1E9D2"
-                colorHighlight="#EAFF94"
-                className="absolute inset-0 w-full h-full"
-              />
-            </div>
+            <DecoPanel image="/home-sculpture.png" aspect="563/484" />
 
             <form
               onSubmit={handleStart}
@@ -1063,9 +975,9 @@ export default function Home({ onNavigateHistory }: Props) {
                   {submitting ? 'Starting...' : 'Begin session'}
                 </FlowHoverButton>
 
-                {me?.target_role && (
+                {targetRole && (
                   <p className="text-[13px] text-text-subtle">
-                    Target role: <span className="text-text-muted">{me.target_role}</span>
+                    Target role: <span className="text-text-muted">{targetRole}</span>
                   </p>
                 )}
               </div>
@@ -1119,7 +1031,7 @@ export default function Home({ onNavigateHistory }: Props) {
                         </>
                       )}
                       {analyzer.diagnostics.initError && (
-                        <p className="text-red-600">Init error: {analyzer.diagnostics.initError}</p>
+                        <p className="text-danger">Init error: {analyzer.diagnostics.initError}</p>
                       )}
                       {!analyzer.diagnostics.initError && analyzer.diagnostics.framesProcessed === 0 && (
                         <p>Waiting for the analyzer to accumulate enough live frames for delivery scoring.</p>
@@ -1176,7 +1088,7 @@ export default function Home({ onNavigateHistory }: Props) {
                     {recorder.state === 'recording' && (
                       <div className="anim-crossfade flex flex-wrap items-center gap-4">
                         <span className="flex items-center gap-2 text-sm text-text">
-                          <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                          <span className="inline-block h-2 w-2 rounded-full bg-danger animate-pulse" />
                           Recording
                         </span>
                         <FlowHoverButton
@@ -1321,24 +1233,14 @@ export default function Home({ onNavigateHistory }: Props) {
                           <p className="mb-5 text-eyebrow uppercase tracking-eyebrow text-text-muted">
                             Scores, averaged
                           </p>
-                          <div className="grid grid-cols-3 gap-x-6 gap-y-7 sm:grid-cols-6">
-                            {averageScores.map(({ key, label, value }) => (
-                              <div key={key}>
-                                <div className="font-display text-[2.25rem] font-medium leading-none tabular-nums text-text">
-                                  {value != null ? value.toFixed(1) : '—'}
-                                </div>
-                                <div className="mt-3 h-[2px] w-full overflow-hidden rounded-full bg-border">
-                                  <div
-                                    className="h-full bg-accent"
-                                    style={{ width: `${((value ?? 0) / 10) * 100}%` }}
-                                  />
-                                </div>
-                                <div className="mt-2 text-[11px] uppercase tracking-eyebrow text-text-muted">
-                                  {label}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          <ScoreGrid
+                            entries={averageScores.map(({ key, label, value }) => ({
+                              key,
+                              label,
+                              value,
+                              display: value != null ? value.toFixed(1) : '—',
+                            }))}
+                          />
                         </div>
                       )}
                     </>
