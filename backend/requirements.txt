@@ -24,6 +24,11 @@ mediapipe
 #   required for RSA verification against Clerk's JWKS.
 python-jose[cryptography]
 
+# Clerk webhook signature verification. Clerk delivers webhooks via Svix,
+# so the signature scheme (svix-id / svix-timestamp / svix-signature) is
+# Svix's, and the official `svix` library handles the HMAC + replay check.
+svix
+
 # Async HTTP client — used to fetch Clerk's JWKS (and later: Gemini, ElevenLabs,
 # Serper). Prefer httpx over `requests` because our backend is async.
 httpx

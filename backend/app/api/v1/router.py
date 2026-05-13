@@ -14,7 +14,7 @@ Adding a new route group is a three-step ritual:
 """
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, me, onboarding, sessions
+from app.api.v1.endpoints import health, me, onboarding, sessions, webhooks
 
 api_router = APIRouter()
 
@@ -32,3 +32,9 @@ api_router.include_router(
 
 # Protected. POST /api/v1/sessions starts a new mock interview.
 api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
+
+# Unauthenticated at the FastAPI level — Clerk has no user JWT to send.
+# Each request is verified by Svix HMAC inside the handler using
+# CLERK_WEBHOOK_SECRET. POST /api/v1/webhooks/clerk receives user.deleted
+# (and quietly accepts any other event we haven't subscribed to).
+api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])

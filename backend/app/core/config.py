@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     CLERK_JWT_ISSUER: str
     CLERK_SECRET_KEY: str | None = None
 
+    # Clerk webhook signing secret (`whsec_...`). Issued by Clerk when you
+    # register a webhook endpoint in the dashboard. Used to verify that
+    # incoming POSTs at /api/v1/webhooks/clerk actually came from Clerk
+    # (HMAC over body + svix-id + svix-timestamp). Without it the route
+    # rejects every request with 503 — failing closed is the right default
+    # since this endpoint is unauthenticated.
+    CLERK_WEBHOOK_SECRET: str | None = None
+
     # OpenRouter API key — authenticates the OpenAI SDK pointed at
     # `https://openrouter.ai/api/v1`. All LLM services (evaluator on
     # `deepseek/deepseek-v3.2`; research / opening question / follow-up on
