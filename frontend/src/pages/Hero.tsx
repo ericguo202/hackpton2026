@@ -6,21 +6,18 @@
  * emotional load; no illustrations, no gradient cards, no decorative
  * elements. One primary action alone on a cream surface.
  *
- * Sign-in navigates to a dedicated /sign-in view (SignedOutApp handles
- * the state toggle — no router). Both the header link and the primary
- * CTA call onSignInClick.
+ * Both the header link and the primary CTA navigate to `/sign-in`.
  */
 
 import { ImageDithering } from '@paper-design/shaders-react';
+import { useNavigate } from 'react-router';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar from '../components/TopBar';
 import { GetStartedButton } from '../components/ui/get-started-button';
 
-interface HeroProps {
-  onSignInClick: () => void;
-}
-
-export default function Hero({ onSignInClick }: HeroProps) {
+export default function Hero() {
+  const navigate = useNavigate();
+  const onSignInClick = () => navigate('/sign-in');
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
       <TopBar

@@ -1,10 +1,10 @@
 /**
  * OnboardingForm — fills the user's profile after sign-in.
  *
- * Rendered by `App.tsx` when the /me response has
- * `completed_registration === false`. On successful submit, calls
- * `onDone()`; the parent refetches /me, the gate flips, and this component
- * unmounts (which is the implicit "redirect to homepage" — no router exists).
+ * Mounted at the `/onboarding` route. The route guard
+ * `RedirectIfOnboarded` redirects already-onboarded users to `/`. After a
+ * successful submit, refetches /me and navigates to `/`; the home route
+ * then renders the Setup form.
  *
  * UI is a stepped flow: one field per screen with a thin wayfinding
  * indicator at the top. Email + name are read from Clerk and posted with
@@ -18,8 +18,10 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { UserButton, useUser } from '@clerk/react';
+import { useNavigate } from 'react-router';
 
 import { useApi } from '../hooks/useApi';
+import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
 import type { ExperienceLevel, MeResponse } from '../types/user';
 import { FlowHoverButton } from './ui/flow-hover-button';
@@ -60,11 +62,11 @@ const inputClass =
   'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
   'focus-visible:ring-offset-surface';
 
-type Props = { onDone: () => void };
-
-export default function OnboardingForm({ onDone }: Props) {
+export default function OnboardingForm() {
   const { user } = useUser();
   const { apiFetch } = useApi();
+  const { refetch } = useMe();
+  const navigate = useNavigate();
 
   const email = user?.primaryEmailAddress?.emailAddress ?? '';
   const name = user?.fullName ?? '';
@@ -165,7 +167,8 @@ export default function OnboardingForm({ onDone }: Props) {
         method: 'POST',
         body,
       });
-      onDone();
+      await refetch();
+      navigate('/');
     } catch (err) {
       if (err instanceof ApiError) {
         setError(`${err.status}: ${err.body}`);

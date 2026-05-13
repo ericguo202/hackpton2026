@@ -17,6 +17,7 @@
 import { useSignUp } from '@clerk/react/legacy';
 import { Eye, EyeOff } from 'lucide-react';
 import { Suspense, lazy, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router';
 
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 
@@ -50,13 +51,11 @@ const GoogleIcon = () => (
   </svg>
 );
 
-interface SignUpProps {
-  onBack?: () => void;
-  onSignInClick?: () => void;
-}
-
-export default function SignUp({ onBack, onSignInClick }: SignUpProps) {
+export default function SignUp() {
   const { isLoaded, signUp, setActive } = useSignUp();
+  const navigate = useNavigate();
+  const onBack = () => navigate('/');
+  const onSignInClick = () => navigate('/sign-in');
 
   const [showPassword, setShowPassword] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -136,15 +135,13 @@ export default function SignUp({ onBack, onSignInClick }: SignUpProps) {
       <section className="flex-1 flex flex-col">
       <main className="flex-1 flex items-center justify-center px-8 md:px-16 py-6">
         <div className="w-full max-w-md">
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="mb-8 inline-block text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs"
-            >
-              Back
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-8 inline-block text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs"
+          >
+            Back
+          </button>
 
           {pendingVerification ? (
             <div className="flex flex-col gap-5">

@@ -8,19 +8,15 @@
  *   - Linked back to from the share-style "Session complete" card later
  */
 
+import { useEffect } from 'react';
 import { UserButton } from '@clerk/react';
+import { useNavigate, useParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useSessionDetail } from '../hooks/useSessionDetail';
 import { tokenizeTranscript } from '../lib/fillerWords';
 import type { TurnDetail } from '../types/history';
-
-type Props = {
-  sessionId: string;
-  onBack: () => void;
-  onNavigate: (view: 'home' | 'history' | 'personalize') => void;
-};
 
 const SCORE_KEYS = [
   ['directness',  'Directness'],
@@ -136,24 +132,37 @@ function TurnCard({ turn }: { turn: TurnDetail }) {
   );
 }
 
-export default function SessionDetail({ sessionId, onBack, onNavigate }: Props) {
-  const { session, isLoading, error } = useSessionDetail(sessionId);
+export default function SessionDetail() {
+  const { id: sessionId = '' } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { session, isLoading, error, errorStatus } = useSessionDetail(sessionId);
+
+  // 4xx (404 not found, 422 invalid id, 403 not yours) — the session
+  // can't be loaded for this user. Send them back to / with a flash.
+  // 5xx flakes fall through to the inline error display below.
+  const shouldRedirect =
+    errorStatus !== null && errorStatus >= 400 && errorStatus < 500;
+  useEffect(() => {
+    if (shouldRedirect) {
+      navigate('/', {
+        replace: true,
+        state: { flash: 'The session you requested does not exist.' },
+      });
+    }
+  }, [shouldRedirect, navigate]);
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
       <TopBar
         nav={
           <>
-            <TopBarNavLink active={false} onClick={() => onNavigate('home')}>
+            <TopBarNavLink to="/" matchPatterns={['/practice']}>
               Practice
             </TopBarNavLink>
-            <TopBarNavLink active onClick={() => onNavigate('history')}>
+            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
               History
             </TopBarNavLink>
-            <TopBarNavLink
-              active={false}
-              onClick={() => onNavigate('personalize')}
-            >
+            <TopBarNavLink to="/personalize">
               Personalize
             </TopBarNavLink>
           </>
@@ -167,7 +176,7 @@ export default function SessionDetail({ sessionId, onBack, onNavigate }: Props) 
             <FlowHoverButton
               variant="dark"
               type="button"
-              onClick={onBack}
+              onClick={() => navigate('/history')}
               icon={<span aria-hidden>←</span>}
             >
               Back to history
@@ -178,7 +187,7 @@ export default function SessionDetail({ sessionId, onBack, onNavigate }: Props) 
             <p className="text-sm text-text-muted">Loading session…</p>
           )}
 
-          {error && !isLoading && (
+          {error && !isLoading && !shouldRedirect && (
             <p role="alert" className="text-sm text-text-muted">
               <span className="mr-2 text-[10px] uppercase tracking-eyebrow text-text">Error</span>
               {error}

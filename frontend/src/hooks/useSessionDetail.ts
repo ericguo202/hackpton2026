@@ -9,18 +9,24 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { useApi } from './useApi';
+import { ApiError } from '../lib/api';
 import type { SessionDetail } from '../types/history';
 
 export function useSessionDetail(sessionId: string | null) {
   const { apiFetch, isReady } = useApi();
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // HTTP status when the failure is an ApiError. Lets the consumer distinguish
+  // "session not found / invalid id" (4xx → redirect) from "backend flake"
+  // (5xx → keep on page).
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchSession = useCallback(async () => {
     if (!sessionId) return;
     setIsLoading(true);
     setError(null);
+    setErrorStatus(null);
     try {
       const data = await apiFetch<SessionDetail>(
         `/api/v1/sessions/${sessionId}`,
@@ -28,6 +34,7 @@ export function useSessionDetail(sessionId: string | null) {
       setSession(data);
     } catch (err) {
       setError((err as Error).message);
+      if (err instanceof ApiError) setErrorStatus(err.status);
     } finally {
       setIsLoading(false);
     }
@@ -42,5 +49,5 @@ export function useSessionDetail(sessionId: string | null) {
     if (!sessionId) setSession(null);
   }, [isReady, sessionId, fetchSession]);
 
-  return { session, isLoading, error, refetch: fetchSession };
+  return { session, isLoading, error, errorStatus, refetch: fetchSession };
 }

@@ -38,11 +38,7 @@ const inputClass =
   'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
   'focus-visible:ring-offset-surface';
 
-type Props = {
-  onNavigate: (view: 'home' | 'history' | 'personalize') => void;
-};
-
-export default function Personalize({ onNavigate }: Props) {
+export default function Personalize() {
   const { me, isReady, isLoading, refetch } = useMe();
 
   return (
@@ -50,13 +46,13 @@ export default function Personalize({ onNavigate }: Props) {
       <TopBar
         nav={
           <>
-            <TopBarNavLink active={false} onClick={() => onNavigate('home')}>
+            <TopBarNavLink to="/" matchPatterns={['/practice']}>
               Practice
             </TopBarNavLink>
-            <TopBarNavLink active={false} onClick={() => onNavigate('history')}>
+            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
               History
             </TopBarNavLink>
-            <TopBarNavLink active onClick={() => undefined}>
+            <TopBarNavLink to="/personalize">
               Personalize
             </TopBarNavLink>
           </>

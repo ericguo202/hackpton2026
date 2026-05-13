@@ -1,7 +1,7 @@
-# AI Behavioral Interview Coach
+# Logos: AI Behavioral Interview Coach
 
-Hackathon MVP. Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-out → metrics persisted.
-Submit to: **Best Education** (primary), Best Overall (auto), as well as the **Gemini API**, **Elevenlabs** sponsor tracks.
+MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-out → metrics persisted.
+Future plans: terms and conditions, security, add LiveAvatar, gamification with XP
 
 ## What the MVP ships
 
@@ -149,55 +149,98 @@ HEYGEN_API_KEY          # optional, only if avatar feature is attempted
 
 ## Frontend Routing
 
-There is no router library — no `react-router`, no `@tanstack/react-router`. The "routing" is a two-axis state machine inside `frontend/src/App.tsx`. Every page in `frontend/src/pages/` is reachable from a single URL (`localhost:5173/` in dev) by mutating React state. There is exactly one URL-driven branch.
+The app uses **React Router v7** (`react-router@^7.14.2`, declarative `<BrowserRouter>` API — not the data router). `main.tsx` nests `<BrowserRouter>` inside `<ClerkProvider>` so route components can call `useAuth()` / `getToken()` freely. The whole route table lives in `frontend/src/App.tsx`.
 
-**Axis 1 — auth (Clerk `<Show>`):**
-`<Show when="signed-out">` mounts `SignedOutApp`; `<Show when="signed-in">` mounts `SignedInApp`. The `<ClerkProvider>` in `main.tsx` supplies the session.
+### Route table
 
-**Axis 2 — view enum (`useState`):**
+| Path             | Component             | Guards                                                 |
+| ---------------- | --------------------- | ------------------------------------------------------ |
+| `/`              | `HomeRoute`           | None at route level — branches on auth inside          |
+| `/sign-in`       | `SignIn`              | `RedirectIfOnboarded`                                  |
+| `/sign-up`       | `SignUp`              | `RedirectIfOnboarded`                                  |
+| `/onboarding`    | `OnboardingForm`      | `RequireAuth` + `RedirectIfOnboarded`                  |
+| `/practice`      | `Practice`            | `RequireAuth` + `RequireOnboarded`                     |
+| `/history`       | `History`             | `RequireAuth` + `RequireOnboarded`                     |
+| `/sessions/:id`  | `SessionDetail`       | `RequireAuth` + `RequireOnboarded`                     |
+| `/personalize`   | `Personalize`         | `RequireAuth` + `RequireOnboarded`                     |
+| `/sso-callback`  | `SsoCallback`         | None (Clerk OAuth completes here)                      |
+| `*`              | `<Navigate to="/">`   | None                                                   |
 
-- `SignedOutApp`: `'hero' | 'signin' | 'signup'`. Swaps go through `useMorphTransition` for the sweep animation.
-- `SignedInApp`: `'home' | 'history' | 'session' | 'personalize'`. The `'session'` view is paired with a separate `openSessionId` state so back-from-detail returns to the right place.
+### Route guards
 
-**Onboarding gate:** before the signed-in view enum is consulted, `App.tsx` checks `me.completed_registration`; when false it renders `<OnboardingForm />` instead. A half-onboarded user can never reach Home.
+Three layout-route components in `frontend/src/components/route-guards.tsx`. Each waits for Clerk `isLoaded` AND `useMe().isReady` before deciding so we never flash the wrong page on initial load or session rehydration. Each renders `<Outlet />` on pass.
 
-**The one URL-driven branch — `/sso-callback`:**
-`App.tsx` checks `window.location.pathname === '/sso-callback'` first thing. If true, it renders `<SsoCallback />`, which wraps Clerk's `<AuthenticateWithRedirectCallback>`. Clerk finishes the OAuth handshake and redirects to `/`, after which the normal `<Show>` flow takes over.
+- **`RequireAuth`** — signed-out → `<Navigate to="/sign-in" replace />`.
+- **`RequireOnboarded`** — assumes auth ran first; signed-in but `me.completed_registration === false` → `<Navigate to="/onboarding" replace />`.
+- **`RedirectIfOnboarded`** — signed-in AND onboarded → `<Navigate to="/" replace />`. Used to bounce already-onboarded users away from `/sign-in`, `/sign-up`, and `/onboarding`. Half-onboarded users CAN visit `/sign-in`/`/sign-up` (signing in again as the same user is harmless).
 
-**How pages navigate:** parent passes `onNavigate*` callbacks as props (no context, no global store). E.g. `<Home onNavigateHistory={() => setView('history')} />`. Each page's `TopBar` just calls them.
+### `/` is the only auth-bivalent route
 
-**Trade-offs:**
+`HomeRoute` (in `App.tsx`) is a thin shim that branches via Clerk `<Show>`:
 
-- Pro: small bundle, simple to reason about, no React-state-vs-URL drift.
-- Con: no deep-linking; browser back/forward and refresh do not move between views; refresh always lands on the default view of the current auth branch.
+- `signed-out` → `<Hero />`
+- `signed-in` → `<SignedInHome />`, which checks `me.completed_registration`; `false` → `<Navigate to="/onboarding" replace />`, otherwise `<Home />`. Half-onboarded users can never reach Home.
 
-**Adding a new top-level page:** extend the `SignedInView` (or `View`) union in `App.tsx`, add a branch that renders the page, and thread an `onNavigateX` callback into every existing page that needs to link to it (`Home`, `History`, `SessionDetail`, `Personalize`, plus their `TopBar` `nav` slots). There is no central route table.
+### TopBar nav
 
-### `Home.tsx` has its own internal state machine
+`TopBarNavLink` (in `frontend/src/components/TopBar.tsx`) takes `to: string` plus optional `matchPatterns?: string[]`. It renders a `<Link>` and computes its active state via react-router's `matchPath` against the current location. Use `matchPatterns` for routes that should highlight a link without sharing its href:
 
-`Home.tsx` (1658 lines) is mounted once by `App.tsx` but hides a second, nested state machine. Everything a user does during a practice session — pick a company, hear the question, record, review, score — happens inside this one mount, gated by three render branches in the final `return`:
+- Practice link: `to="/" matchPatterns={['/practice']}` — active on both Setup and the running session.
+- History link: `to="/history" matchPatterns={['/sessions/:id']}` — active on the list and on any session detail page.
+
+### Setup → Practice handoff
+
+`Home.tsx` (Setup) and `Practice.tsx` (Interview + Results) live at separate routes but the running session needs to carry the `sessionId` + first question across the boundary without a URL param. `Home.handleStart` POSTs `/api/v1/sessions`, then:
+
+```ts
+navigate('/practice', {
+  state: { sessionId, firstQuestion, firstQuestionAudioUrl },
+});
+```
+
+`Practice` reads `useLocation().state` on mount. If state is missing (refresh, direct URL, browser back into a stale `/practice`), it returns `<Navigate to="/" replace />` — silent redirect, matches today's "refresh loses session state" behavior. The `PracticeLocationState` type is exported from `Practice.tsx` so `Home.tsx` can import it for type safety on the navigate call.
+
+### Flash messages
+
+`frontend/src/components/FlashBanner.tsx` is a small one-shot notice that reads `location.state.flash`, captures it locally, then clears the history entry's state via `navigate(pathname, { replace: true, state: null })` so refresh doesn't re-show it. Auto-dismisses after 6s, `×` button dismisses immediately. Mounted as a fixed overlay (`top-20 z-50`, `pointer-events-none` wrapper / `pointer-events-auto` inner) inside `Home.tsx` between TopBar and `<main>` so it floats above content without shifting layout.
+
+Producers navigate with a flash like:
+
+```ts
+navigate('/', { replace: true, state: { flash: 'The session you requested does not exist.' } });
+```
+
+`SessionDetail` is the first producer: when `useSessionDetail` returns an `errorStatus` in the 4xx range (404 / 422 / 403 — invalid id, gone, not yours), it redirects with the "session does not exist" flash. 5xx falls through to the inline error so transient backend issues stay visible.
+
+### Trade-offs vs. the prior state-machine "routing"
+
+- **Pro now:** deep-linking works; refresh + browser back/forward move between views as expected; new pages just register a `<Route>` instead of threading `onNavigate*` callbacks through every other page.
+- **Lost UX:** the cross-route morph sweep (Hero ↔ SignIn ↔ SignUp; Setup → Practice) is gone. The in-component morph for Practice's Interview → Results is preserved (still the same component, still local state). `useMorphTransition` and `PageMorphTransition` are kept; re-adding cross-route morph would mean wrapping `useNavigate` calls with `trigger()`.
+
+### `Practice.tsx` hides an internal state machine
+
+`Practice.tsx` is mounted once at `/practice` but hides a nested state machine. Everything from "first question plays" through "review per-turn results" happens inside this one mount, gated by two render branches:
 
 | Phase     | Gate                               | What renders                                         |
 | --------- | ---------------------------------- | ---------------------------------------------------- |
-| Setup     | `!sessionId`                       | Hero "Which company are you interviewing with?" form |
-| Interview | `sessionId && !isDone && currentQ` | `<QuestionPlayer>` + recorder UI                     |
+| Interview | `!isDone && currentQ`              | `<QuestionPlayer>` + recorder UI                     |
 | Results   | `isDone`                           | Stepped Overview + per-turn `<ReplayCoachCard>`      |
 
-**Phase transitions use `useMorphTransition()`** — the same overlay used for signed-out page swaps. `morphDirection` is set before `trigger()` so the sweep runs in the right direction: Setup→Interview sweeps right-to-left (`'left'`, "stepping forward"); Interview→Results uses the default upward sweep (`'up'`). In-phase sub-state changes do NOT trigger the morph — they use the lighter `anim-crossfade` class, because a full-screen sweep for a sub-second UI flicker would be disruptive.
+**Interview → Results uses `useMorphTransition()`** for a full-screen sweep at the moment `setIsDone(true)` fires. In-phase sub-state changes do NOT trigger the morph — they use the lighter `anim-crossfade` class, because a full-screen sweep for a sub-second UI flicker would be disruptive.
 
 **Interview-phase sub-states** are driven by `useRecorder()`'s `recorder.state` (`'idle' | 'recording' | 'stopped'`) plus a few latches on top:
 
 - `endingTurn` — latches true on "End answer" so the spinner shows immediately instead of flashing the preview UI for the ~tens-of-ms it takes MediaRecorder to flush its final chunk.
 - `submittingTurn` — true while `/turns` is in flight.
 - `retryingTurn` — the one-shot auto-retry gap for autoSubmit mode; keeps the spinner up between failure and retry so the preview block doesn't flash.
-- `autoSubmit` (persisted via `useLocalStoragePref`) flips the whole flow: on → stop auto-submits; off → stop shows the Submit / Re-record preview.
+- `autoSubmit` (persisted via `useLocalStoragePref` under key `auto_submit_enabled`; the toggle lives in `Home.tsx`'s VoicePicker, Practice reads the same key) flips the whole flow: on → stop auto-submits; off → stop shows the Submit / Re-record preview.
 - `replayKey` — bumped on Re-record so `<QuestionPlayer>` remounts, retriggering `<audio autoPlay>`; its existing `onEnded` handler then restarts the recorder. Reuses the same question without an imperative ref API.
 
 **Auto-submit is wired through a ref-indirected effect.** `submitTurnRef` holds the latest `handleSubmitTurn` closure, refreshed every render by a no-deps effect. The auto-submit effect watches `[endingTurn, recorder.state, recorder.audioBlob, submittingTurn]` and calls `submitTurnRef.current()` the moment all four align. The ref keeps the closure fresh without the write-during-render anti-pattern the `react-hooks/refs` lint rule flags.
 
-**Results phase has its own nested navigation.** `resultsStep` indexes into `0 = Overview, 1..N = per-turn ReplayCoachCard` (3 total with the locked 2-turn plan). `resultsStepKey` force-remounts the `<section>` on every step change so the slide animation replays; `resultsDirection` picks `anim-slide-in-left` (forward) vs `anim-slide-in-right` (back). Dots-as-tabs at the top and Back / "Review turn N+1" / "Start another session" buttons at the bottom drive `goToResultsStep(i)`.
+**Results phase has its own nested navigation.** `resultsStep` indexes into `0 = Overview, 1..N = per-turn ReplayCoachCard` (3 total with the locked 2-turn plan). `resultsStepKey` force-remounts the `<section>` on every step change so the slide animation replays; `resultsDirection` picks `anim-slide-in-left` (forward) vs `anim-slide-in-right` (back). Dots-as-tabs at the top and Back / "Review turn N+1" / "Start another session" buttons at the bottom drive `goToResultsStep(i)`. "Start another session" calls `navigate('/')` to return to Setup.
 
-**Why all three phases live in one component:** they share a lot of state (`sessionId`, `turnResults`, `recorder`, `analyzer`, `voiceId`, `me`) and the transitions are animated sweeps that shouldn't be interruptible by the browser back button. Splitting them across `/practice/setup`, `/practice/interview`, `/practice/results` would force either a global store or heavy prop-drilling through a router — for zero user-visible benefit, since none of these phases have URLs anyway. The cost is that `Home.tsx` is large; the payoff is session state never has to survive a navigation.
+**Why Interview + Results stay in one component (instead of `/practice/interview` + `/practice/results`):** they share state (`sessionId`, `turnResults`, `recorder`, `analyzer`) and the Interview → Results transition is an animated sweep that shouldn't be interruptible by the browser back button. Splitting them would force a global store or heavy prop-drilling for zero user-visible benefit, since neither sub-phase has a meaningful URL of its own.
 
 ## Verification Checklist
 

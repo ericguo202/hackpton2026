@@ -14,6 +14,7 @@
 
 import { useMemo, useState } from 'react';
 import { UserButton } from '@clerk/react';
+import { useNavigate } from 'react-router';
 import {
   CartesianGrid,
   Line,
@@ -32,11 +33,6 @@ import type {
   DimensionAverages,
   SessionListItem,
 } from '../types/history';
-
-type Props = {
-  onNavigate: (view: 'home' | 'history' | 'personalize') => void;
-  onOpenSession: (id: string) => void;
-};
 
 // Chart series colors are sourced from the dedicated --color-chart-*
 // palette in index.css, NOT the primary/secondary/etc. ramps. Those
@@ -207,7 +203,8 @@ function SessionRow({
   );
 }
 
-export default function History({ onNavigate, onOpenSession }: Props) {
+export default function History() {
+  const navigate = useNavigate();
   const { sessions, isLoading: sessionsLoading, error: sessionsError } = useSessions();
   const { stats, isLoading: statsLoading } = useMeStats();
 
@@ -236,16 +233,13 @@ export default function History({ onNavigate, onOpenSession }: Props) {
       <TopBar
         nav={
           <>
-            <TopBarNavLink active={false} onClick={() => onNavigate('home')}>
+            <TopBarNavLink to="/" matchPatterns={['/practice']}>
               Practice
             </TopBarNavLink>
-            <TopBarNavLink active onClick={() => onNavigate('history')}>
+            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
               History
             </TopBarNavLink>
-            <TopBarNavLink
-              active={false}
-              onClick={() => onNavigate('personalize')}
-            >
+            <TopBarNavLink to="/personalize">
               Personalize
             </TopBarNavLink>
           </>
@@ -443,7 +437,7 @@ export default function History({ onNavigate, onOpenSession }: Props) {
                 </p>
                 <FlowHoverButton
                   type="button"
-                  onClick={() => onNavigate('home')}
+                  onClick={() => navigate('/')}
                 >
                   Start a session
                 </FlowHoverButton>
@@ -457,7 +451,7 @@ export default function History({ onNavigate, onOpenSession }: Props) {
                     key={s.id}
                     session={s}
                     ordinal={sessions!.length - i}
-                    onClick={() => onOpenSession(s.id)}
+                    onClick={() => navigate(`/sessions/${s.id}`)}
                   />
                 ))}
               </div>

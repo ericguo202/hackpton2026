@@ -16,6 +16,7 @@ import { useClerk } from '@clerk/react';
 import { useSignIn } from '@clerk/react/legacy';
 import { Eye, EyeOff } from 'lucide-react';
 import { Suspense, lazy, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router';
 
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 
@@ -49,14 +50,12 @@ const GoogleIcon = () => (
   </svg>
 );
 
-interface SignInProps {
-  onBack?: () => void;
-  onCreateAccount?: () => void;
-}
-
-export default function SignIn({ onBack, onCreateAccount }: SignInProps) {
+export default function SignIn() {
   const { isLoaded, signIn, setActive } = useSignIn();
   const clerk = useClerk();
+  const navigate = useNavigate();
+  const onBack = () => navigate('/');
+  const onCreateAccount = () => navigate('/sign-up');
 
   const [showPassword, setShowPassword] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -111,11 +110,7 @@ export default function SignIn({ onBack, onCreateAccount }: SignInProps) {
   }
 
   function handleCreateAccount() {
-    if (onCreateAccount) {
-      onCreateAccount();
-      return;
-    }
-    clerk.redirectToSignUp();
+    onCreateAccount();
   }
 
   function handleResetPassword() {
@@ -127,15 +122,13 @@ export default function SignIn({ onBack, onCreateAccount }: SignInProps) {
       <section className="flex-1 flex flex-col">
       <main className="flex-1 flex items-center justify-center px-8 md:px-16 py-6">
         <div className="w-full max-w-md">
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="mb-8 inline-block text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs"
-            >
-              Back
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-8 inline-block text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs"
+          >
+            Back
+          </button>
           <div className="flex flex-col gap-5">
             <h1 className="font-display font-medium tracking-[-0.02em] leading-tight text-text text-4xl md:text-5xl">
               Welcome back
