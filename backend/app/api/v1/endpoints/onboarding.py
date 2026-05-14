@@ -27,16 +27,19 @@ true.
 
 Error codes:
   401 — missing / invalid bearer (handled upstream in `current_user`)
+  409 — email already claimed by another `users` row
   413 — resume file exceeds 5 MB
   415 — non-PDF upload
   422 — PDF parsed but produced no text
 """
 
+import logging
 from io import BytesIO
 
 import pdfplumber
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import EmailStr
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_db
@@ -47,6 +50,8 @@ from app.schemas.user import UserOut
 from app.services.moderation import check_moderation
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 # 5 MiB cap. Read in chunks so a malicious multi-GB upload can't OOM us.
@@ -170,6 +175,21 @@ async def onboarding(
     user.resume_text = final_resume_text
     user.completed_registration = True
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # The only UNIQUE column this endpoint writes is `users.email`, so an
+        # IntegrityError here means another row already claims this address —
+        # typically a leftover row from a deleted Clerk account whose
+        # `user.deleted` webhook didn't land. Roll back so the session is
+        # usable during dependency teardown, and surface a clean 409 instead
+        # of letting the raw error bubble up as an opaque 500 (which, lacking
+        # CORS headers, the browser misreports as a CORS failure).
+        await db.rollback()
+        logger.warning("Onboarding email collision for %s", email)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email address already exists.",
+        )
     await db.refresh(user)
     return user
