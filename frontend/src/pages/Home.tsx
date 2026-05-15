@@ -262,7 +262,7 @@ export default function Home() {
               </p>
 
               <h1
-                className="anim-reveal mb-10 font-display font-medium leading-[1.05] tracking-[-0.02em] text-text md:mb-12"
+                className="anim-reveal mb-10 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
                 style={{ animationDelay: '80ms', fontSize: 'clamp(2.25rem, 5vw, 4.25rem)' }}
               >
                 Which company are you
@@ -280,7 +280,7 @@ export default function Home() {
                   autoComplete="off"
                   autoFocus
                   disabled={submitting}
-                  className="w-full border-0 border-b border-border-strong bg-transparent pb-3 pt-1 font-display text-2xl font-medium text-text placeholder:font-display placeholder:font-normal placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:opacity-50 md:text-4xl"
+                  className="w-full border-0 border-b border-border-strong bg-transparent pb-3 pt-1 font-display text-2xl leading-[1.3] font-medium text-text placeholder:font-display placeholder:font-normal placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:opacity-50 md:text-4xl"
                 />
               </label>
 

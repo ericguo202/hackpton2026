@@ -74,7 +74,7 @@ export default function Hero() {
             </p>
 
             <h1
-              className="anim-reveal font-display font-medium tracking-[-0.022em] leading-[1.02] text-text -mt-2 md:-mt-3 mb-8 md:mb-10"
+              className="anim-reveal font-display font-medium tracking-[-0.022em] leading-[1.12] text-text -mt-2 md:-mt-3 mb-8 md:mb-10"
               style={{
                 animationDelay: '80ms',
                 fontSize: 'clamp(2.75rem, 6.5vw, 5.5rem)',
