@@ -280,7 +280,7 @@ export default function Home() {
                   autoComplete="off"
                   autoFocus
                   disabled={submitting}
-                  className="w-full border-0 border-b border-border-strong bg-transparent pb-3 pt-1 font-display text-2xl leading-[1.3] font-medium text-text placeholder:font-display placeholder:font-normal placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:opacity-50 md:text-4xl"
+                  className="w-full border-0 border-b border-border-strong bg-transparent pb-3 pt-1 text-2xl font-medium text-text placeholder:font-normal placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:opacity-50 md:text-4xl"
                 />
               </label>
 
