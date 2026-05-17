@@ -48,8 +48,8 @@ system debuggable on demo day.
 
 | Stage              | Model                       | Role                                                                                                   |
 | ------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Company research   | **Gemini 2.5 Flash**        | Summarizes Serper search results into a 1-paragraph brief + values + headlines that ground the questions. |
-| Opening question   | **Gemini 2.5 Flash**        | Reads the brief + the candidate's resume + target role and writes the first behavioral question.       |
+| Company research   | **Gemini 2.5 Flash**        | Summarizes Serper search results into a 1-paragraph brief + values + headlines, **and** classifies the interviewing context into one of 15 field/industry buckets (Tech, Finance, Healthcare, Legal, …) from company + target job title. |
+| Opening question   | **Gemini 2.5 Flash**        | Reads the brief + the candidate's resume + target role, picks a **field-tailored system prompt** based on the research agent's category (so a healthcare role gets empathetic phrasing, an ops role gets Lean/Six Sigma framing, etc.), and writes the first behavioral question. |
 | Follow-up question | **Gemini 2.0 Flash**        | After turn 1, drafts a sharp follow-up that references what the candidate actually just said.          |
 | Per-turn evaluator | **Gemma 4 (`gemma-4-26b`)** | Reads the transcript + question + history and returns structured JSON scores on five rubric dimensions plus a 2-3 sentence coaching note. |
 

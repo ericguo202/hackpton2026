@@ -20,6 +20,11 @@ import httpx
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.services._field_prompts import (
+    DEFAULT_CATEGORY,
+    FIELD_CATEGORIES,
+    FieldCategory,
+)
 from app.services._openrouter import extract_json_object, get_client
 
 logger = logging.getLogger(__name__)
@@ -33,18 +38,25 @@ class CompanyBrief(BaseModel):
     description: str
     headlines: list[str]
     values: list[str] = []
+    # One of FIELD_CATEGORIES; drives which field-tailored system prompt
+    # the opening-question generator selects.
+    category: FieldCategory = DEFAULT_CATEGORY
 
 
-_SYSTEM_INSTRUCTION = """\
-You are a research summarizer. Given raw Google search output about a company,
-return ONLY a JSON object with these three keys (no markdown, no prose,
+_CATEGORY_LIST = "\n".join(f"  - {c}" for c in FIELD_CATEGORIES)
+
+_SYSTEM_INSTRUCTION = f"""\
+You are a research summarizer and interview-context classifier. Given raw
+Google search output about a company and the candidate's target job title,
+return ONLY a JSON object with these four keys (no markdown, no prose,
 no thinking):
 
-{
+{{
   "description": "one or two sentences describing what the company does",
   "headlines": ["2 to 3 short recent-activity bullets", "...", "..."],
-  "values": ["up to 2 stated company values", "..."]
-}
+  "values": ["up to 2 stated company values", "..."],
+  "category": "<one of the allowed category strings>"
+}}
 
 Rules:
 - `description` is factual, present-tense, 1-2 sentences max.
@@ -53,6 +65,16 @@ Rules:
 - `values` should be omitted (empty list) if not clearly present in the
   input. Do NOT invent values.
 - Do not include quotes or source links in any field.
+- `category` MUST be one of the allowed strings below, copied verbatim.
+  Pick the bucket that best matches the candidate's interviewing context.
+  The candidate's job title takes precedence over the company's primary
+  industry — e.g., an in-house counsel role at a tech company is
+  "Legal, Compliance, and Advocacy", not "Technology, Product, and Design";
+  a marketing role at a hospital system is "Sales, Marketing, and Customer
+  Functions", not "Healthcare and Life Sciences".
+
+Allowed `category` values (use one verbatim):
+{_CATEGORY_LIST}
 """
 
 
@@ -116,27 +138,38 @@ def _fallback_brief(kg_description: str) -> CompanyBrief:
         description=kg_description or "No summary available.",
         headlines=[],
         values=[],
+        category=DEFAULT_CATEGORY,
     )
 
 
-async def research_company(company: str) -> CompanyBrief:
-    """Fetch a compact structured brief for `company`.
+async def research_company(company: str, job_title: str) -> CompanyBrief:
+    """Fetch a compact structured brief for `company` + a field category.
+
+    The category is classified jointly from the company and the target
+    job title so cross-functional roles (e.g. legal at a tech company)
+    land in the right interviewing bucket.
 
     Serper → `google/gemini-2.5-flash` → CompanyBrief. On any
     summarization-level failure we return a degenerate brief with the
-    knowledge-graph description so the demo keeps moving instead of
-    500-ing the session.
+    knowledge-graph description and a default category so the demo keeps
+    moving instead of 500-ing the session.
     """
     client = get_client()
 
     serp = await _serper_search(company)
     kg_description, digest = _digest_serp(serp)
 
+    user_content = (
+        f"Company: {company}\n"
+        f"Candidate's target job title: {job_title}\n\n"
+        f"{digest}"
+    )
+
     response = await client.chat.completions.create(
         model=RESEARCH_MODEL,
         messages=[
             {"role": "system", "content": _SYSTEM_INSTRUCTION},
-            {"role": "user", "content": f"Company: {company}\n\n{digest}"},
+            {"role": "user", "content": user_content},
         ],
         temperature=0.2,
         response_format={"type": "json_object"},
@@ -145,7 +178,16 @@ async def research_company(company: str) -> CompanyBrief:
     text = response.choices[0].message.content or ""
 
     try:
-        return CompanyBrief.model_validate_json(extract_json_object(text))
+        payload = json.loads(extract_json_object(text))
+        raw_category = payload.get("category")
+        if raw_category not in FIELD_CATEGORIES:
+            logger.warning(
+                "Research returned unknown category %r for %s; "
+                "falling back to %r",
+                raw_category, company, DEFAULT_CATEGORY,
+            )
+            payload["category"] = DEFAULT_CATEGORY
+        return CompanyBrief.model_validate(payload)
     except (ValueError, json.JSONDecodeError) as exc:
         logger.warning(
             "Research summarization failed for %s: %s", company, exc

@@ -125,7 +125,7 @@ async def create_session(
             detail="Input contains content that violates our usage policy.",
         )
 
-    brief = await research_company(body.company)
+    brief = await research_company(body.company, body.job_title)
     opening_q = await generate_opening_question(user, brief, body.job_title)
 
     # Generate the session UUID up front so the voice can be resolved
