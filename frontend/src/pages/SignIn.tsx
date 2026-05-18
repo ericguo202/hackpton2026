@@ -15,7 +15,7 @@
 import { useClerk } from '@clerk/react';
 import { useSignIn } from '@clerk/react/legacy';
 import { Eye, EyeOff } from 'lucide-react';
-import { Suspense, lazy, useState, type FormEvent } from 'react';
+import { Suspense, lazy, useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router';
 
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
@@ -67,7 +67,7 @@ export default function SignIn() {
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const shaderSpeed = prefersReducedMotion ? 0 : isHovered ? 0.6 : 0.2;
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!isLoaded) return;
 

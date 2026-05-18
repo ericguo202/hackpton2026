@@ -12,7 +12,7 @@
  * all preserves the existing value (handled in `onboarding.py`).
  */
 
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
@@ -106,7 +106,7 @@ function PersonalizeForm({ me, refetch }: FormProps) {
     targetRole.trim().length > 0 &&
     shortBio.trim().length > 0;
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setSaved(false);
