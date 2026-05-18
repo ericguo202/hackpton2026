@@ -22,7 +22,7 @@ type Props = { tagline?: string };
 
 export default function ScoreDimensions({ tagline }: Props) {
   return (
-    <footer className="border-t border-border px-8 md:px-16 py-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <footer className="hidden sm:flex border-t border-border px-8 md:px-16 py-6 flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <dl className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
         {DIMENSIONS.map((d) => (
           <div key={d.n} className="flex items-baseline gap-2">
