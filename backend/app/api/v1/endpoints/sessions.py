@@ -38,7 +38,11 @@ from app.schemas.session import (
     TurnSubmitOut,
 )
 from app.services import eval_registry
-from app.services.company_research import CompanyBrief, research_company
+from app.services.company_research import (
+    CompanyBrief,
+    CompanyNotFoundError,
+    research_company,
+)
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words
 from app.services.followup import generate_followup
@@ -125,7 +129,13 @@ async def create_session(
             detail="Input contains content that violates our usage policy.",
         )
 
-    brief = await research_company(body.company, body.job_title)
+    try:
+        brief = await research_company(body.company, body.job_title)
+    except CompanyNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="We couldn't find that company. Please check the spelling.",
+        )
     opening_q = await generate_opening_question(user, brief, body.job_title)
 
     # Generate the session UUID up front so the voice can be resolved

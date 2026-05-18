@@ -23,7 +23,7 @@ import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
-import { ApiError } from '../lib/api';
+import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { VOICE_PROFILES, type VoiceProfile } from '../lib/voices';
 import type { PracticeLocationState } from './Practice';
 
@@ -193,7 +193,7 @@ export default function Home() {
     } catch (err) {
       setSetupError(
         err instanceof ApiError
-          ? `${err.status}: ${err.message}`
+          ? extractApiErrorDetail(err)
           : (err as Error).message,
       );
       setSubmitting(false);
