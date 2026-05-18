@@ -89,7 +89,10 @@ Rules:
   industry — e.g., an in-house counsel role at a tech company is
   "Legal, Compliance, and Advocacy", not "Technology, Product, and Design";
   a marketing role at a hospital system is "Sales, Marketing, and Customer
-  Functions", not "Healthcare and Life Sciences".
+  Functions", not "Healthcare and Life Sciences". The ONLY EXCEPTION to this
+  rule is for "Startups and High-Growth Environments": if your research
+  indicates that the company is an early-stage (Series A & B) startup, you
+  MUST set the category to be "Startups and High-Growth Environments".
 
 Rules for `valid_company_query` (BE PERMISSIVE — default to true):
 - DEFAULT to true. Most inputs should pass. Small/recent startups,
