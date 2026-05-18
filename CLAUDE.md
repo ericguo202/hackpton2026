@@ -153,18 +153,18 @@ The app uses **React Router v7** (`react-router@^7.14.2`, declarative `<BrowserR
 
 ### Route table
 
-| Path             | Component             | Guards                                                 |
-| ---------------- | --------------------- | ------------------------------------------------------ |
-| `/`              | `HomeRoute`           | None at route level — branches on auth inside          |
-| `/sign-in`       | `SignIn`              | `RedirectIfOnboarded`                                  |
-| `/sign-up`       | `SignUp`              | `RedirectIfOnboarded`                                  |
-| `/onboarding`    | `OnboardingForm`      | `RequireAuth` + `RedirectIfOnboarded`                  |
-| `/practice`      | `Practice`            | `RequireAuth` + `RequireOnboarded`                     |
-| `/history`       | `History`             | `RequireAuth` + `RequireOnboarded`                     |
-| `/sessions/:id`  | `SessionDetail`       | `RequireAuth` + `RequireOnboarded`                     |
-| `/personalize`   | `Personalize`         | `RequireAuth` + `RequireOnboarded`                     |
-| `/sso-callback`  | `SsoCallback`         | None (Clerk OAuth completes here)                      |
-| `*`              | `<Navigate to="/">`   | None                                                   |
+| Path            | Component           | Guards                                        |
+| --------------- | ------------------- | --------------------------------------------- |
+| `/`             | `HomeRoute`         | None at route level — branches on auth inside |
+| `/sign-in`      | `SignIn`            | `RedirectIfOnboarded`                         |
+| `/sign-up`      | `SignUp`            | `RedirectIfOnboarded`                         |
+| `/onboarding`   | `OnboardingForm`    | `RequireAuth` + `RedirectIfOnboarded`         |
+| `/practice`     | `Practice`          | `RequireAuth` + `RequireOnboarded`            |
+| `/history`      | `History`           | `RequireAuth` + `RequireOnboarded`            |
+| `/sessions/:id` | `SessionDetail`     | `RequireAuth` + `RequireOnboarded`            |
+| `/personalize`  | `Personalize`       | `RequireAuth` + `RequireOnboarded`            |
+| `/sso-callback` | `SsoCallback`       | None (Clerk OAuth completes here)             |
+| `*`             | `<Navigate to="/">` | None                                          |
 
 ### Route guards
 
@@ -193,7 +193,7 @@ Three layout-route components in `frontend/src/components/route-guards.tsx`. Eac
 `Home.tsx` (Setup) and `Practice.tsx` (Interview + Results) live at separate routes but the running session needs to carry the `sessionId` + first question across the boundary without a URL param. `Home.handleStart` POSTs `/api/v1/sessions`, then:
 
 ```ts
-navigate('/practice', {
+navigate("/practice", {
   state: { sessionId, firstQuestion, firstQuestionAudioUrl },
 });
 ```
@@ -207,7 +207,10 @@ navigate('/practice', {
 Producers navigate with a flash like:
 
 ```ts
-navigate('/', { replace: true, state: { flash: 'The session you requested does not exist.' } });
+navigate("/", {
+  replace: true,
+  state: { flash: "The session you requested does not exist." },
+});
 ```
 
 `SessionDetail` is the first producer: when `useSessionDetail` returns an `errorStatus` in the 4xx range (404 / 422 / 403 — invalid id, gone, not yours), it redirects with the "session does not exist" flash. 5xx falls through to the inline error so transient backend issues stay visible.
@@ -221,10 +224,10 @@ navigate('/', { replace: true, state: { flash: 'The session you requested does n
 
 `Practice.tsx` is mounted once at `/practice` but hides a nested state machine. Everything from "first question plays" through "review per-turn results" happens inside this one mount, gated by two render branches:
 
-| Phase     | Gate                               | What renders                                         |
-| --------- | ---------------------------------- | ---------------------------------------------------- |
-| Interview | `!isDone && currentQ`              | `<QuestionPlayer>` + recorder UI                     |
-| Results   | `isDone`                           | Stepped Overview + per-turn `<ReplayCoachCard>`      |
+| Phase     | Gate                  | What renders                                    |
+| --------- | --------------------- | ----------------------------------------------- |
+| Interview | `!isDone && currentQ` | `<QuestionPlayer>` + recorder UI                |
+| Results   | `isDone`              | Stepped Overview + per-turn `<ReplayCoachCard>` |
 
 **Interview → Results uses `useMorphTransition()`** for a full-screen sweep at the moment `setIsDone(true)` fires. In-phase sub-state changes do NOT trigger the morph — they use the lighter `anim-crossfade` class, because a full-screen sweep for a sub-second UI flicker would be disruptive.
 
