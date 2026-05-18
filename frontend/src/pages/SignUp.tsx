@@ -103,6 +103,7 @@ export default function SignUp() {
       const result = await signUp.attemptEmailAddressVerification({ code });
       if (result.status === 'complete' && result.createdSessionId) {
         await setActive({ session: result.createdSessionId });
+        navigate('/', { replace: true });
       } else {
         setError('Verification incomplete. Check the code and try again.');
       }

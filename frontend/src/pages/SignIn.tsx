@@ -81,6 +81,7 @@ export default function SignIn() {
       const result = await signIn.create({ identifier: email, password });
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
+        navigate('/', { replace: true });
       } else {
         setError('Additional verification required. Continue on the hosted page.');
         clerk.redirectToSignIn();
