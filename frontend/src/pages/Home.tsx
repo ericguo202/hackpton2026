@@ -276,7 +276,7 @@ export default function Home() {
                   type="text"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
-                  placeholder="Jane Street, Figma, Anthropic..."
+                  placeholder="Stripe, Figma, OpenAI..."
                   autoComplete="off"
                   autoFocus
                   disabled={submitting}

@@ -9,9 +9,11 @@
  * signed-in surface. `rightSlot` holds the sign-in link on Hero and the
  * <UserButton /> on Home.
  *
- * Below the `md` breakpoint the inline nav collapses into a hamburger
- * button; tapping it reveals a stacked dropdown of the same nav nodes
- * so mobile users can still reach History without starting a session.
+ * Below 900px the inline nav collapses into a hamburger button; tapping
+ * it reveals a stacked dropdown of the same nav nodes so mobile users
+ * can still reach History without starting a session. The 900px cutoff
+ * (vs. Tailwind's stock `md` at 768px) keeps the user-profile icon from
+ * being pushed off-screen once the inline nav has three entries.
  */
 
 import { useState, type ReactNode } from 'react';
@@ -29,15 +31,13 @@ export default function TopBar({ rightSlot, nav }: Props) {
     <header className="relative flex items-center justify-between gap-6 px-8 md:px-16 pt-8 pb-4">
       <div className="flex items-baseline gap-3 text-eyebrow text-[14px] uppercase tracking-eyebrow text-text-muted">
         <span className="font-medium text-text tabular-nums">Logos</span>
-        <span aria-hidden>·</span>
-        <span>Interview Practice</span>
         <span aria-hidden className="hidden sm:inline">·</span>
-        <span className="hidden sm:inline">Behavioral Rounds</span>
+        <span className="hidden sm:inline">Interview Practice</span>
       </div>
 
       <div className="flex items-center gap-4">
         {nav && (
-          <nav className="hidden md:flex items-baseline gap-6 text-eyebrow text-[14px] uppercase tracking-eyebrow text-text-muted">
+          <nav className="hidden min-[900px]:flex items-baseline gap-6 text-eyebrow text-[14px] uppercase tracking-eyebrow text-text-muted">
             {nav}
           </nav>
         )}
@@ -47,7 +47,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
             onClick={() => setMobileNavOpen((v) => !v)}
             aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={mobileNavOpen}
-            className="md:hidden inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-sm text-text transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            className="min-[900px]:hidden inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-sm text-text transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
             <svg
               width="20"
@@ -86,7 +86,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
       */}
       {nav && mobileNavOpen && (
         <div
-          className="md:hidden absolute left-0 right-0 top-full z-40 border-b border-border bg-surface px-8 py-4 shadow-sm"
+          className="min-[900px]:hidden absolute left-0 right-0 top-full z-40 border-b border-border bg-surface px-8 py-4 shadow-sm"
           onClick={() => setMobileNavOpen(false)}
         >
           <nav className="flex flex-col items-start gap-4 text-eyebrow text-[14px] uppercase tracking-eyebrow text-text-muted">
