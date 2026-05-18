@@ -15,7 +15,7 @@
 import { useClerk } from '@clerk/react';
 import { useSignIn } from '@clerk/react/legacy';
 import { Eye, EyeOff } from 'lucide-react';
-import { Suspense, lazy, useState, type FormEvent } from 'react';
+import { Suspense, lazy, useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router';
 
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
@@ -67,7 +67,7 @@ export default function SignIn() {
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const shaderSpeed = prefersReducedMotion ? 0 : isHovered ? 0.6 : 0.2;
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!isLoaded) return;
 
@@ -81,6 +81,7 @@ export default function SignIn() {
       const result = await signIn.create({ identifier: email, password });
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
+        navigate('/', { replace: true });
       } else {
         setError('Additional verification required. Continue on the hosted page.');
         clerk.redirectToSignIn();
@@ -125,7 +126,7 @@ export default function SignIn() {
           <button
             type="button"
             onClick={onBack}
-            className="mb-8 inline-block text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs"
+            className="mb-8 inline-block cursor-pointer text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs"
           >
             Back
           </button>
@@ -204,9 +205,9 @@ export default function SignIn() {
                 <button
                   type="button"
                   onClick={handleResetPassword}
-                  className="text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded-xs"
+                  className="text-text cursor-pointer underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded-xs"
                 >
-                  Reset password
+                  Forgot my password
                 </button>
               </div>
 
@@ -253,7 +254,7 @@ export default function SignIn() {
               <button
                 type="button"
                 onClick={handleCreateAccount}
-                className="text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded-xs"
+                className="text-text cursor-pointer underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded-xs"
               >
                 Create an account
               </button>

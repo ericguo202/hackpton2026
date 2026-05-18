@@ -11,7 +11,7 @@
  * mounted at `/practice`.
  */
 
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
 import { ImageDithering } from '@paper-design/shaders-react';
 import { useNavigate } from 'react-router';
@@ -160,7 +160,7 @@ export default function Home() {
 
   const firstName = user?.firstName ?? null;
 
-  async function handleStart(e: FormEvent<HTMLFormElement>) {
+  async function handleStart(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     const trimmed = company.trim();
     if (!trimmed) return;

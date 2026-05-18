@@ -14,7 +14,7 @@
 
 import {
   useState,
-  type FormEvent,
+  type SubmitEvent,
   type KeyboardEvent,
 } from 'react';
 import { UserButton, useUser } from '@clerk/react';
@@ -127,7 +127,7 @@ export default function OnboardingForm() {
     advance();
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 
