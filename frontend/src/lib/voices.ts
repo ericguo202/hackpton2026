@@ -18,12 +18,14 @@ export type VoiceProfile = {
 };
 
 export const VOICE_PROFILES: readonly VoiceProfile[] = [
-  { id: 'DODLEQrClDo8wCz460ld', name: 'Jennifer', accent: 'American' },
-  { id: '1cuDPO8sIMatoOE4Z2Zv', name: 'Daniel',   accent: 'American' },    
+  { id: 'DODLEQrClDo8wCz460ld', name: 'Cindy',    accent: 'American' },
+  { id: '1cuDPO8sIMatoOE4Z2Zv', name: 'James',    accent: 'American' },    
   { id: 'MwUMLXurEzSN7bIfIdXF', name: 'Divya',    accent: 'Indian' },                                                                                                                           
-  { id: 'K8nDX2f6wjv6bCh5UeZi', name: 'Maxime',    accent: 'French' },   
+  { id: 'K8nDX2f6wjv6bCh5UeZi', name: 'Maxime',   accent: 'French' },   
   { id: 'Fahco4VZzobUeiPqni1S', name: 'David',    accent: 'British' },
-  { id: 'FUu5jJAN31dt6KeE1fk2', name: 'Irene',    accent: 'South Asian' },
-  { id: 'GCPLhb1XrVwcoKUJYcvz', name: 'Alexandra', accent: 'Eastern European' },
+  { id: 'GCPLhb1XrVwcoKUJYcvz', name: 'Irina',    accent: 'Russian' },
   { id: 'RBUtdrDRjER5aScqHwAS', name: 'Ding',     accent: 'Chinese' },
+  { id: 'QZRlT5NqTgs34Uz6r1me', name: 'Ruy',      accent: 'Spanish'},
+  { id: 'IpCcRCVYm2nsZJjBFn4H', name: 'Rafael',   accent: 'Portuguese'},
+  { id: 'n5UxjYFlD5aLGVRI2HXk', name: 'Daniela',  accent: 'Australian'}
 ] as const;

@@ -9,13 +9,25 @@
  *
  * The active interview (recording, scoring, results) lives in `Practice.tsx`,
  * mounted at `/practice`.
+ *
+ * Layout splits into two slabs at the 900px breakpoint (the same breakpoint
+ * TopBar.tsx uses for nav vs hamburger). Desktop keeps the inline form and
+ * exposes Advanced as a right-side drawer (`AdvancedPanelDrawer`) that slides
+ * in over the sculpture column when the user clicks the "Advanced" trigger
+ * next to the Auto-submit pill — the form on the left stays usable. Mobile
+ * uses Basic / Advanced pill tabs (matching the resume tabs in Personalize.tsx)
+ * sitting alongside Begin session. The Advanced surface is the same
+ * `AdvancedPanel` component on both breakpoints.
  */
 
 import { useState, type SubmitEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
 import { ImageDithering } from '@paper-design/shaders-react';
+import { ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
+import AdvancedPanel from '../components/AdvancedPanel';
+import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
 import FlashBanner from '../components/FlashBanner';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
@@ -24,7 +36,6 @@ import { useApi } from '../hooks/useApi';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
-import { VOICE_PROFILES, type VoiceProfile } from '../lib/voices';
 import type { PracticeLocationState } from './Practice';
 
 type SessionStart = {
@@ -41,105 +52,75 @@ function timeOfDay(): 'morning' | 'afternoon' | 'evening' {
   return 'evening';
 }
 
-/**
- * Disclosure-style voice picker for the start form.
- *
- * Collapsed by default — most candidates skip it and accept the
- * server-side deterministic fallback derived from the session UUID.
- * `selectedId === null` means "let the backend pick" — the helper line
- * reads "Surprise me." in that case.
- */
-function VoicePicker({
-  selectedId,
-  onSelect,
-  disabled,
+const companyInputClass =
+  'w-full border-0 border-b border-border-strong bg-transparent pb-3 pt-1 text-2xl font-medium text-text placeholder:font-normal placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:opacity-50 md:text-4xl';
+
+function AutoSubmitPill({
   autoSubmit,
-  onToggleAutoSubmit,
+  onToggle,
+  disabled,
 }: {
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
-  disabled: boolean;
   autoSubmit: boolean;
-  onToggleAutoSubmit: () => void;
+  onToggle: () => void;
+  disabled: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-
-  const selected: VoiceProfile | null =
-    VOICE_PROFILES.find((v) => v.id === selectedId) ?? null;
-
   return (
-    <div className="anim-reveal mt-8 max-w-[42rem]" style={{ animationDelay: '200ms' }}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
-        <button
-          type="button"
-          onClick={() => setOpen((value) => !value)}
-          disabled={disabled}
-          aria-expanded={open}
-          className="text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {open ? 'Hide interviewer voice (accent)' : 'Choose interviewer voice (accent)'}
-        </button>
-        <span className="text-text-subtle">
-          {selected
-            ? `${selected.name} (${selected.accent})`
-            : 'Surprise me'}
-        </span>
-        <button
-          type="button"
-          onClick={onToggleAutoSubmit}
-          disabled={disabled}
-          aria-pressed={autoSubmit}
-          className={
-            autoSubmit
-              ? 'rounded-full border border-accent bg-accent px-3 py-1 text-[12px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-              : 'cursor-pointer rounded-full border border-border bg-transparent px-3 py-1 text-[12px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
-          }
-        >
-          Auto-submit: {autoSubmit ? 'On' : 'Off'}
-        </button>
-      </div>
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      aria-pressed={autoSubmit}
+      className={
+        autoSubmit
+          ? 'rounded-full border border-accent bg-accent px-3 py-1 text-[12px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+          : 'cursor-pointer rounded-full border border-border bg-transparent px-3 py-1 text-[12px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+      }
+    >
+      Auto-submit: {autoSubmit ? 'On' : 'Off'}
+    </button>
+  );
+}
 
-      {open && (
-        <div className="mt-4">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onSelect(null)}
-              disabled={disabled}
-              aria-pressed={selected === null}
-              className={
-                selected === null
-                  ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-                  : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
-              }
-            >
-              Surprise me
-            </button>
-            {VOICE_PROFILES.map((voice) => {
-              const active = voice.id === selectedId;
-              return (
-                <button
-                  key={voice.id}
-                  type="button"
-                  onClick={() => onSelect(voice.id)}
-                  disabled={disabled}
-                  aria-pressed={active}
-                  className={
-                    active
-                      ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-                      : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
-                  }
-                >
-                  <span>{voice.name}</span>
-                  <span className={active ? 'ml-1.5 opacity-75' : 'ml-1.5 text-text-subtle'}>
-                    {voice.accent}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+function ModeTabs({
+  mode,
+  setMode,
+  disabled,
+}: {
+  mode: 'basic' | 'advanced';
+  setMode: (m: 'basic' | 'advanced') => void;
+  disabled: boolean;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Setup mode"
+      className="inline-flex rounded border border-border bg-surface-raised p-0.5"
+    >
+      {(['basic', 'advanced'] as const).map((m) => {
+        const active = mode === m;
+        return (
+          <button
+            key={m}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            disabled={disabled}
+            onClick={() => setMode(m)}
+            className={
+              'rounded px-3 py-1.5 text-sm transition-colors ' +
+              'focus-visible:outline-none focus-visible:ring-2 ' +
+              'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
+              'focus-visible:ring-offset-surface ' +
+              'disabled:cursor-not-allowed disabled:opacity-50 ' +
+              (active
+                ? 'bg-accent text-accent-fg'
+                : 'text-text-muted hover:text-text')
+            }
+          >
+            {m === 'basic' ? 'Basic' : 'Advanced'}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -157,6 +138,12 @@ export default function Home() {
   // Persisted across sessions; Practice.tsx reads the same key for its
   // auto-submit effect.
   const [autoSubmit, setAutoSubmit] = useLocalStoragePref('auto_submit_enabled', false);
+  // Whether the Advanced surface is active. Shared between the mobile pill
+  // tabs and the desktop drawer so the state survives a viewport crossing
+  // 900px (tablet rotation, browser split, etc.). `mode` is derived from
+  // it, not a separate state.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const mode: 'basic' | 'advanced' = advancedOpen ? 'advanced' : 'basic';
 
   const firstName = user?.firstName ?? null;
 
@@ -199,6 +186,19 @@ export default function Home() {
       setSubmitting(false);
     }
   }
+
+  const targetRoleBadge = me?.target_role ? (
+    <p className="text-[13px] text-text-subtle">
+      Target role: <span className="text-text-muted">{me.target_role}</span>
+    </p>
+  ) : null;
+
+  const errorBlock = setupError ? (
+    <p role="alert" aria-live="polite" className="mt-10 text-sm leading-[1.6] text-text-muted">
+      <span className="mr-3 text-[10px] uppercase tracking-eyebrow text-text">Error</span>
+      {setupError}
+    </p>
+  ) : null;
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
@@ -261,63 +261,151 @@ export default function Home() {
                 Good {timeOfDay()}{firstName ? `, ${firstName}` : ''}
               </p>
 
-              <h1
-                className="anim-reveal mb-10 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
-                style={{ animationDelay: '80ms', fontSize: 'clamp(2.25rem, 5vw, 4.25rem)' }}
-              >
-                Which company are you
-                <br />
-                interviewing with?
-              </h1>
-
-              <label className="anim-reveal block max-w-[42rem]" style={{ animationDelay: '160ms' }}>
-                <span className="sr-only">Company name</span>
-                <input
-                  type="text"
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  placeholder="Stripe, Figma, OpenAI..."
-                  autoComplete="off"
-                  autoFocus
-                  disabled={submitting}
-                  className="w-full border-0 border-b border-border-strong bg-transparent pb-3 pt-1 text-2xl font-medium text-text placeholder:font-normal placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:opacity-50 md:text-4xl"
-                />
-              </label>
-
-              <VoicePicker
-                selectedId={voiceId}
-                onSelect={setVoiceId}
-                disabled={submitting}
-                autoSubmit={autoSubmit}
-                onToggleAutoSubmit={() => setAutoSubmit((v) => !v)}
-              />
-
-              <div
-                className="anim-reveal mt-10 flex flex-wrap items-baseline gap-x-8 gap-y-4"
-                style={{ animationDelay: '280ms' }}
-              >
-                <FlowHoverButton
-                  type="submit"
-                  disabled={!company.trim() || submitting}
+              {/* Desktop slab: ≥ 900px */}
+              <div className="hidden min-[900px]:block">
+                <h1
+                  className="anim-reveal mb-10 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
+                  style={{ animationDelay: '80ms', fontSize: 'clamp(2.25rem, 5vw, 4.25rem)' }}
                 >
-                  {submitting ? 'Starting...' : 'Begin session'}
-                </FlowHoverButton>
+                  Which company are you
+                  <br />
+                  interviewing with?
+                </h1>
 
-                {me?.target_role && (
-                  <p className="text-[13px] text-text-subtle">
-                    Target role: <span className="text-text-muted">{me.target_role}</span>
-                  </p>
-                )}
+                <label className="anim-reveal block max-w-[clamp(20rem,55vw,42rem)]" style={{ animationDelay: '160ms' }}>
+                  <span className="sr-only">Company name</span>
+                  <input
+                    type="text"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    placeholder="Stripe, Figma, OpenAI..."
+                    autoComplete="off"
+                    autoFocus
+                    disabled={submitting}
+                    className={companyInputClass}
+                  />
+                </label>
+
+                <div
+                  className="anim-reveal mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 max-w-[42rem]"
+                  style={{ animationDelay: '200ms' }}
+                >
+                  <AutoSubmitPill
+                    autoSubmit={autoSubmit}
+                    onToggle={() => setAutoSubmit((v) => !v)}
+                    disabled={submitting}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedOpen((v) => !v)}
+                    disabled={submitting}
+                    aria-expanded={advancedOpen}
+                    aria-haspopup="dialog"
+                    className="inline-flex items-center gap-1 text-[13px] text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span>Advanced</span>
+                    <ChevronRight
+                      aria-hidden
+                      className={`h-3.5 w-3.5 transition-transform ${advancedOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                </div>
+
+                <div
+                  className="anim-reveal mt-10 flex flex-wrap items-baseline gap-x-8 gap-y-4"
+                  style={{ animationDelay: '280ms' }}
+                >
+                  <FlowHoverButton
+                    type="submit"
+                    disabled={!company.trim() || submitting}
+                  >
+                    {submitting ? 'Starting...' : 'Begin session'}
+                  </FlowHoverButton>
+                  {targetRoleBadge}
+                </div>
+
+                {errorBlock}
               </div>
 
-              {setupError && (
-                <p role="alert" aria-live="polite" className="mt-10 text-sm leading-[1.6] text-text-muted">
-                  <span className="mr-3 text-[10px] uppercase tracking-eyebrow text-text">Error</span>
-                  {setupError}
-                </p>
-              )}
+              {/* Mobile slab: < 900px */}
+              <div className="block min-[900px]:hidden">
+                <section key={mode} className="anim-crossfade">
+                  {mode === 'basic' ? (
+                    <>
+                      <h1
+                        className="mb-10 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
+                        style={{ fontSize: 'clamp(2.25rem, 5vw, 4.25rem)' }}
+                      >
+                        Which company are you
+                        <br />
+                        interviewing with?
+                      </h1>
+
+                      <label className="block max-w-[clamp(20rem,55vw,42rem)]">
+                        <span className="sr-only">Company name</span>
+                        <input
+                          type="text"
+                          value={company}
+                          onChange={(e) => setCompany(e.target.value)}
+                          placeholder="Stripe, Figma, OpenAI..."
+                          autoComplete="off"
+                          disabled={submitting}
+                          className={companyInputClass}
+                        />
+                      </label>
+
+                      <div className="mt-8">
+                        <AutoSubmitPill
+                          autoSubmit={autoSubmit}
+                          onToggle={() => setAutoSubmit((v) => !v)}
+                          disabled={submitting}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h2
+                        className="mb-8 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text"
+                        style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)' }}
+                      >
+                        Customize your interview
+                      </h2>
+                      <AdvancedPanel
+                        voiceId={voiceId}
+                        onVoiceSelect={setVoiceId}
+                        disabled={submitting}
+                      />
+                    </>
+                  )}
+                </section>
+
+                <div className="mt-10 flex flex-wrap items-center gap-x-4 gap-y-3">
+                  <FlowHoverButton
+                    type="submit"
+                    disabled={!company.trim() || submitting}
+                  >
+                    {submitting ? 'Starting...' : 'Begin session'}
+                  </FlowHoverButton>
+                  <ModeTabs
+                    mode={mode}
+                    setMode={(m) => setAdvancedOpen(m === 'advanced')}
+                    disabled={submitting}
+                  />
+                  {targetRoleBadge}
+                </div>
+
+                {errorBlock}
+              </div>
             </div>
           </form>
+
+          <AdvancedPanelDrawer
+            open={advancedOpen}
+            onClose={() => setAdvancedOpen(false)}
+            voiceId={voiceId}
+            onVoiceSelect={setVoiceId}
+            disabled={submitting}
+          />
         </div>
       </main>
 
