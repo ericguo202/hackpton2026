@@ -138,6 +138,9 @@ export default function Home() {
   // Persisted across sessions; Practice.tsx reads the same key for its
   // auto-submit effect.
   const [autoSubmit, setAutoSubmit] = useLocalStoragePref('auto_submit_enabled', false);
+  // Same key the mid-session eye-icon toggle in Practice.tsx writes to —
+  // both surfaces share state via localStorage. Default true (visible).
+  const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
   // Whether the Advanced surface is active. Shared between the mobile pill
   // tabs and the desktop drawer so the state survives a viewport crossing
   // 900px (tablet rotation, browser split, etc.). `mode` is derived from
@@ -373,6 +376,8 @@ export default function Home() {
                       <AdvancedPanel
                         voiceId={voiceId}
                         onVoiceSelect={setVoiceId}
+                        showQuestionText={showQuestionText}
+                        onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
                         disabled={submitting}
                       />
                     </>
@@ -404,6 +409,8 @@ export default function Home() {
             onClose={() => setAdvancedOpen(false)}
             voiceId={voiceId}
             onVoiceSelect={setVoiceId}
+            showQuestionText={showQuestionText}
+            onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
             disabled={submitting}
           />
         </div>

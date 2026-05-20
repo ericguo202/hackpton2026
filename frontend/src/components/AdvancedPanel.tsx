@@ -15,10 +15,18 @@ import { VOICE_PROFILES } from '../lib/voices';
 type Props = {
   voiceId: string | null;
   onVoiceSelect: (id: string | null) => void;
+  showQuestionText: boolean;
+  onToggleShowQuestionText: () => void;
   disabled: boolean;
 };
 
-export default function AdvancedPanel({ voiceId, onVoiceSelect, disabled }: Props) {
+export default function AdvancedPanel({
+  voiceId,
+  onVoiceSelect,
+  showQuestionText,
+  onToggleShowQuestionText,
+  disabled,
+}: Props) {
   return (
     <div className="space-y-6">
       <Section
@@ -50,6 +58,25 @@ export default function AdvancedPanel({ voiceId, onVoiceSelect, disabled }: Prop
             );
           })}
         </div>
+      </Section>
+
+      <Section
+        label="Question text"
+        hint="Show the question on screen during your turn. You can also toggle this mid-session."
+      >
+        <button
+          type="button"
+          onClick={onToggleShowQuestionText}
+          disabled={disabled}
+          aria-pressed={showQuestionText}
+          className={
+            showQuestionText
+              ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+              : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+          }
+        >
+          Show question text: {showQuestionText ? 'On' : 'Off'}
+        </button>
       </Section>
     </div>
   );
