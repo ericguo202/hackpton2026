@@ -49,16 +49,17 @@ class VoiceProfile:
 # unpicked session resolves to. Sessions that explicitly persisted a
 # `voice_id` are immune. Add new voices to the END.
 _VOICE_POOL: tuple[VoiceProfile, ...] = (
+    VoiceProfile("DODLEQrClDo8wCz460ld", "Cindy",    "American"),
+    VoiceProfile("1cuDPO8sIMatoOE4Z2Zv", "James",    "American"),
     VoiceProfile("MwUMLXurEzSN7bIfIdXF", "Divya",    "Indian"),
-    VoiceProfile("DODLEQrClDo8wCz460ld", "Jennifer", "American"),
+    VoiceProfile("K8nDX2f6wjv6bCh5UeZi", "Maxime",   "French"),
     VoiceProfile("Fahco4VZzobUeiPqni1S", "David",    "British"),
-    VoiceProfile("FUu5jJAN31dt6KeE1fk2", "Irene",    "Malaysian-American"),
+    VoiceProfile("GCPLhb1XrVwcoKUJYcvz", "Irina",    "Russian"),
     VoiceProfile("RBUtdrDRjER5aScqHwAS", "Ding",     "Chinese"),
-    VoiceProfile("1cuDPO8sIMatoOE4Z2Zv", "Daniel",   "American"),
-    VoiceProfile("GCPLhb1XrVwcoKUJYcvz", "Alexandra", "Eastern European"),
-    VoiceProfile("K8nDX2f6wjv6bCh5UeZi", "Maxime",   "French")
+    VoiceProfile("QZRlT5NqTgs34Uz6r1me", "Ruy",      "Spanish"),
+    VoiceProfile("IpCcRCVYm2nsZJjBFn4H", "Rafael",   "Portuguese"),
+    VoiceProfile("n5UxjYFlD5aLGVRI2HXk", "Daniela",  "Australian")
 )
-
 
 # id-keyed lookup for O(1) validation. Built once at import time so
 # the validator stays a constant-time check even with a larger pool.

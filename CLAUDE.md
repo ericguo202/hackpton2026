@@ -6,6 +6,7 @@ Future plans: terms and conditions, security, add LiveAvatar, gamification with 
 ## What the MVP ships
 
 - **Personalization from a resume.** Onboarding ingests a PDF resume and a short bio, extracts `resume_text`, and stores target role + industry + experience level. Every downstream prompt (opening question, follow-up, evaluator) is conditioned on this profile so the session feels tailored, not generic.
+- **Field-tailored opening question.** The research agent classifies the candidate's interviewing context into one of 15 field/industry buckets (Tech/Product/Design, Data/AI/ML, Cybersecurity, Finance, Consulting, Legal, Government, Healthcare, Sales/Marketing, Ops/Supply Chain, Retail/Hospitality, Nonprofit, Education, Non-Software Engineering, Startups). The classification is driven primarily by the **job title** and secondarily by the company, so cross-functional roles (e.g. in-house counsel at a tech company → Legal) land in the right bucket. The opening-question generator then selects a category-specific system prompt with field-appropriate tone and example shapes — replacing the prior one-size-fits-all prompt that customers reported produced generic, untailored questions.
 - **Two-turn interview session with auto-submit.** Each session is a locked two-turn loop: one opening question + one follow-up that references the first answer. The practice page has an **Auto-Submit** toggle (persisted per user) — on, tapping "End answer" fires the turn submission the moment MediaRecorder flushes the last chunk; off, the user sees a preview block with Submit / Re-record. Auto-submit has a one-shot retry on transient LLM errors so a flaky model call doesn't strand the session.
 - **Six scoring metrics per turn.** The evaluator returns five content scores — `directness`, `star`, `specificity`, `impact`, `conciseness` — plus `delivery`, a sixth score computed from optional webcam analytics (eye contact, expression, posture, energy). Delivery is opt-in: if the user declines the camera, `delivery` is `null` and the other five still score. Filler words are counted by a hard-coded regex (ground truth), separate from the LLM.
 - **History + per-metric improvement tracking.** Every completed session persists turns, scores, and aggregates to Postgres. The History page lists sessions and lets the user open a session to replay the audio, read the transcript, and see each score. The Stats endpoint surfaces per-metric trends so improvement across runs is visible, not guessed at.
@@ -39,8 +40,8 @@ Browser (React+Vite)
 
 **Three sequential LLM calls per session — not a multi-agent loop. All go through OpenRouter:**
 
-1. Company research: Serper → `google/gemini-2.5-flash` summarization (once, session start)
-2. Opening question: `google/gemini-2.5-flash` (once, after research)
+1. Company research + field classification: Serper → `google/gemini-2.5-flash` summarization (once, session start). Returns `CompanyBrief(description, headlines, values, category)` where `category` is one of 15 field/industry buckets, classified from company + `job_title` (title takes precedence over company industry for cross-functional roles).
+2. Opening question: `google/gemini-2.5-flash` (once, after research). System prompt is selected from `app/services/_field_prompts.FIELD_PROMPTS` keyed on `brief.category`. Sourced from `backend/prompts.md` — keep the two in sync.
 3. Evaluate + next question: `deepseek/deepseek-v3.2` in JSON mode (once per turn, repeated)
 
 ---

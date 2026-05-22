@@ -29,3 +29,22 @@ export class ApiError extends Error {
     this.body = body;
   }
 }
+
+/**
+ * Pulls FastAPI's `{"detail": "..."}` string out of an `ApiError.body`.
+ *
+ * Falls back to the raw body when the body isn't JSON, when `detail` is
+ * missing, or when `detail` is a non-string (FastAPI returns an array of
+ * objects for validation errors — rendering that as `[object Object]` is
+ * worse than showing the raw payload).
+ */
+export function extractApiErrorDetail(err: ApiError): string {
+  try {
+    const parsed = JSON.parse(err.body);
+    const detail = parsed?.detail;
+    if (typeof detail === 'string') return detail;
+    return err.body;
+  } catch {
+    return err.body;
+  }
+}
