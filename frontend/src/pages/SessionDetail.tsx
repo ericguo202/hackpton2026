@@ -19,11 +19,11 @@ import { tokenizeTranscript } from '../lib/fillerWords';
 import type { TurnDetail } from '../types/history';
 
 const SCORE_KEYS = [
-  ['directness',  'Directness'],
-  ['star',        'STAR structure'],
-  ['specificity', 'Specificity'],
-  ['impact',      'Impact'],
-  ['conciseness', 'Conciseness'],
+  ['structure',       'Structure'],
+  ['problem_solving', 'Problem Solving'],
+  ['impact',          'Impact'],
+  ['initiative',      'Initiative'],
+  ['depth',           'Depth'],
 ] as const;
 
 function ScoreBar({ value }: { value: number }) {

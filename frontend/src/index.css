@@ -114,12 +114,12 @@
      saturation/luminance to stay editorial (not crayon-bright) while
      remaining unambiguously different from each other.
      Each token also clears 4.5:1 contrast against --color-surface. */
-  --color-chart-1: #2c6e7a;  /* teal      — directness  */
-  --color-chart-2: #b25a39;  /* terracotta — STAR        */
-  --color-chart-3: #4a7a4a;  /* forest    — specificity */
-  --color-chart-4: #7e3a5e;  /* plum      — impact      */
-  --color-chart-5: #b58a2c;  /* amber     — conciseness */
-  --color-chart-6: #48538e;  /* indigo    — delivery    */
+  --color-chart-1: #2c6e7a;  /* teal       — structure       */
+  --color-chart-2: #b25a39;  /* terracotta — problem solving */
+  --color-chart-3: #4a7a4a;  /* forest     — impact          */
+  --color-chart-4: #7e3a5e;  /* plum       — initiative      */
+  --color-chart-5: #b58a2c;  /* amber      — depth           */
+  --color-chart-6: #48538e;  /* indigo     — delivery        */
 
   /* ---------- Fonts ---------- */
   --font-sans:    "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;

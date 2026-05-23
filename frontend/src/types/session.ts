@@ -1,9 +1,9 @@
 export type Scores = {
-  directness: number;
-  star: number;
-  specificity: number;
+  structure: number;
+  problem_solving: number;
   impact: number;
-  conciseness: number;
+  initiative: number;
+  depth: number;
   // Null when the candidate declined camera access — the card hides
   // the row in that case.
   delivery: number | null;
