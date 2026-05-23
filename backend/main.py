@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -5,6 +7,16 @@ from contextlib import asynccontextmanager
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.session import check_db_connection
+
+# Make app-level `logger.info(...)` calls visible in stdout. uvicorn's
+# --log-level only configures its own access/error loggers, so without
+# this every `logging.getLogger(__name__).info(...)` in the codebase
+# (research completion, background-eval status, moderation rejects, etc.)
+# would be silently dropped at the WARNING root threshold.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:%(name)s:%(message)s",
+)
 
 
 @asynccontextmanager

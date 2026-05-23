@@ -53,13 +53,15 @@ def _make_fake_client(payload_or_fn):
 
 
 _DEFAULT_PAYLOAD = {
-    "directness": 7,
-    "star": 6,
-    "specificity": 8,
+    "structure": 7,
+    "problem_solving": 6,
     "impact": 5,
-    "conciseness": 6,
+    "initiative": 6,
+    "depth": 8,
     "notes": "Good structure, but quantify the impact to strengthen it.",
 }
+
+_RUBRIC_FIELDS = ("structure", "problem_solving", "impact", "initiative", "depth")
 
 
 async def test_evaluate_turn_returns_valid_output(monkeypatch):
@@ -74,7 +76,7 @@ async def test_evaluate_turn_returns_valid_output(monkeypatch):
     )
 
     assert isinstance(result, EvaluatorOutput)
-    for field in ("directness", "star", "specificity", "impact", "conciseness"):
+    for field in _RUBRIC_FIELDS:
         value = getattr(result, field)
         assert isinstance(value, int)
         assert 0 <= value <= 10
@@ -100,7 +102,7 @@ async def test_claude_md_verification_three_ums(monkeypatch):
         question="Tell me about a project you led.",
         transcript=transcript,
     )
-    for field in ("directness", "star", "specificity", "impact", "conciseness"):
+    for field in _RUBRIC_FIELDS:
         value = getattr(scores, field)
         assert isinstance(value, int)
         assert 0 <= value <= 10
@@ -111,11 +113,11 @@ async def test_scores_clamped_to_range(monkeypatch):
     # constraints would raise; our `_clamp` before-validator squashes
     # them into [0, 10] before validation runs.
     oob_payload = {
-        "directness": 15,
-        "star": -3,
-        "specificity": 7,
+        "structure": 15,
+        "problem_solving": -3,
         "impact": 100,
-        "conciseness": 4,
+        "initiative": 4,
+        "depth": 7,
         "notes": "n/a",
     }
     monkeypatch.setattr(
@@ -124,11 +126,11 @@ async def test_scores_clamped_to_range(monkeypatch):
     )
 
     result = await evaluate_turn(question="q", transcript="a")
-    assert result.directness == 10
-    assert result.star == 0
-    assert result.specificity == 7
+    assert result.structure == 10
+    assert result.problem_solving == 0
     assert result.impact == 10
-    assert result.conciseness == 4
+    assert result.initiative == 4
+    assert result.depth == 7
 
 
 def test_history_included_in_prompt():
@@ -171,11 +173,11 @@ async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
         # The user prompt is the second message in the `messages=` list.
         captured_prompt["value"] = kwargs["messages"][1]["content"]
         return {
-            "directness": 6,
-            "star": 7,
-            "specificity": 6,
+            "structure": 6,
+            "problem_solving": 7,
             "impact": 5,
-            "conciseness": 7,
+            "initiative": 6,
+            "depth": 7,
             "delivery": 7,
             "notes": "Strong eye contact; expression could be warmer.",
         }
@@ -212,11 +214,11 @@ async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
 
 async def test_delivery_falls_back_when_model_omits_it_despite_cv_summary(monkeypatch):
     missing_delivery_payload = {
-        "directness": 6,
-        "star": 5,
-        "specificity": 6,
+        "structure": 6,
+        "problem_solving": 5,
         "impact": 5,
-        "conciseness": 7,
+        "initiative": 6,
+        "depth": 7,
         "notes": "Content is decent, but delivery needs more warmth.",
     }
     monkeypatch.setattr(
@@ -280,3 +282,42 @@ def test_compute_delivery_score_penalizes_sustained_issues():
     }
 
     assert _compute_delivery_score(strong) > _compute_delivery_score(weak)
+
+
+async def test_category_threads_into_system_prompt(monkeypatch):
+    """The category arg must reach the system prompt — otherwise the
+    field-tailored rubric is silently being ignored.
+
+    Checks both the Finance path (industry guidance present) and the
+    None / fallback path (default-category guidance is still rendered,
+    not a missing-placeholder error).
+    """
+    captured: dict[str, str] = {}
+
+    def _resolve(**kwargs):
+        captured["system"] = kwargs["messages"][0]["content"]
+        return _DEFAULT_PAYLOAD
+
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(_resolve),
+    )
+
+    # Finance path — appendix contains the unique phrase "deal sizes".
+    await evaluate_turn(
+        question="Walk me through a recent transaction.",
+        transcript="I led a leveraged buyout...",
+        category="Finance, Banking, and Private Capital",
+    )
+    assert "deal sizes" in captured["system"]
+    assert "{industry_guidance}" not in captured["system"]
+
+    # None path — falls back to DEFAULT_CATEGORY (Technology, Product, and
+    # Design). The Tech appendix should be present instead of the Finance one.
+    await evaluate_turn(
+        question="Tell me about a feature you shipped.",
+        transcript="I shipped a search rewrite...",
+        category=None,
+    )
+    assert "deal sizes" not in captured["system"]
+    assert "user problem" in captured["system"]  # phrase unique to Tech appendix

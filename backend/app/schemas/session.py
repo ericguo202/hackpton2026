@@ -16,6 +16,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.services._field_prompts import FieldCategory
+
 
 class SessionCreateIn(BaseModel):
     company: str = Field(min_length=1, max_length=200)
@@ -32,6 +34,11 @@ class CompanyBriefOut(BaseModel):
     description: str
     headlines: list[str]
     values: list[str] = []
+    # Round-trips `CompanyBrief.category` from the persisted JSON so
+    # downstream code (notably the evaluator) can re-derive the
+    # field-tailored rubric. Optional for legacy rows persisted before
+    # categorization existed.
+    category: FieldCategory | None = None
 
 
 class SessionCreateOut(BaseModel):
@@ -45,11 +52,11 @@ class SessionCreateOut(BaseModel):
 
 
 class ScoresOut(BaseModel):
-    directness: int
-    star: int
-    specificity: int
+    structure: int
+    problem_solving: int
     impact: int
-    conciseness: int
+    initiative: int
+    depth: int
     # 6th dimension from browser webcam analytics. Null when the candidate
     # declined camera access; the UI hides the row in that case.
     delivery: int | None = None
@@ -94,11 +101,11 @@ class TurnSubmitOut(BaseModel):
 # is null whenever the candidate kept the camera off for every turn. The
 # frontend trend chart drops null points instead of plotting them as zeros.
 class DimensionAverages(BaseModel):
-    directness: Decimal | None = None
-    star: Decimal | None = None
-    specificity: Decimal | None = None
+    structure: Decimal | None = None
+    problem_solving: Decimal | None = None
     impact: Decimal | None = None
-    conciseness: Decimal | None = None
+    initiative: Decimal | None = None
+    depth: Decimal | None = None
     delivery: Decimal | None = None
 
 
