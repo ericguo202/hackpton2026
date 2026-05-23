@@ -43,7 +43,7 @@ Priorities when assigning scores:
 
 Notes field:
 
-- Write 3-4 sentences in the second person, direct and constructive (start with "You..."). Focus on the highest-impact improvement: content structure, missing metrics, clearer attribution, leadership clarity, or deeper technical rationale. If webcam analytics are provided AND delivery < 6, reference the specific weakness in the note; otherwise keep the note focused on content. Be precise and actionable.
+- Write 3-4 sentences in the second person, direct and constructive (start with "You..."). Focus on the highest-impact improvement: content structure, missing metrics, clearer attribution, leadership clarity, or deeper technical rationale. Include one sentence about what the user did well and what could be improved relating to the industry-specific criteria. If webcam analytics are provided AND delivery < 6, reference the specific weakness in the note; otherwise keep the note focused on content. Be precise and actionable.
 
 # ADDITIONAL INDUSTRY-SPECIFIC CRITERIA
 
