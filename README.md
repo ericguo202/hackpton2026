@@ -1,6 +1,6 @@
 # Logos
 
-> *λόγος — Greek for word, speech, reason.*
+> _λόγος — Greek for word, speech, reason._
 
 An AI-powered behavioral interview coach. Speak your answer, get a tailored
 follow-up question and rubric-based scoring in the same flow you'd get from a
@@ -17,8 +17,9 @@ Behavioral interviews decide who gets the offer, but they're the part of the
 loop candidates rehearse the least and lose offers on the most. Friends can't
 simulate a stranger pushing back with a sharp follow-up, mock-interview
 platforms skew technical, and recording yourself gives you a tape without
-coaching — you hear the rambling but not which part is hurting you. Logos
-closes that gap: speak your answer to a real interviewer voice, get a
+coaching — you hear the rambling but not which part is hurting you.
+
+Logos closes that gap: speak your answer to a real interviewer voice, get a
 follow-up question that references what you actually said, and receive
 six-dimension scoring grounded in your industry plus a delivery grade pulled
 from your webcam. It's built for college undergraduates preparing for their
@@ -31,11 +32,12 @@ maps to what gets people hired.
 ## Features
 
 ### Industry-specific questions and rubric — not a generic checklist
+
 Logos classifies every session into one of **15 field/industry buckets**
 (Tech, Finance, Healthcare, Legal, Consulting, Sales, Ops, Nonprofit,
 Education, Government, and more) using both the company and target job title,
 so cross-functional roles land in the right place — a healthcare counsel role
-is graded as Legal, not as Healthcare. That classification drives *two*
+is graded as Legal, not as Healthcare. That classification drives _two_
 downstream choices: the opening question is written by a system prompt
 tailored to the field's actual interview shape, and the evaluator is handed
 a rubric whose criteria match that field. A finance candidate's
@@ -45,6 +47,7 @@ like a generic STAR drill and more like preparing for the screen you're
 actually walking into.
 
 ### Six-dimension rubric with per-turn coaching
+
 Every answer is scored 0–10 on six dimensions: **Structure, Problem Solving,
 Impact, Initiative, Depth,** and **Delivery**. Five come from the LLM
 evaluator; Delivery comes from your webcam (see next section). Each turn
@@ -53,16 +56,18 @@ to fix — the rambling sentence, the missing result number, the framework
 that wasn't applied — instead of a generic "be more concise."
 
 ### Body-language coaching from your webcam
+
 A 478-point MediaPipe face-landmark mesh runs in the browser at 15 fps while
 you're answering, tracking eye contact, gaze stability, head pose, expression,
 and face visibility. Those signals roll into the **Delivery** score and into
-the coaching note — so you'll get pointed feedback like *"Eye contact landed
-at 47/100; pick a spot near the camera and return to it between phrases."*
+the coaching note — so you'll get pointed feedback like _"Eye contact landed
+at 47/100; pick a spot near the camera and return to it between phrases."_
 On the replay screen, the face-mask overlay redraws the landmarks on your
-recording so you can *see* what the model saw. Decline the camera and
+recording so you can _see_ what the model saw. Decline the camera and
 everything else still works.
 
 ### Personalization from your resume
+
 Onboarding takes a PDF resume and a short bio, extracts the text, and
 captures industry, target role, and experience level. Every downstream prompt
 — the opening question, the follow-up, the evaluator — is conditioned on
@@ -70,6 +75,7 @@ that profile, so the interviewer references your actual projects, internships,
 and seniority instead of asking a stock question about teamwork.
 
 ### Voice-native session loop
+
 The whole session runs through voice: question audio plays, the mic engages
 automatically when it ends, you talk, you press **End answer**, and the
 follow-up arrives. You can pick from a pool of accented interviewer voices
@@ -78,6 +84,7 @@ against the kind of voice they'll actually face in a screen. The chosen voice
 persists across both turns so the interviewer never "changes person" mid-session.
 
 ### Session history and trend chart
+
 Every completed session is persisted with its transcript, scores, audio
 replay, and filler-word breakdown. The History page renders an interactive
 trend chart of all six dimensions across every session you've ever done — so
