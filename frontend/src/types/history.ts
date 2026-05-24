@@ -24,6 +24,19 @@ export type SessionStatus =
   | 'completed'
   | 'abandoned';
 
+export type CoachingMoment = {
+  transcript_snippet: string;
+  issue_type: string;
+  why_this_weakened: string;
+  how_to_strengthen: string;
+};
+
+export type FeedbackDetail = {
+  main_takeaway: string;
+  coaching_moments: CoachingMoment[];
+  quick_wins: string[];
+};
+
 export type SessionListItem = {
   id: string;
   company: string;
@@ -55,6 +68,7 @@ export type TurnDetail = {
     delivery: number | null;
   };
   feedback: string | null;
+  feedback_detail: FeedbackDetail | null;
   filler_word_count: number;
   filler_word_breakdown: Record<string, number>;
   evaluated_at: string | null;

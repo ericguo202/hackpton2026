@@ -9,6 +9,19 @@ export type Scores = {
   delivery: number | null;
 };
 
+export type CoachingMoment = {
+  transcript_snippet: string;
+  issue_type: string;
+  why_this_weakened: string;
+  how_to_strengthen: string;
+};
+
+export type FeedbackDetail = {
+  main_takeaway: string;
+  coaching_moments: CoachingMoment[];
+  quick_wins: string[];
+};
+
 export type TurnResult = {
   transcript: string;
   // Null while the evaluator is still running in the background (turn 1
@@ -16,6 +29,7 @@ export type TurnResult = {
   // the frontend can finalize without an extra round-trip to /sessions.
   scores: Scores | null;
   feedback: string | null;
+  feedback_detail: FeedbackDetail | null;
   filler_word_count: number;
   filler_word_breakdown: Record<string, number>;
   next_question: string | null;
