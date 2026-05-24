@@ -162,18 +162,6 @@ def _compute_delivery_score(cv_summary: dict) -> int:
 
     return max(0, min(10, round(base_score / 10)))
 
-    @field_validator("delivery", mode="before")
-    @classmethod
-    def _clamp_optional(cls, v: int | None) -> int | None:
-        if v is None:
-            return None
-        try:
-            n = int(v)
-        except (TypeError, ValueError):
-            return None
-        return max(0, min(10, n))
-
-
 def _format_cv_block(cv_summary: dict) -> str:
     """Render the browser-computed webcam summary as a compact text block.
 
