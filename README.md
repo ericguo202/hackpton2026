@@ -124,7 +124,7 @@ Browser (React + Vite)
 
 ## Future improvements
 
-The hackathon scope was intentionally tight (two turns, one company at a time,
+The MVP's scope was intentionally tight (two turns, one company at a time,
 single-shot scoring). A few directions worth exploring beyond this build:
 
 - **Variable-length sessions** — drop the hardcoded 2-turn rule, let the
