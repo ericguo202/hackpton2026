@@ -1,230 +1,122 @@
 # Logos
 
-> *λόγος — Greek for word, speech, reason.*
+> _λόγος — Greek for word, speech, reason._
 
 An AI-powered behavioral interview coach. Speak your answer, get a tailored
 follow-up question and rubric-based scoring in the same flow you'd get from a
 real interviewer — including how you came across on camera.
 
-Built at HackPrinceton 2026.
+Now in beta with college undergraduates, new grads, and recruiters / hiring
+managers helping calibrate the coaching against the bar real interviewers set.
 
 ---
 
 ## Inspiration
 
-Behavioral interviews are the part of the loop that students prepare the
-*least* for and lose offers on the *most*. Every undergrad has a Leetcode
-grinding routine. Almost none have a behavioral one. The rehearsal options
-that exist are bad in different ways:
+Behavioral interviews decide who gets the offer, but they're the part of the
+loop candidates rehearse the least and lose offers on the most. Friends can't
+simulate a stranger pushing back with a sharp follow-up, mock-interview
+platforms skew technical, and recording yourself gives you a tape without
+coaching — you hear the rambling but not which part is hurting you.
 
-- **Friends and study partners** — schedule-locked, can't simulate a stranger,
-  almost never push back with a sharp follow-up.
-- **Mock-interview platforms** — overwhelmingly skewed to technical / coding
-  questions. The behavioral offerings are usually static question banks with
-  no scoring, no follow-up, and no feedback on *delivery*.
-- **Recording yourself** — gives you a tape, not coaching. You hear the
-  rambling but you don't know which part is hurting you.
-- **Career-services mock interviews** — high signal but rare, often booked out,
-  and intimidating for a first rep.
-
-The result is that students walk into "Tell me about a time when…" cold, lean
-on canned STAR templates they've never spoken out loud, and learn the hard way
-that they fill silence with *um* and look at the floor when they think.
-
-Logos exists to give that rep, on demand, in a quiet workspace that treats
-the candidate as an adult. Voice in, transcript out, an interviewer that asks
-a real follow-up to your *actual* answer, scored on the dimensions interviewers
-actually care about, with a delivery grade pulled from your webcam.
-
----
-
-## How the AI stack fits together
-
-### Gemini API — evaluator and question generator
-
-Logos does **three sequential Gemini calls per session**, not a multi-agent
-loop. Keeping the orchestration simple keeps latency predictable and the
-system debuggable on demo day.
-
-| Stage              | Model                       | Role                                                                                                   |
-| ------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Company research   | **Gemini 2.5 Flash**        | Summarizes Serper search results into a 1-paragraph brief + values + headlines, **and** classifies the interviewing context into one of 15 field/industry buckets (Tech, Finance, Healthcare, Legal, …) from company + target job title. |
-| Opening question   | **Gemini 2.5 Flash**        | Reads the brief + the candidate's resume + target role, picks a **field-tailored system prompt** based on the research agent's category (so a healthcare role gets empathetic phrasing, an ops role gets Lean/Six Sigma framing, etc.), and writes the first behavioral question. |
-| Follow-up question | **Gemini 2.0 Flash**        | After turn 1, drafts a sharp follow-up that references what the candidate actually just said.          |
-| Per-turn evaluator | **Gemma 4 (`gemma-4-26b`)** | Reads the transcript + question + history and returns structured JSON scores on five rubric dimensions plus a 2-3 sentence coaching note. |
-
-Every Gemini call uses `response_mime_type="application/json"` plus an
-explicit response schema, so the contract is enforced upstream and the
-backend never has to defend against half-formatted prose. The evaluator
-output shape is locked:
-
-```json
-{
-  "scores": {
-    "directness": 0,
-    "star": 0,
-    "specificity": 0,
-    "impact": 0,
-    "conciseness": 0
-  },
-  "feedback": "2-3 sentence coaching note",
-  "filler_words": { "um": 0, "like": 0 },
-  "next_question": "string, empty if is_final",
-  "is_final": false
-}
-```
-
-A separate Python regex pass on the transcript is the **ground truth** for
-filler-word counts (`um, uh, er, like, you know, basically, literally,
-actually, i mean, kind of, sort of, right`). The LLM's own breakdown is kept
-as a sanity check but never trusted as the source.
-
-The clever part: turn-1 evaluation runs in the **background** as a detached
-asyncio task. The candidate hears the follow-up question (from Flash) within a
-couple of seconds and moves on while Gemma is still scoring turn 1. By the
-time turn 2 finishes, both turns are scored in the database and we render
-the full session summary. Hackathon-realistic latency without compromising on
-which model scores.
-
-### ElevenLabs API — the interviewer's voice and ears
-
-Logos uses ElevenLabs on **both sides** of the audio loop, so the entire
-session is voice-native:
-
-- **Speech-to-text (STT)**: the candidate's `MediaRecorder` blob is POSTed to
-  the backend, which forwards it to the ElevenLabs Speech-to-Text API. We get
-  back a clean transcript with no client-side Whisper download and no need to
-  ship a 600 MB model in the browser.
-- **Text-to-speech (TTS)**: every question Logos asks — the opener and the
-  follow-up — is synthesized by ElevenLabs Flash v2.5, returned as a base64
-  `data:audio/mpeg;...` URL inline in the JSON response, and dropped straight
-  into an `<audio>` element on the frontend. No S3, no signed URLs, no extra
-  hop.
-- **Voice variety per session**: the start-form has a "Choose interviewer
-  voice" disclosure that lets the candidate pick from a pool of six named,
-  accented voices (Divya — Indian, Jennifer — American, David — British,
-  Irene — Malaysian-American, Ding — Chinese, Daniel — American). Skip the
-  picker and Logos randomizes the voice deterministically from the session
-  UUID. Either way, the chosen voice is persisted on the session row so
-  turn 2 sounds like the same interviewer who asked turn 1, even after a
-  refresh.
-
-The result is a session that *feels* like a phone screen — one voice,
-consistent, asking real questions about real answers — instead of a chat
-window with a synthetic buzzer noise.
+Logos closes that gap: speak your answer to a real interviewer voice, get a
+follow-up question that references what you actually said, and receive
+six-dimension scoring grounded in your industry plus a delivery grade pulled
+from your webcam. It's built for college undergraduates preparing for their
+first internship loops, new grads navigating full-time hiring, and the
+recruiters and managers who care that what candidates are practicing actually
+maps to what gets people hired.
 
 ---
 
 ## Features
 
-### Voice-native interview loop
-- **Two-turn structure**: one opening question grounded in company research,
-  one follow-up that references the candidate's literal answer.
-- **Auto-recording**: when the question audio finishes, the mic engages
-  automatically — no "press record to begin" friction.
-- **One-click submit**: pressing **End answer** ships the audio and advances
-  to the next question. No re-record gate, no preview to sit through.
-- **Per-session interviewer voice**: pick from six accented ElevenLabs voices
-  or let the system surprise you. Same voice across both turns.
+### Industry-specific questions and rubric — not a generic checklist
 
-### Rubric-based scoring
-- Five LLM-scored dimensions: **Directness, STAR structure, Specificity,
-  Impact, Conciseness**.
-- A sixth, **Delivery**, scored from webcam analytics (see below).
-- Per-turn 2-3 sentence coaching note plus a "most room to improve" / "keep
-  this strength" insight panel.
-- Filler-word counts via Python regex, with a per-word breakdown.
+Logos classifies every session into one of **15 field/industry buckets**
+(Tech, Finance, Healthcare, Legal, Consulting, Sales, Ops, Nonprofit,
+Education, Government, and more) using both the company and target job title,
+so cross-functional roles land in the right place — a healthcare counsel role
+is graded as Legal, not as Healthcare. That classification drives _two_
+downstream choices: the opening question is written by a system prompt
+tailored to the field's actual interview shape, and the evaluator is handed
+a rubric whose criteria match that field. A finance candidate's
+"Problem Solving" is judged on quantitative trade-offs; a healthcare
+candidate's is judged on patient-safety reasoning. The result feels less
+like a generic STAR drill and more like preparing for the screen you're
+actually walking into.
 
-### OpenCV / MediaPipe delivery scoring
-A 478-point face-landmark mesh runs in the browser via MediaPipe's
-`face_landmarker`, ported from a desktop OpenCV reference implementation
-(`backend/opencv.py`) that calibrated the heuristics against real recorded
-sessions. While the candidate is answering, a hidden 15 fps loop computes:
+### Six-dimension rubric with per-turn coaching
 
-- **Eye contact score** (0-100) — derived from iris position relative to the
-  eye corners, plus head-pose stability. Glancing away tanks the score; a
-  steady forward gaze keeps it high.
-- **Face visibility** (% of frames with a detectable face) — penalizes the
-  "off-camera while talking" failure mode.
-- **Expression score** (0-100) — uses brow / mouth landmarks to flag a flat
-  affect vs. a present, slightly-engaged one.
-- **Coaching tip** — a one-line readable summary derived from the above.
+Every answer is scored 0–10 on six dimensions: **Structure, Problem Solving,
+Impact, Initiative, Depth,** and **Delivery**. Five come from the LLM
+evaluator; Delivery comes from your webcam (see next section). Each turn
+ships back with a 3–4 sentence coaching note that names the specific thing
+to fix — the rambling sentence, the missing result number, the framework
+that wasn't applied — instead of a generic "be more concise."
 
-The frame-by-frame summary is batched into a `cv_summary` JSON sidecar that
-ships with the audio blob in the same multipart POST. The evaluator factors
-it into the **delivery** score and the per-turn coaching insights pull
-specific call-outs (e.g. *"Eye contact landed at 47/100. Pick one spot near
-the camera and return to it between phrases."*). On the results screen, a
-toggleable face-mask overlay redraws the landmarks on the recorded video so
-the candidate can *see* what the model saw.
+### Body-language coaching from your webcam
 
-If the candidate declines the camera permission, the audio path still works
-and the delivery row simply drops out — no hard failure.
+A 478-point MediaPipe face-landmark mesh runs in the browser at 15 fps while
+you're answering, tracking eye contact, gaze stability, head pose, expression,
+and face visibility. Those signals roll into the **Delivery** score and into
+the coaching note — so you'll get pointed feedback like _"Eye contact landed
+at 47/100; pick a spot near the camera and return to it between phrases."_
+On the replay screen, the face-mask overlay redraws the landmarks on your
+recording so you can _see_ what the model saw. Decline the camera and
+everything else still works.
 
-### Onboarding & personalization
-- **Clerk-based auth** with passwordless email + SSO callbacks.
-- **Resume upload** (`pdfplumber` extraction) so the opening question can
-  reference the candidate's actual experience.
-- Industry, target role, and experience level captured at onboarding to
-  shape the question bank.
+### Personalization from your resume
 
-### Session history & trend chart
-- `GET /sessions` returns the candidate's completed sessions with cached
-  per-dimension averages, so the history page renders an inline `recharts`
-  trend chart of all six dimensions over time without N+1 fanout.
-- `GET /sessions/{id}` returns the full per-turn breakdown — transcript,
-  scores, feedback, filler-word table, replay metadata.
-- `GET /me/stats` returns user-level rolling aggregates (total sessions,
-  rolling averages, total filler count) for the profile strip.
-- A dedicated `session_metrics` table caches the aggregates at session-finalize
-  time so the history view stays cheap as the row count grows.
+Onboarding takes a PDF resume and a short bio, extracts the text, and
+captures industry, target role, and experience level. Every downstream prompt
+— the opening question, the follow-up, the evaluator — is conditioned on
+that profile, so the interviewer references your actual projects, internships,
+and seniority instead of asking a stock question about teamwork.
 
-### UX polish
-- Earth-tone editorial design system (no streaks, XP, mascots, or "Let's go!"
-  copy). Treats the candidate as an adult doing serious work.
-- Reduced-motion fallbacks on every animation.
-- Background-eval spinner with copy that adapts to the turn (turn 1: "5-10
-  seconds"; turn 2: "up to 40 seconds" because Gemma is on the critical path
-  for finalization).
-- Live MediaPipe diagnostics panel during recording so the candidate knows
-  the analyzer is actually running.
+### Voice-native session loop
 
-### Deployment
-- Postgres + Alembic migrations, four revisions tracked.
-- Docker Compose for the backend (api + db).
-- FastAPI auto-reload locally; entrypoint runs `alembic upgrade head` before
-  uvicorn so containers boot into a migrated schema.
+The whole session runs through voice: question audio plays, the mic engages
+automatically when it ends, you talk, you press **End answer**, and the
+follow-up arrives. You can pick from a pool of accented interviewer voices
+(or let the system surprise you) so non-native English speakers can rehearse
+against the kind of voice they'll actually face in a screen. The chosen voice
+persists across both turns so the interviewer never "changes person" mid-session.
+
+### Session history and trend chart
+
+Every completed session is persisted with its transcript, scores, audio
+replay, and filler-word breakdown. The History page renders an interactive
+trend chart of all six dimensions across every session you've ever done — so
+improvement (or regression) on Structure, Impact, or Delivery is visible at a
+glance instead of guessed at. You can open any past session and re-listen to
+your own answer next to the score that explains why.
 
 ---
 
-## Tech stack
+## Tech stack & architecture
 
-- **Frontend**: React 19, Vite 8, TypeScript, Tailwind 4, Clerk, recharts,
-  MediaRecorder, MediaPipe Tasks Vision (`face_landmarker`).
-- **Backend**: FastAPI, SQLAlchemy 2 (async), Alembic, `python-jose` for
-  Clerk JWT verification, `pdfplumber` for resume parsing.
-- **AI/APIs**: Google Gemini (2.5 Flash, 2.0 Flash, Gemma 3), ElevenLabs
-  (STT + TTS), Serper (Google search).
-- **Storage**: PostgreSQL 17 in Docker.
-
----
-
-## Architecture at a glance
+A small, deliberately boring stack — React + FastAPI + Postgres, with three
+sequential LLM calls per session (no multi-agent loop). The frontend is
+React 19 + Vite + Tailwind 4 with Clerk for auth, MediaRecorder for capture,
+and MediaPipe Tasks Vision for the in-browser face landmark mesh. The backend
+is FastAPI on async SQLAlchemy with Alembic migrations against Postgres, all
+LLM calls routed through OpenRouter. The AI layer uses **Google Gemini 2.5
+Flash** for company research, field classification, and question generation;
+**DeepSeek v3.2** for the evaluator; **ElevenLabs** for both speech-to-text
+and text-to-speech; and **Serper** for the Google search that grounds the
+company brief.
 
 ```
 Browser (React + Vite)
-  │
   │── Clerk JWT ──────────────────────► FastAPI
-  │── MediaRecorder blob (audio) ─────► FastAPI ── ElevenLabs STT ──► transcript
+  │── MediaRecorder blob (audio) ─────► FastAPI ── ElevenLabs STT
   │── cv_summary JSON sidecar ────────► FastAPI
-  │
-  │                                     FastAPI
-  │                                       │── Serper + Gemini Flash 2.5 (research)
-  │                                       │── Gemini Flash 2.5 / 2.0    (questions)
-  │                                       │── Gemma 3                   (eval, async)
-  │                                       │── ElevenLabs TTS            (voice out)
+  │                                       │── Serper + Gemini 2.5 Flash (research + field classification)
+  │                                       │── Gemini 2.5 Flash         (opening + follow-up question)
+  │                                       │── DeepSeek v3.2            (evaluator, field-tailored rubric)
+  │                                       │── ElevenLabs TTS           (interviewer voice)
   │                                       └── Postgres (sessions, turns, metrics)
-  │
   └── base64 audio data URL ◄──────────── FastAPI
 ```
 
@@ -232,7 +124,7 @@ Browser (React + Vite)
 
 ## Future improvements
 
-The hackathon scope was intentionally tight (two turns, one company at a time,
+The MVP's scope was intentionally tight (two turns, one company at a time,
 single-shot scoring). A few directions worth exploring beyond this build:
 
 - **Variable-length sessions** — drop the hardcoded 2-turn rule, let the
@@ -265,12 +157,3 @@ single-shot scoring). A few directions worth exploring beyond this build:
 - **Production hardening** — usage caps per user, exponential backoff on the
   ElevenLabs / Gemini rate limits, structured error reporting, and an actual
   test suite beyond the evaluator unit tests.
-
----
-
-## Submitted to
-
-- **Best Education** (primary)
-- **Best Overall**
-- **Gemini API**
-- **ElevenLabs**

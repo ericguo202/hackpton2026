@@ -43,6 +43,7 @@ from app.services.company_research import (
     CompanyNotFoundError,
     research_company,
 )
+from app.services._field_prompts import FieldCategory
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words
 from app.services.followup import generate_followup
@@ -136,6 +137,10 @@ async def create_session(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="We couldn't find that company. Please check the spelling.",
         )
+    logger.info(
+        "Session research complete: company=%r job_title=%r category=%r",
+        body.company, body.job_title, brief.category,
+    )
     opening_q = await generate_opening_question(user, brief, body.job_title)
 
     # Generate the session UUID up front so the voice can be resolved
@@ -208,17 +213,37 @@ async def _followup_and_tts(
 
 # ── background evaluation ────────────────────────────────────────────────────
 
+def _log_eval_scores(
+    session_id: UUID,
+    turn_id: UUID,
+    category: FieldCategory | None,
+    eval_out: EvaluatorOutput,
+) -> None:
+    """Emit a one-line INFO log with the field category and the 6 rubric
+    scores returned by the evaluator. Aimed at smoke-testing field-tailored
+    scoring end-to-end — grep the backend log for `Eval scored:` to confirm
+    new sessions are running the new rubric."""
+    logger.info(
+        "Eval scored: session=%s turn=%s category=%r "
+        "structure=%s problem_solving=%s impact=%s "
+        "initiative=%s depth=%s delivery=%s",
+        session_id, turn_id, category,
+        eval_out.structure, eval_out.problem_solving, eval_out.impact,
+        eval_out.initiative, eval_out.depth, eval_out.delivery,
+    )
+
+
 def _apply_eval_to_turn(turn: InterviewTurn, eval_out: EvaluatorOutput) -> None:
     """Copy evaluator output onto an InterviewTurn row (no commit)."""
-    turn.directness_score  = eval_out.directness
-    turn.star_score        = eval_out.star
-    turn.specificity_score = eval_out.specificity
-    turn.impact_score      = eval_out.impact
-    turn.conciseness_score = eval_out.conciseness
-    turn.delivery_score    = eval_out.delivery
-    turn.feedback          = eval_out.notes
-    turn.ai_model_used     = EVAL_MODEL
-    turn.evaluated_at      = datetime.utcnow()
+    turn.structure_score       = eval_out.structure
+    turn.problem_solving_score = eval_out.problem_solving
+    turn.impact_score          = eval_out.impact
+    turn.initiative_score      = eval_out.initiative
+    turn.depth_score           = eval_out.depth
+    turn.delivery_score        = eval_out.delivery
+    turn.feedback              = eval_out.notes
+    turn.ai_model_used         = EVAL_MODEL
+    turn.evaluated_at          = datetime.utcnow()
 
 
 async def _run_background_eval(
@@ -228,6 +253,7 @@ async def _run_background_eval(
     transcript: str,
     history: list[dict],
     cv_summary: dict | None,
+    category: FieldCategory | None,
 ) -> None:
     """Evaluate a turn after the request has already returned, then persist.
 
@@ -237,13 +263,18 @@ async def _run_background_eval(
     just keeps its null scores and the finalize aggregator drops it from
     the per-dim average. Always unregisters from the eval registry in the
     `finally` block so a missed finalize doesn't leak the Task reference.
+
+    `category` is the persisted `brief.category` for the session and selects
+    the field-tailored rubric appendix inside `evaluate_turn`.
     """
     try:
         async with AsyncSessionLocal() as db:
             try:
                 eval_out = await evaluate_turn(
-                    question, transcript, history, cv_summary=cv_summary,
+                    question, transcript, history,
+                    cv_summary=cv_summary, category=category,
                 )
+                _log_eval_scores(session_id, turn_id, category, eval_out)
                 turn = await db.get(InterviewTurn, turn_id)
                 if turn is None:
                     logger.warning(
@@ -301,7 +332,7 @@ async def _await_background_eval(session_id: UUID) -> None:
 # ── session-completion aggregation ────────────────────────────────────────────
 
 # Per-turn score tuple shape used by the aggregator below:
-# (directness, star, specificity, impact, conciseness, delivery, fillers)
+# (structure, problem_solving, impact, initiative, depth, delivery, fillers)
 # All score slots are nullable so that a turn whose background eval
 # failed (or was never run) cleanly drops out of the per-dim averages.
 _TurnScores = tuple[
@@ -331,12 +362,12 @@ def _per_dimension_averages(turns: list[_TurnScores]) -> dict[str, float | None]
         return round(sum(non_null) / len(non_null), 2) if non_null else None
 
     return {
-        "directness":  _avg([t[0] for t in turns]),
-        "star":        _avg([t[1] for t in turns]),
-        "specificity": _avg([t[2] for t in turns]),
-        "impact":      _avg([t[3] for t in turns]),
-        "conciseness": _avg([t[4] for t in turns]),
-        "delivery":    _avg([t[5] for t in turns]),
+        "structure":       _avg([t[0] for t in turns]),
+        "problem_solving": _avg([t[1] for t in turns]),
+        "impact":          _avg([t[2] for t in turns]),
+        "initiative":      _avg([t[3] for t in turns]),
+        "depth":           _avg([t[4] for t in turns]),
+        "delivery":        _avg([t[5] for t in turns]),
     }
 
 
@@ -365,11 +396,11 @@ async def _upsert_session_metrics(
 
     db.add(SessionMetrics(
         session_id=session_id,
-        avg_directness=averages["directness"],
-        avg_star=averages["star"],
-        avg_specificity=averages["specificity"],
+        avg_structure=averages["structure"],
+        avg_problem_solving=averages["problem_solving"],
         avg_impact=averages["impact"],
-        avg_conciseness=averages["conciseness"],
+        avg_initiative=averages["initiative"],
+        avg_depth=averages["depth"],
         avg_delivery=averages["delivery"],
         total_filler_word_count=total_filler_word_count,
         overall_score=overall_score,
@@ -395,6 +426,13 @@ async def submit_turn(
         raise HTTPException(status_code=404, detail="Session not found")
     if session.status != SessionStatus.in_progress:
         raise HTTPException(status_code=400, detail="Session is not in progress")
+
+    # 1a. Pull the persisted brief's category so we can hand it to the
+    # evaluator and get field-tailored scoring. Legacy sessions persisted
+    # before categorization existed produce `category=None`, which the
+    # evaluator handles by falling back to the default-category prompt.
+    brief_out = _parse_company_summary(session.company_summary)
+    category: FieldCategory | None = brief_out.category if brief_out else None
 
     # 2. Find the current unanswered turn (question exists, transcript is NULL).
     result = await db.execute(
@@ -509,6 +547,7 @@ async def submit_turn(
                 transcript=transcript,
                 history=history,
                 cv_summary=parsed_cv_summary,
+                category=category,
             ),
             name=f"eval-session-{session_id}-turn-{current_turn.turn_number}",
         )
@@ -532,8 +571,9 @@ async def submit_turn(
     #     aggregator sees the latest scores.
     eval_out = await evaluate_turn(
         current_turn.question_text, transcript, history,
-        cv_summary=parsed_cv_summary,
+        cv_summary=parsed_cv_summary, category=category,
     )
+    _log_eval_scores(session_id, current_turn.id, category, eval_out)
     _apply_eval_to_turn(current_turn, eval_out)
 
     # Drain turn 1's background eval (if any). Idempotent — no-op when
@@ -553,7 +593,7 @@ async def submit_turn(
     # the session can still finalize. Per "skip_and_log" policy we don't
     # block finalization on a re-failure — we just log and move on.
     for t in prior_turns:
-        if t.directness_score is not None:
+        if t.structure_score is not None:
             continue
         if t.transcript_text is None:
             continue
@@ -571,8 +611,9 @@ async def submit_turn(
             inline_cv = t.cv_summary if isinstance(t.cv_summary, dict) else None
             inline_eval = await evaluate_turn(
                 t.question_text, t.transcript_text, inline_history,
-                cv_summary=inline_cv,
+                cv_summary=inline_cv, category=category,
             )
+            _log_eval_scores(session_id, t.id, category, inline_eval)
             _apply_eval_to_turn(t, inline_eval)
         except Exception:  # noqa: BLE001
             logger.exception(
@@ -586,21 +627,21 @@ async def submit_turn(
     #    `_per_dimension_averages`.
     all_turn_scores: list[_TurnScores] = [
         (
-            float(t.directness_score)  if t.directness_score  is not None else None,
-            float(t.star_score)        if t.star_score        is not None else None,
-            float(t.specificity_score) if t.specificity_score is not None else None,
-            float(t.impact_score)      if t.impact_score      is not None else None,
-            float(t.conciseness_score) if t.conciseness_score is not None else None,
-            float(t.delivery_score)    if t.delivery_score    is not None else None,
+            float(t.structure_score)       if t.structure_score       is not None else None,
+            float(t.problem_solving_score) if t.problem_solving_score is not None else None,
+            float(t.impact_score)          if t.impact_score          is not None else None,
+            float(t.initiative_score)      if t.initiative_score      is not None else None,
+            float(t.depth_score)           if t.depth_score           is not None else None,
+            float(t.delivery_score)        if t.delivery_score        is not None else None,
             int(t.filler_word_count or 0),
         )
         for t in prior_turns
     ] + [(
-        float(eval_out.directness),
-        float(eval_out.star),
-        float(eval_out.specificity),
+        float(eval_out.structure),
+        float(eval_out.problem_solving),
         float(eval_out.impact),
-        float(eval_out.conciseness),
+        float(eval_out.initiative),
+        float(eval_out.depth),
         float(eval_out.delivery) if eval_out.delivery is not None else None,
         filler_count,
     )]
@@ -643,11 +684,11 @@ async def submit_turn(
     return TurnSubmitOut(
         transcript=transcript,
         scores=ScoresOut(
-            directness=eval_out.directness,
-            star=eval_out.star,
-            specificity=eval_out.specificity,
+            structure=eval_out.structure,
+            problem_solving=eval_out.problem_solving,
             impact=eval_out.impact,
-            conciseness=eval_out.conciseness,
+            initiative=eval_out.initiative,
+            depth=eval_out.depth,
             delivery=eval_out.delivery,
         ),
         feedback=eval_out.notes,
@@ -673,11 +714,11 @@ def _averages_from_metrics(m: SessionMetrics | None) -> DimensionAverages:
     if m is None:
         return DimensionAverages()
     return DimensionAverages(
-        directness=m.avg_directness,
-        star=m.avg_star,
-        specificity=m.avg_specificity,
+        structure=m.avg_structure,
+        problem_solving=m.avg_problem_solving,
         impact=m.avg_impact,
-        conciseness=m.avg_conciseness,
+        initiative=m.avg_initiative,
+        depth=m.avg_depth,
         delivery=m.avg_delivery,
     )
 
@@ -780,11 +821,11 @@ async def get_session(
                 # `0` is a valid evaluator score; coerce nulls to 0 only for
                 # turns that haven't been evaluated yet (transcript is null).
                 # An evaluated turn always has all 5 base scores populated.
-                directness=int(t.directness_score or 0),
-                star=int(t.star_score or 0),
-                specificity=int(t.specificity_score or 0),
+                structure=int(t.structure_score or 0),
+                problem_solving=int(t.problem_solving_score or 0),
                 impact=int(t.impact_score or 0),
-                conciseness=int(t.conciseness_score or 0),
+                initiative=int(t.initiative_score or 0),
+                depth=int(t.depth_score or 0),
                 delivery=(
                     int(t.delivery_score) if t.delivery_score is not None else None
                 ),

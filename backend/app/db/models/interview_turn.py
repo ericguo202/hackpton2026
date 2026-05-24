@@ -73,12 +73,14 @@ class InterviewTurn(Base):
         nullable=True,
     )
 
-    # Per-turn scores (0-10, nullable until evaluated).
-    directness_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    star_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    specificity_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    # Per-turn scores (0-10, nullable until evaluated). The rubric is
+    # field-tailored: the evaluator selects industry-specific guidance for
+    # these five dimensions based on `brief.category`.
+    structure_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    problem_solving_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     impact_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    conciseness_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    initiative_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    depth_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     # 6th rubric dimension: delivery / on-camera presence, derived by the
     # evaluator LLM from the browser-computed `cv_summary` below. Null when
     # the candidate declined camera access (evaluator omits the field too).

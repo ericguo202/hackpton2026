@@ -14,7 +14,7 @@ key (no billing plan required).
 
 Policy:
   * Hard-block on `harassment/threatening`, `hate`, `hate/threatening`, 
-    `illicit/violence`, `self-harm/instructions`, violence/graphic`,
+    `illicit/violence`, `self-harm/instructions`, `violence/graphic`,
     `sexual`, `sexual/minors`. These are the categories where a false negative is
     worse than the occasional false positive.
   * Everything else (harassment, self-harm, generic violence)
@@ -115,7 +115,7 @@ async def check_moderation(text: str) -> ModerationResult:
             model=MODERATION_MODEL,
             input=text,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # Fail open — a broken moderation service must not break the demo.
         # The categories we care most about (hate, sexual/minors) are rare
         # enough that occasional pass-through during an outage is

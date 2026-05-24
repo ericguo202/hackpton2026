@@ -6,9 +6,9 @@ Future plans: terms and conditions, security, add LiveAvatar, gamification with 
 ## What the MVP ships
 
 - **Personalization from a resume.** Onboarding ingests a PDF resume and a short bio, extracts `resume_text`, and stores target role + industry + experience level. Every downstream prompt (opening question, follow-up, evaluator) is conditioned on this profile so the session feels tailored, not generic.
-- **Field-tailored opening question.** The research agent classifies the candidate's interviewing context into one of 15 field/industry buckets (Tech/Product/Design, Data/AI/ML, Cybersecurity, Finance, Consulting, Legal, Government, Healthcare, Sales/Marketing, Ops/Supply Chain, Retail/Hospitality, Nonprofit, Education, Non-Software Engineering, Startups). The classification is driven primarily by the **job title** and secondarily by the company, so cross-functional roles (e.g. in-house counsel at a tech company → Legal) land in the right bucket. The opening-question generator then selects a category-specific system prompt with field-appropriate tone and example shapes — replacing the prior one-size-fits-all prompt that customers reported produced generic, untailored questions.
+- **Field-tailored opening question AND evaluator rubric.** The research agent classifies the candidate's interviewing context into one of 15 field/industry buckets (Tech/Product/Design, Data/AI/ML, Cybersecurity, Finance, Consulting, Legal, Government, Healthcare, Sales/Marketing, Ops/Supply Chain, Retail/Hospitality, Nonprofit, Education, Non-Software Engineering, Startups). The classification is driven primarily by the **job title** and secondarily by the company, so cross-functional roles (e.g. in-house counsel at a tech company → Legal) land in the right bucket. The category then drives **two** downstream choices: (1) the opening-question generator picks a category-specific system prompt from `app/services/_field_prompts.py` with field-appropriate tone and example shapes, and (2) the evaluator picks a category-specific rubric from `app/services/_field_rubrics.py` so the five content dimensions are scored against criteria that actually match the field (e.g. an Ops candidate's "Impact" is judged on throughput / cycle-time framing, not on a generic "what changed?" yardstick). Both prompt sets have markdown source-of-truth files in `backend/prompts/` (`opening_question_prompts.md` and `evaluator_prompts.md`) — keep the Python and markdown in sync.
 - **Two-turn interview session with auto-submit.** Each session is a locked two-turn loop: one opening question + one follow-up that references the first answer. The practice page has an **Auto-Submit** toggle (persisted per user) — on, tapping "End answer" fires the turn submission the moment MediaRecorder flushes the last chunk; off, the user sees a preview block with Submit / Re-record. Auto-submit has a one-shot retry on transient LLM errors so a flaky model call doesn't strand the session.
-- **Six scoring metrics per turn.** The evaluator returns five content scores — `directness`, `star`, `specificity`, `impact`, `conciseness` — plus `delivery`, a sixth score computed from optional webcam analytics (eye contact, expression, posture, energy). Delivery is opt-in: if the user declines the camera, `delivery` is `null` and the other five still score. Filler words are counted by a hard-coded regex (ground truth), separate from the LLM.
+- **Six scoring metrics per turn.** The evaluator returns five content scores — `structure`, `problem_solving`, `impact`, `initiative`, `depth` — plus `delivery`, a sixth score computed from optional webcam analytics (eye contact, expression, posture, energy). The five content dimensions have a single fixed JSON shape across all fields, but the **criteria each dimension is scored against** are loaded dynamically from `_field_rubrics.py` based on the session's classified category. Delivery is opt-in: if the user declines the camera, `delivery` is `null` and the other five still score. Filler words are counted by a hard-coded regex (ground truth), separate from the LLM.
 - **History + per-metric improvement tracking.** Every completed session persists turns, scores, and aggregates to Postgres. The History page lists sessions and lets the user open a session to replay the audio, read the transcript, and see each score. The Stats endpoint surfaces per-metric trends so improvement across runs is visible, not guessed at.
 - **Interview voices (ElevenLabs) for non-native English speakers.** The Setup phase exposes a `VoicePicker` with multiple preset voices (different accents, tempos, and timbres) plus "Surprise me." This is aimed at non-native English speakers who want to practice hearing the kind of voice they'll face in a real screen — not just the one the app defaults to. Voice choice is per-session; switching between sessions is a single click.
 
@@ -41,8 +41,8 @@ Browser (React+Vite)
 **Three sequential LLM calls per session — not a multi-agent loop. All go through OpenRouter:**
 
 1. Company research + field classification: Serper → `google/gemini-2.5-flash` summarization (once, session start). Returns `CompanyBrief(description, headlines, values, category)` where `category` is one of 15 field/industry buckets, classified from company + `job_title` (title takes precedence over company industry for cross-functional roles).
-2. Opening question: `google/gemini-2.5-flash` (once, after research). System prompt is selected from `app/services/_field_prompts.FIELD_PROMPTS` keyed on `brief.category`. Sourced from `backend/prompts.md` — keep the two in sync.
-3. Evaluate + next question: `deepseek/deepseek-v3.2` in JSON mode (once per turn, repeated)
+2. Opening question: `google/gemini-2.5-flash` (once, after research). System prompt is selected from `app/services/_field_prompts.FIELD_PROMPTS` keyed on `brief.category`. Source-of-truth markdown lives in `backend/prompts/opening_question_prompts.md` — keep the two in sync.
+3. Evaluate + next question: `deepseek/deepseek-v3.2` in JSON mode (once per turn, repeated). The rubric criteria injected into the evaluator's system prompt are selected from `app/services/_field_rubrics.FIELD_RUBRICS` keyed on `brief.category` (same key that picked the opening prompt — guarantees one consistent field identity per session). Source-of-truth markdown lives in `backend/prompts/evaluator_prompts.md`.
 
 ---
 
@@ -56,11 +56,11 @@ interview_sessions(id, user_id FK, config_id FK, status, company, job_title, com
 interview_configs(id, user_id FK, company, job_title, job_description, company_context, interview_type, num_turns, ai_plan, created_at)
 
 interview_turns(id, session_id FK, turn_number, question_text, transcript_text, is_followup, parent_turn_id FK,
-directness_score INT, star_score INT, specificity_score INT,
-impact_score INT, conciseness_score INT,
+structure_score INT, problem_solving_score INT, initiative_score INT,
+impact_score INT, depth_score INT,
 filler_word_count INT, filler_word_breakdown JSONB, ai_model_used, evaluated_at, created_at)
 
-session_metrics(id, session_id FK, avg_directness, avg_star, avg_specificity, avg_impact, avg_conciseness, total_filler_word_count, overall_score, turns_evaluated, generated_at)
+session_metrics(id, session_id FK, avg_structure, avg_problem_solving, avg_initiative, avg_impact, avg_depth, total_filler_word_count, overall_score, turns_evaluated, generated_at)
 ```
 
 ---
@@ -87,14 +87,14 @@ TTS audio: return base64 inline in JSON — no S3.
 ```json
 {
   "scores": {
-    "directness": 0,
-    "star": 0,
-    "specificity": 0,
+    "structure": 0,
+    "problem_solving": 0,
     "impact": 0,
-    "conciseness": 0,
+    "initiative": 0,
+    "depth": 0,
     "delivery": 0
   },
-  "feedback": "2-3 sentence coaching note",
+  "feedback": "3-4 sentence coaching note",
   "filler_words": { "um": 0, "like": 0, "you know": 0 },
   "next_question": "string, empty if is_final",
   "is_final": false
@@ -103,7 +103,7 @@ TTS audio: return base64 inline in JSON — no S3.
 
 - All LLM calls go through OpenRouter via the OpenAI Python SDK (`AsyncOpenAI(base_url="https://openrouter.ai/api/v1")`). JSON mode is `response_format={"type": "json_object"}` — NOT Gemini's `response_mime_type`.
 - **Evaluator** → `deepseek/deepseek-v3.2` (migrated from Gemma 4 after persistent Gemini rate-limiting and the Google SDK deprecation). **Company research + opening question + follow-up** → `google/gemini-2.5-flash`. No other model mixing.
-- **Six scores:** `directness`, `star`, `specificity`, `impact`, `conciseness` are LLM-scored 0–10 ints (clamped server-side). `delivery` is a sixth score, computed server-side from optional webcam analytics (eye-contact, expression, posture, energy); it is `null` when the user declines the camera. The model is prompted to _consider_ delivery in the feedback text when analytics are present, but the numeric `delivery` score is always computed, never trusted from the model.
+- **Six scores:** `structure`, `problem_solving`, `impact`, `initiative`, `depth` are LLM-scored 0–10 ints (clamped server-side). The field names are stable across all 15 fields, but the per-dimension criteria are loaded dynamically from `_field_rubrics.py` based on session category — so a Healthcare candidate's `problem_solving` is judged on patient-safety reasoning while a Finance candidate's is judged on quantitative trade-offs. `delivery` is a sixth score, computed server-side from optional webcam analytics (eye-contact, expression, posture, energy); it is `null` when the user declines the camera. The model is prompted to _consider_ delivery in the feedback text when analytics are present, but the numeric `delivery` score is always computed, never trusted from the model.
 - Pass full turn history in prompt so follow-ups reference earlier answers.
 - Filler regex is ground truth; any LLM breakdown is supplemental only.
 

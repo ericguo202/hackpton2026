@@ -82,11 +82,11 @@ async def get_me_stats(
     # rows for the user's COMPLETED sessions only.
     metrics_row = (await db.execute(
         select(
-            func.avg(SessionMetrics.avg_directness).label("d"),
-            func.avg(SessionMetrics.avg_star).label("s"),
-            func.avg(SessionMetrics.avg_specificity).label("sp"),
+            func.avg(SessionMetrics.avg_structure).label("st"),
+            func.avg(SessionMetrics.avg_problem_solving).label("ps"),
             func.avg(SessionMetrics.avg_impact).label("im"),
-            func.avg(SessionMetrics.avg_conciseness).label("co"),
+            func.avg(SessionMetrics.avg_initiative).label("ini"),
+            func.avg(SessionMetrics.avg_depth).label("dp"),
             func.avg(SessionMetrics.avg_delivery).label("dl"),
             func.coalesce(
                 func.sum(SessionMetrics.total_filler_word_count), 0
@@ -112,11 +112,11 @@ async def get_me_stats(
         total_turns_evaluated=int(metrics_row.turns or 0),
         total_filler_word_count=int(metrics_row.fillers or 0),
         averages=DimensionAverages(
-            directness=_to_decimal(metrics_row.d),
-            star=_to_decimal(metrics_row.s),
-            specificity=_to_decimal(metrics_row.sp),
+            structure=_to_decimal(metrics_row.st),
+            problem_solving=_to_decimal(metrics_row.ps),
             impact=_to_decimal(metrics_row.im),
-            conciseness=_to_decimal(metrics_row.co),
+            initiative=_to_decimal(metrics_row.ini),
+            depth=_to_decimal(metrics_row.dp),
             delivery=_to_decimal(metrics_row.dl),
         ),
         average_overall_score=_to_decimal(metrics_row.overall),

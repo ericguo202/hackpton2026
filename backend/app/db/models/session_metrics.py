@@ -41,11 +41,11 @@ class SessionMetrics(Base):
         nullable=False,
     )
 
-    avg_directness: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    avg_star: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    avg_specificity: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    avg_structure: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    avg_problem_solving: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     avg_impact: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    avg_conciseness: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    avg_initiative: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    avg_depth: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     # Nullable when no turn in the session had webcam analytics (camera-off
     # for every turn). Added in migration 0003.
     avg_delivery: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)

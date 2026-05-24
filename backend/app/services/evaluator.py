@@ -22,6 +22,8 @@ import logging
 
 from pydantic import BaseModel, field_validator
 
+from app.services._field_rubrics import build_system_instruction
+from app.services._field_prompts import FieldCategory
 from app.services._openrouter import extract_json_object, get_client
 
 logger = logging.getLogger(__name__)
@@ -60,16 +62,16 @@ class EvaluatorOutput(BaseModel):
     5-score shape for camera-declined turns.
     """
 
-    directness: int
-    star: int
-    specificity: int
+    structure: int
+    problem_solving: int
     impact: int
-    conciseness: int
+    initiative: int
+    depth: int
     delivery: int | None = None
     notes: str
 
     @field_validator(
-        "directness", "star", "specificity", "impact", "conciseness", "delivery",
+        "structure", "problem_solving", "impact", "initiative", "depth", "delivery",
         mode="before",
     )
     @classmethod
@@ -160,59 +162,6 @@ def _compute_delivery_score(cv_summary: dict) -> int:
 
     return max(0, min(10, round(base_score / 10)))
 
-    @field_validator("delivery", mode="before")
-    @classmethod
-    def _clamp_optional(cls, v: int | None) -> int | None:
-        if v is None:
-            return None
-        try:
-            n = int(v)
-        except (TypeError, ValueError):
-            return None
-        return max(0, min(10, n))
-
-
-_SYSTEM_INSTRUCTION = """\
-You are a behavioral-interview coach scoring a candidate's response.
-
-Return ONLY a single JSON object with the following keys, and nothing else
-(no markdown, no prose, no thinking steps):
-
-{
-  "directness": <int 0-10>,
-  "star": <int 0-10>,
-  "specificity": <int 0-10>,
-  "impact": <int 0-10>,
-  "conciseness": <int 0-10>,
-  "delivery": <int 0-10>,        // OPTIONAL. The application computes the
-                                 // authoritative delivery score itself from
-                                 // webcam analytics; include only if helpful.
-  "notes": "<2-3 sentence coaching note>"
-}
-
-Rubric:
-- directness: Did the candidate answer the actual question asked, without
-  meandering or deflecting?
-- star: Did the answer follow the STAR structure (Situation, Task, Action,
-  Result)? Award high marks only when all four elements are present.
-- specificity: Did the answer cite concrete details (names, numbers,
-  timelines, tools) rather than generic platitudes?
-- impact: Did the answer articulate a measurable outcome or business result?
-- conciseness: Was the answer appropriately scoped — neither rambling nor
-  skeletal?
-- delivery: Optional. The application computes the official delivery score
-  from webcam analytics. If you include this field, keep it consistent with
-  the analytics, but prioritize using the analytics to write a precise note.
-
-`notes` is written in the second person ("You could strengthen this by...").
-Be direct but constructive. When webcam analytics are provided AND the
-delivery score is below 6, reference the specific weakness (eye contact
-drift, flat expression, off-center posture) in the note; otherwise stay
-focused on content.
-
-"""
-
-
 def _format_cv_block(cv_summary: dict) -> str:
     """Render the browser-computed webcam summary as a compact text block.
 
@@ -288,18 +237,23 @@ async def evaluate_turn(
     transcript: str,
     history: list[dict] | None = None,
     cv_summary: dict | None = None,
+    category: FieldCategory | None = None,
 ) -> EvaluatorOutput:
     """Score one interview turn and return structured JSON.
 
     When `cv_summary` is provided (browser-computed MediaPipe analytics),
     the caller-side `_compute_delivery_score` replaces any model-returned
     `delivery` with a deterministic derivation from the analytics.
+
+    `category` selects the field-tailored rubric appendix; None or an
+    unknown category falls back to the DEFAULT_CATEGORY prompt — same
+    fallback policy as the opening-question agent.
     """
     client = get_client()
     response = await client.chat.completions.create(
         model=EVAL_MODEL,
         messages=[
-            {"role": "system", "content": _SYSTEM_INSTRUCTION},
+            {"role": "system", "content": build_system_instruction(category)},
             {
                 "role": "user",
                 "content": _build_prompt(question, transcript, history, cv_summary),

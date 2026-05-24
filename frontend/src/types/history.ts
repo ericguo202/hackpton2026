@@ -10,12 +10,12 @@
 
 /** Per-dimension averages — every value is null on rows with no data. */
 export type DimensionAverages = {
-  directness:  string | null;
-  star:        string | null;
-  specificity: string | null;
-  impact:      string | null;
-  conciseness: string | null;
-  delivery:    string | null;
+  structure:       string | null;
+  problem_solving: string | null;
+  impact:          string | null;
+  initiative:      string | null;
+  depth:           string | null;
+  delivery:        string | null;
 };
 
 export type SessionStatus =
@@ -47,11 +47,11 @@ export type TurnDetail = {
   transcript_text: string | null;
   is_followup: boolean;
   scores: {
-    directness: number;
-    star: number;
-    specificity: number;
+    structure: number;
+    problem_solving: number;
     impact: number;
-    conciseness: number;
+    initiative: number;
+    depth: number;
     delivery: number | null;
   };
   feedback: string | null;

@@ -39,12 +39,12 @@ import type {
 // ramps are intentionally monochromatic warm-earth and render as
 // indistinguishable near-black on the chart.
 const DIMENSIONS = [
-  { key: 'directness',  label: 'Directness',  color: 'var(--color-chart-1)' },
-  { key: 'star',        label: 'STAR',        color: 'var(--color-chart-2)' },
-  { key: 'specificity', label: 'Specificity', color: 'var(--color-chart-3)' },
-  { key: 'impact',      label: 'Impact',      color: 'var(--color-chart-4)' },
-  { key: 'conciseness', label: 'Conciseness', color: 'var(--color-chart-5)' },
-  { key: 'delivery',    label: 'Delivery',    color: 'var(--color-chart-6)' },
+  { key: 'structure',       label: 'Structure',       color: 'var(--color-chart-1)' },
+  { key: 'problem_solving', label: 'Problem Solving', color: 'var(--color-chart-2)' },
+  { key: 'impact',          label: 'Impact',          color: 'var(--color-chart-3)' },
+  { key: 'initiative',      label: 'Initiative',      color: 'var(--color-chart-4)' },
+  { key: 'depth',           label: 'Depth',           color: 'var(--color-chart-5)' },
+  { key: 'delivery',        label: 'Delivery',        color: 'var(--color-chart-6)' },
 ] as const;
 
 type DimensionKey = (typeof DIMENSIONS)[number]['key'];
@@ -78,12 +78,12 @@ function buildChartData(sessions: SessionListItem[]) {
       // Overall is 0-100; per-dim averages are 0-10. Rescale overall to
       // 0-10 here so a single Y axis works for both.
       overall: overall === null ? null : overall / 10,
-      directness:  num(s.averages.directness),
-      star:        num(s.averages.star),
-      specificity: num(s.averages.specificity),
-      impact:      num(s.averages.impact),
-      conciseness: num(s.averages.conciseness),
-      delivery:    num(s.averages.delivery),
+      structure:       num(s.averages.structure),
+      problem_solving: num(s.averages.problem_solving),
+      impact:          num(s.averages.impact),
+      initiative:      num(s.averages.initiative),
+      depth:           num(s.averages.depth),
+      delivery:        num(s.averages.delivery),
       created_at: s.created_at,
     };
   });
@@ -120,12 +120,12 @@ type ChartPoint = {
   sessionId: string;
   company: string;
   overall: number | null;
-  directness:  number | null;
-  star:        number | null;
-  specificity: number | null;
-  impact:      number | null;
-  conciseness: number | null;
-  delivery:    number | null;
+  structure:       number | null;
+  problem_solving: number | null;
+  impact:          number | null;
+  initiative:      number | null;
+  depth:           number | null;
+  delivery:        number | null;
   created_at: string;
 };
 
@@ -211,12 +211,12 @@ export default function History() {
   // Per-dimension toggles. All on by default; clicking the chip toggles
   // individual dimensions so the chart can isolate one at a time.
   const [activeDims, setActiveDims] = useState<Record<DimensionKey, boolean>>({
-    directness:  true,
-    star:        true,
-    specificity: true,
-    impact:      true,
-    conciseness: true,
-    delivery:    true,
+    structure:       true,
+    problem_solving: true,
+    impact:          true,
+    initiative:      true,
+    depth:           true,
+    delivery:        true,
   });
   const [showOverall, setShowOverall] = useState(true);
 

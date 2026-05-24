@@ -68,11 +68,11 @@ type Insight = {
 };
 
 const SCORE_LABELS: Record<keyof Scores, string> = {
-  directness: 'Directness',
-  star: 'STAR structure',
-  specificity: 'Specificity',
+  structure: 'Structure',
+  problem_solving: 'Problem Solving',
   impact: 'Impact',
-  conciseness: 'Conciseness',
+  initiative: 'Initiative',
+  depth: 'Depth',
   delivery: 'Delivery',
 };
 
