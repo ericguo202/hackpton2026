@@ -62,6 +62,19 @@ class ScoresOut(BaseModel):
     delivery: int | None = None
 
 
+class CoachingMomentOut(BaseModel):
+    transcript_snippet: str
+    issue_type: str
+    why_this_weakened: str
+    how_to_strengthen: str
+
+
+class FeedbackDetailOut(BaseModel):
+    main_takeaway: str
+    coaching_moments: list[CoachingMomentOut] = Field(default_factory=list)
+    quick_wins: list[str] = Field(default_factory=list)
+
+
 class TurnSubmitOut(BaseModel):
     """Response shape for `POST /sessions/{id}/turns`.
 
@@ -83,6 +96,7 @@ class TurnSubmitOut(BaseModel):
     # follow-up generation without waiting on Gemma 4.
     scores: ScoresOut | None = None
     feedback: str | None = None
+    feedback_detail: FeedbackDetailOut | None = None
     filler_word_count: int
     filler_word_breakdown: dict[str, int]
     next_question: str | None
@@ -146,6 +160,7 @@ class TurnOut(BaseModel):
     is_followup: bool
     scores: ScoresOut
     feedback: str | None
+    feedback_detail: FeedbackDetailOut | None = None
     filler_word_count: int
     filler_word_breakdown: dict[str, int]
     evaluated_at: datetime | None

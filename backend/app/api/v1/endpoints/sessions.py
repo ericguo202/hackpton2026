@@ -242,6 +242,7 @@ def _apply_eval_to_turn(turn: InterviewTurn, eval_out: EvaluatorOutput) -> None:
     turn.depth_score           = eval_out.depth
     turn.delivery_score        = eval_out.delivery
     turn.feedback              = eval_out.notes
+    turn.feedback_detail       = eval_out.feedback_detail.model_dump()
     turn.ai_model_used         = EVAL_MODEL
     turn.evaluated_at          = datetime.utcnow()
 
@@ -557,6 +558,7 @@ async def submit_turn(
             transcript=transcript,
             scores=None,
             feedback=None,
+            feedback_detail=None,
             filler_word_count=filler_count,
             filler_word_breakdown=filler_breakdown,
             next_question=next_q,
@@ -692,6 +694,7 @@ async def submit_turn(
             delivery=eval_out.delivery,
         ),
         feedback=eval_out.notes,
+        feedback_detail=eval_out.feedback_detail.model_dump(),
         filler_word_count=filler_count,
         filler_word_breakdown=filler_breakdown,
         next_question=None,
@@ -831,6 +834,7 @@ async def get_session(
                 ),
             ),
             feedback=t.feedback,
+            feedback_detail=t.feedback_detail,
             filler_word_count=t.filler_word_count or 0,
             filler_word_breakdown=t.filler_word_breakdown or {},
             evaluated_at=t.evaluated_at,
