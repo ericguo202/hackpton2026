@@ -6,12 +6,17 @@
  *
  *   navigate('/', { replace: true, state: { flash: 'Session not found.' } });
  *
- * The banner reads it on mount, captures it into local state, then clears
- * the history entry's state so a refresh doesn't re-show the same flash.
+ * The banner reads it via an effect that watches `location.state`, captures
+ * it into local state, then clears the history entry's state so a refresh
+ * doesn't re-show the same flash. Watching `location.state` (rather than
+ * reading it only at mount) means a producer already sitting on the target
+ * route — e.g. Home.tsx surfacing a 429 from its own POST — can re-trigger
+ * the banner with a fresh nav to the same path.
+ *
  * Auto-dismisses after a few seconds; the × button dismisses immediately.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 const AUTO_DISMISS_MS = 6000;
@@ -19,20 +24,20 @@ const AUTO_DISMISS_MS = 6000;
 export default function FlashBanner() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [flash, setFlash] = useState<string | null>(
-    () => (location.state as { flash?: string } | null)?.flash ?? null,
-  );
-  const consumedRef = useRef(false);
+  const [flash, setFlash] = useState<string | null>(null);
 
-  // Clear the location state once we've consumed the message so that a
-  // refresh (which restores history state) doesn't re-show it.
   useEffect(() => {
-    if (consumedRef.current) return;
-    if ((location.state as { flash?: string } | null)?.flash) {
-      consumedRef.current = true;
-      navigate(location.pathname, { replace: true, state: null });
-    }
-  }, [location.pathname, location.state, navigate]);
+    const incoming = (location.state as { flash?: string } | null)?.flash;
+    if (!incoming) return;
+    // Synchronizing React state with the router's external location store —
+    // useMe.ts uses the same pattern. The recommended useSyncExternalStore
+    // alternative would require a custom subscriber for react-router's history.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFlash(incoming);
+    // Clear the history entry so a refresh (which restores history state)
+    // doesn't replay the same message.
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
     if (!flash) return;

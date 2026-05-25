@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.db.models.enums import ExperienceLevel
+from app.db.models.enums import ExperienceLevel, UserTier
 
 
 class UserOut(BaseModel):
@@ -21,5 +21,7 @@ class UserOut(BaseModel):
     short_bio: str | None
     resume_text: str | None
     completed_registration: bool
+    tier: UserTier
+    daily_session_count: int
     created_at: datetime
     updated_at: datetime

@@ -29,3 +29,8 @@ class InterviewType(str, enum.Enum):
     behavioral = "behavioral"
     technical = "technical"
     mixed = "mixed"
+
+
+class UserTier(str, enum.Enum):
+    free = "free"
+    pro = "pro"

@@ -28,6 +28,11 @@ class SessionCreateIn(BaseModel):
     # caller omits it (or sends an unknown ID), so older clients keep
     # working unchanged.
     voice_id: str | None = Field(default=None, max_length=64)
+    # IANA timezone name from the browser (e.g. "America/New_York"), used
+    # by the daily-limit gate to compute "today" in the user's local day.
+    # Untrusted: the backend falls back to UTC if missing / unparseable so
+    # a stale or stripped value can't block a legitimate session.
+    timezone: str | None = Field(default=None, max_length=64)
 
 
 class CompanyBriefOut(BaseModel):
