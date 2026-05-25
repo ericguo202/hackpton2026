@@ -9,7 +9,13 @@ export type Scores = {
   delivery: number | null;
 };
 
-export type CoachingMoment = {
+export type PositiveMoment = {
+  transcript_snippet: string;
+  why_this_helped: string;
+  keep_doing: string;
+};
+
+export type ImprovementMoment = {
   transcript_snippet: string;
   issue_type: string;
   why_this_weakened: string;
@@ -18,7 +24,10 @@ export type CoachingMoment = {
 
 export type FeedbackDetail = {
   main_takeaway: string;
-  coaching_moments: CoachingMoment[];
+  positive_moments?: PositiveMoment[];
+  improvement_moments?: ImprovementMoment[];
+  // Legacy saved turns from the first structured-feedback iteration.
+  coaching_moments?: ImprovementMoment[];
   quick_wins: string[];
 };
 
