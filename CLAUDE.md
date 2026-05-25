@@ -12,6 +12,7 @@ Future plans: terms and conditions, security, add LiveAvatar, gamification with 
 - **Balanced structured feedback per turn.** The evaluator's scoring dimensions stay fixed, but the feedback layer is structured as `positive_moments`, `main_takeaway`, `improvement_moments`, and `quick_wins`. Positive and improvement moments must quote exact transcript snippets. Positive moments explain what worked and what to keep doing; improvement moments explain why a phrase weakened the answer and give a concrete, bite-sized suggestion, not a polished replacement answer. Legacy `coaching_moments` are still accepted as fallback for older saved turns.
 - **History + per-metric improvement tracking.** Every completed session persists turns, scores, and aggregates to Postgres. The History page lists sessions and lets the user open a session to replay the audio, read the transcript, and see each score. The Stats endpoint surfaces per-metric trends so improvement across runs is visible, not guessed at.
 - **Interview voices (ElevenLabs) for non-native English speakers.** The Setup phase exposes a `VoicePicker` with multiple preset voices (different accents, tempos, and timbres) plus "Surprise me." This is aimed at non-native English speakers who want to practice hearing the kind of voice they'll face in a real screen — not just the one the app defaults to. Voice choice is per-session; switching between sessions is a single click.
+- **Free tier with daily session limits.** Only the `free` tier is shipped today — `pro` exists in the `user_tier` Postgres enum but is not yet exposed in onboarding or billing; flipping a row to `pro` skips the gate entirely. Free users are capped at **5 completed sessions per local calendar day**. The counter increments at session **finalization** (in `submit_turn`'s final-turn branch), not at creation — abandoning mid-session doesn't burn a slot, but also doesn't yield feedback, which is the natural deterrent. Calendar-day reset uses the user's IANA timezone (sent from the browser on every session-create, stored on `users.timezone`), with UTC fallback for missing / unparseable values. The pre-check at `POST /sessions` runs BEFORE moderation / Serper / OpenRouter / TTS so a rate-limited request never spends API credits; it returns HTTP 429 with a user-facing detail string. The lazy-reset race (two requests crossing the day boundary) is handled in `app/services/daily_limit.py` with a single atomic `UPDATE ... CASE ...` per call — no read-modify-write in Python. The frontend reads `me.daily_session_count` from `/me` to render a subtle "X/5 sessions today" indicator on `Home.tsx` and surfaces the 429 message via the FlashBanner.
 
 Backed by a clean auth seam (Clerk JWT verified against the Clerk JWKS), the FastAPI backend, and a small set of sequential LLM calls routed through OpenRouter. No multi-agent loop — just three straight-line prompt calls per session.
 
@@ -50,7 +51,9 @@ Browser (React+Vite)
 ## Data Model
 
 ```sql
-users(id, clerk_user_id UNIQUE, email, name, resume_text, industry, target_role, experience_level,short_bio, completed_registration, created_at, updated_at)
+users(id, clerk_user_id UNIQUE, email, name, resume_text, industry, target_role, experience_level, short_bio, completed_registration,
+tier user_tier DEFAULT 'free', daily_session_count INT DEFAULT 0, count_reset_date DATE NULL, timezone TEXT NULL,
+created_at, updated_at)
 
 interview_sessions(id, user_id FK, config_id FK, status, company, job_title, company_summary, overall_score, notes, started_at, ended_at, created_at, updated_at)
 
@@ -73,12 +76,15 @@ All routes except `/health` require Clerk JWT via a FastAPI dependency.
 
 ```
 POST /onboarding              { resume_file, industry, target_role, short_bio }
-POST /sessions                { company } → { session_id, summary, first_question, first_question_audio_url }
+POST /sessions                { company, job_title, voice_id?, timezone? } → 201 { session_id, summary, first_question, first_question_audio_url } | 429 (free tier daily limit hit)
 POST /sessions/{id}/turns     { audio_blob } → { transcript, scores, feedback, next_question, next_question_audio_url, is_final }
 GET  /sessions/{id}           full session + turns (summary screen)
 GET  /sessions                user's session history
+GET  /me                      current user row (includes tier + daily_session_count for the Home counter)
 GET  /me/stats                aggregate scores over time
 ```
+
+`timezone` on `POST /sessions` is an IANA name (e.g. `America/New_York`) the browser sends via `Intl.DateTimeFormat().resolvedOptions().timeZone`. It's persisted on `users.timezone` and used by the free-tier daily-limit gate to compute "today" in the user's local calendar. Missing / unparseable values fall back to UTC.
 
 TTS audio: return base64 inline in JSON — no S3.
 
@@ -224,7 +230,7 @@ navigate("/practice", {
 
 ### Flash messages
 
-`frontend/src/components/FlashBanner.tsx` is a small one-shot notice that reads `location.state.flash`, captures it locally, then clears the history entry's state via `navigate(pathname, { replace: true, state: null })` so refresh doesn't re-show it. Auto-dismisses after 6s, `×` button dismisses immediately. Mounted as a fixed overlay (`top-20 z-50`, `pointer-events-none` wrapper / `pointer-events-auto` inner) inside `Home.tsx` between TopBar and `<main>` so it floats above content without shifting layout.
+`frontend/src/components/FlashBanner.tsx` is a small one-shot notice that **watches** `location.state.flash` via a `useEffect` (not a `useState` initializer), captures it into local state, then clears the history entry's state via `navigate(pathname, { replace: true, state: null })` so refresh doesn't re-show it. Auto-dismisses after 6s, `×` button dismisses immediately. Mounted as a fixed overlay (`top-20 z-50`, `pointer-events-none` wrapper / `pointer-events-auto` inner) inside `Home.tsx` between TopBar and `<main>` so it floats above content without shifting layout. The effect (not initializer) pattern means **same-route re-navigations re-trigger the banner** — e.g. `Home.tsx` calling `navigate('/', { state: { flash } })` from its own 429 catch handler — instead of being swallowed because the component never unmounted.
 
 Producers navigate with a flash like:
 
@@ -235,7 +241,7 @@ navigate("/", {
 });
 ```
 
-`SessionDetail` is the first producer: when `useSessionDetail` returns an `errorStatus` in the 4xx range (404 / 422 / 403 — invalid id, gone, not yours), it redirects with the "session does not exist" flash. 5xx falls through to the inline error so transient backend issues stay visible.
+`SessionDetail` is the first producer: when `useSessionDetail` returns an `errorStatus` in the 4xx range (404 / 422 / 403 — invalid id, gone, not yours), it redirects with the "session does not exist" flash. 5xx falls through to the inline error so transient backend issues stay visible. `Home.tsx` is the second producer — its 429 catch handler navigates to `/` with the free-tier limit message; the inline `setupError` block stays reserved for transient / retryable failures (mic denial, network blip, moderation reject).
 
 ### Trade-offs vs. the prior state-machine "routing"
 

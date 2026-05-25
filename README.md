@@ -95,6 +95,15 @@ improvement (or regression) on Structure, Impact, or Delivery is visible at a
 glance instead of guessed at. You can open any past session and re-listen to
 your own answer next to the score that explains why.
 
+### Free tier with daily session limits
+
+Logos currently ships a single **Free** tier, capped at **5 completed
+interview sessions per day**. The counter resets at midnight in your own
+local timezone (not server time), and only ticks up when a session
+actually finishes — abandoning mid-session doesn't burn a slot. A **Pro**
+tier with unmetered sessions is on the roadmap but not yet exposed;
+everyone is on Free today.
+
 ---
 
 ## Tech stack & architecture
@@ -157,6 +166,7 @@ single-shot scoring). A few directions worth exploring beyond this build:
   fully on-the-fly. Caching the strongest prompts per company / role would
   make demos faster and let candidates retry the same prompt to compare
   improvement directly.
-- **Production hardening** — usage caps per user, exponential backoff on the
-  ElevenLabs / Gemini rate limits, structured error reporting, and an actual
-  test suite beyond the evaluator unit tests.
+- **Production hardening** — exponential backoff on the ElevenLabs / Gemini
+  rate limits, structured error reporting, and an actual test suite beyond
+  the evaluator unit tests. Per-user daily caps already ship; broader usage
+  metering (per-hour rate limits, monthly Pro quotas) is the next layer.
