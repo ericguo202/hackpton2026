@@ -6,11 +6,23 @@ the candidate's profile (resume + declared target role/industry/bio) and the
 company brief produced by `company_research.research_company()`. Runs on
 `google/gemini-2.5-flash` via OpenRouter.
 
-The system prompt is selected from `_field_prompts.FIELD_PROMPTS` based on
-`brief.category` — a 15-bucket field/industry classification produced by
-the research agent — so questions get field-appropriate tone and example
-shapes (e.g. healthcare prompts are empathetic, ops/manufacturing prompts
-reference Lean/Six Sigma, etc.).
+The system prompt is assembled per-call by
+`_field_prompts.build_field_system_prompt(brief.category)`. That helper:
+  - Interpolates the shared intro / hard constraints with the category
+    name.
+  - Shows the full 5-theme catalog for the category so the model knows
+    the breadth of behaviors the field tests.
+  - Samples 2 of the 5 example questions at random. The rotation is the
+    load-bearing fix for "same opening question over and over" — the
+    previous design showed all 5 examples every call and the model
+    converged on them as attractors.
+
+The user prompt additionally surfaces `brief.role_signals` (what the
+company is documented to value in applicants for this role) and
+`brief.sample_question_themes` (themes drawn from leaked interview
+questions, NEVER verbatim). When either list is empty (small / obscure
+companies), the corresponding section is omitted from the digest and
+the model is NOT prompted to invent role framing.
 
 Output is plain text — no JSON — so we skip JSON mode and the client-side
 extractor. The prompt still constrains the model to a single question, and
@@ -23,7 +35,10 @@ import logging
 import random
 
 from app.db.models.user import User
-from app.services._field_prompts import DEFAULT_CATEGORY, FIELD_PROMPTS
+from app.services._field_prompts import (
+    DEFAULT_CATEGORY,
+    build_field_system_prompt,
+)
 from app.services._openrouter import get_client
 from app.services.company_research import CompanyBrief
 
@@ -67,13 +82,36 @@ def _profile_digest(user: User, job_title: str) -> str:
 
 
 def _company_digest(brief: CompanyBrief) -> str:
+    """Render the company brief for the user prompt.
+
+    `role_signals` and `sample_question_themes` are only emitted when
+    non-empty. That's deliberate: rendering "Role signals: (none)" would
+    cue the model to *fill in* role framing from elsewhere, which is
+    exactly the hallucination we're trying to avoid. Omitting the
+    sections entirely lets the generator fall back to the field-category
+    style cues cleanly.
+    """
     headlines = "\n".join(f"  - {h}" for h in brief.headlines) or "  (none)"
     values = "\n".join(f"  - {v}" for v in brief.values) or "  (none)"
-    return (
-        f"Company description: {brief.description}\n"
-        f"Recent headlines:\n{headlines}\n"
-        f"Stated values:\n{values}"
-    )
+    sections = [
+        f"Company description: {brief.description}",
+        f"Recent headlines:\n{headlines}",
+        f"Stated values:\n{values}",
+    ]
+    if brief.role_signals:
+        signals = "\n".join(f"  - {s}" for s in brief.role_signals)
+        sections.append(
+            "What this company values in applicants for this role "
+            f"(drawn from research — use to shape question topic / framing):\n{signals}"
+        )
+    if brief.sample_question_themes:
+        themes = "\n".join(f"  - {t}" for t in brief.sample_question_themes)
+        sections.append(
+            "Themes drawn from published interview questions for this "
+            "role (inspiration only — dissect the theme, do NOT copy "
+            f"wording):\n{themes}"
+        )
+    return "\n".join(sections)
 
 
 def _strip_wrapping_quotes(s: str) -> str:
@@ -81,6 +119,22 @@ def _strip_wrapping_quotes(s: str) -> str:
     if len(s) >= 2 and s[0] in {'"', "'"} and s[-1] == s[0]:
         return s[1:-1].strip()
     return s
+
+
+_RESEARCH_USAGE_INSTRUCTIONS = (
+    "How to use the research signal (when present):\n"
+    "- `What this company values…`: use this to shape the question's "
+    "TOPIC and FRAMING so the question probes something the company "
+    "actually cares about for this role. Both styles (standard and "
+    "company-flavored) may draw on these signals — only company-style "
+    "is allowed to name-drop the company itself.\n"
+    "- `Themes drawn from published interview questions`: treat as "
+    "inspiration ONLY. Dissect the theme and write a fresh question "
+    "around it. Do NOT copy the wording of any published question.\n"
+    "- If both signal sections are absent, do NOT invent role-specific "
+    "framing. Fall back to the field-category themes and style cues "
+    "from the system prompt."
+)
 
 
 async def generate_opening_question(
@@ -91,12 +145,13 @@ async def generate_opening_question(
     """Return a single opening interview question — standard or company-flavored."""
     client = get_client()
 
-    system_prompt = FIELD_PROMPTS.get(brief.category) or FIELD_PROMPTS[DEFAULT_CATEGORY]
+    system_prompt = build_field_system_prompt(brief.category or DEFAULT_CATEGORY)
 
     style = random.choice([_STYLE_STANDARD, _STYLE_COMPANY])
     prompt = (
         f"{_profile_digest(user, job_title)}\n\n"
         f"{_company_digest(brief)}\n\n"
+        f"{_RESEARCH_USAGE_INSTRUCTIONS}\n\n"
         f"{style}\n\n"
         "Now write the opening question."
     )

@@ -1,6 +1,6 @@
 The user is about to clear their session. The purpose of this command is to provide contextual information for the next Claude Code agent in the next session. Running this command should do the following:
 
-First, create a markdown file in the project root directory titled handoff\_[CURRENT_DATE].md, where CURRENT_DATE is the current date.
+First, create a markdown file in the directory `handoffs/` titled `handoff_[CURRENT_DATE].md`, where CURRENT_DATE is the current date.
 
 Then, inside the file you created, add the following:
 
