@@ -13,6 +13,7 @@ import { UserButton } from '@clerk/react';
 import { useNavigate, useParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
+import StructuredFeedback from '../components/StructuredFeedback';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useSessionDetail } from '../hooks/useSessionDetail';
 import { tokenizeTranscript } from '../lib/fillerWords';
@@ -125,8 +126,11 @@ function TurnCard({ turn }: { turn: TurnDetail }) {
         </p>
       )}
 
-      {turn.feedback && (
-        <p className="text-sm text-text leading-[1.7]">{turn.feedback}</p>
+      {(turn.feedback_detail || turn.feedback) && (
+        <StructuredFeedback
+          feedback={turn.feedback_detail}
+          fallback={turn.feedback}
+        />
       )}
     </div>
   );

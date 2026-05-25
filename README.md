@@ -51,16 +51,19 @@ actually walking into.
 Every answer is scored 0–10 on six dimensions: **Structure, Problem Solving,
 Impact, Initiative, Depth,** and **Delivery**. Five come from the LLM
 evaluator; Delivery comes from your webcam (see next section). Each turn
-ships back with a 3–4 sentence coaching note that names the specific thing
-to fix — the rambling sentence, the missing result number, the framework
-that wasn't applied — instead of a generic "be more concise."
+ships back with structured coaching that balances what worked with what to
+fix. The evaluator quotes exact transcript snippets for 1–3 positive moments
+("keep doing this") and 2–4 improvement moments, then gives bite-sized
+suggestions such as adding the customer's actual concern, one reasoning
+sentence, or a small outcome. The goal is specific feedback without turning
+the product into a full answer generator.
 
 ### Body-language coaching from your webcam
 
 A 478-point MediaPipe face-landmark mesh runs in the browser at 15 fps while
 you're answering, tracking eye contact, gaze stability, head pose, expression,
 and face visibility. Those signals roll into the **Delivery** score and into
-the coaching note — so you'll get pointed feedback like _"Eye contact landed
+the structured feedback — so you'll get pointed feedback like _"Eye contact landed
 at 47/100; pick a spot near the camera and return to it between phrases."_
 On the replay screen, the face-mask overlay redraws the landmarks on your
 recording so you can _see_ what the model saw. Decline the camera and
@@ -138,7 +141,7 @@ single-shot scoring). A few directions worth exploring beyond this build:
   integration was scoped but cut for time.
 - **Recruiter mode** — let the candidate paste a job description and have
   the question generator target it, instead of inferring from company + role.
-- **Spoken-feedback mode** — pipe the coaching note back through TTS at the
+- **Spoken-feedback mode** — pipe the structured feedback back through TTS at the
   end of the session so the review feels like a debrief, not a report card.
 - **Calibrated delivery scoring** — the OpenCV thresholds were tuned on a
   small calibration sample (`backend/recordings/calibration_*`). A larger

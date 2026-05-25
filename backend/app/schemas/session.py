@@ -14,7 +14,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.services._field_prompts import FieldCategory
 
@@ -62,6 +62,35 @@ class ScoresOut(BaseModel):
     delivery: int | None = None
 
 
+class PositiveMomentOut(BaseModel):
+    transcript_snippet: str
+    why_this_helped: str
+    keep_doing: str
+
+
+class ImprovementMomentOut(BaseModel):
+    transcript_snippet: str
+    issue_type: str
+    why_this_weakened: str
+    how_to_strengthen: str
+
+
+class FeedbackDetailOut(BaseModel):
+    main_takeaway: str
+    positive_moments: list[PositiveMomentOut] = Field(default_factory=list)
+    improvement_moments: list[ImprovementMomentOut] = Field(default_factory=list)
+    quick_wins: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_coaching_moments(cls, data: object) -> object:
+        if isinstance(data, dict) and "improvement_moments" not in data:
+            legacy = data.get("coaching_moments")
+            if legacy is not None:
+                data = {**data, "improvement_moments": legacy}
+        return data
+
+
 class TurnSubmitOut(BaseModel):
     """Response shape for `POST /sessions/{id}/turns`.
 
@@ -83,6 +112,7 @@ class TurnSubmitOut(BaseModel):
     # follow-up generation without waiting on Gemma 4.
     scores: ScoresOut | None = None
     feedback: str | None = None
+    feedback_detail: FeedbackDetailOut | None = None
     filler_word_count: int
     filler_word_breakdown: dict[str, int]
     next_question: str | None
@@ -146,6 +176,7 @@ class TurnOut(BaseModel):
     is_followup: bool
     scores: ScoresOut
     feedback: str | None
+    feedback_detail: FeedbackDetailOut | None = None
     filler_word_count: int
     filler_word_breakdown: dict[str, int]
     evaluated_at: datetime | None

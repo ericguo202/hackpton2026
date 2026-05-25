@@ -58,6 +58,28 @@ _DEFAULT_PAYLOAD = {
     "impact": 5,
     "initiative": 6,
     "depth": 8,
+    "feedback_detail": {
+        "positive_moments": [
+            {
+                "transcript_snippet": "I led",
+                "why_this_helped": "It makes your role clear.",
+                "keep_doing": "Keep stating what you personally owned.",
+            }
+        ],
+        "main_takeaway": "Good structure, but quantify the impact to strengthen it.",
+        "improvement_moments": [
+            {
+                "transcript_snippet": "the deadline",
+                "issue_type": "missing_result",
+                "why_this_weakened": "The result is not specific enough.",
+                "how_to_strengthen": "Add a small outcome, like: 'We shipped two days early.'",
+            }
+        ],
+        "quick_wins": [
+            "Keep stating your role.",
+            "End with a concrete result.",
+        ],
+    },
     "notes": "Good structure, but quantify the impact to strengthen it.",
 }
 
@@ -118,6 +140,7 @@ async def test_scores_clamped_to_range(monkeypatch):
         "impact": 100,
         "initiative": 4,
         "depth": 7,
+        "feedback_detail": _DEFAULT_PAYLOAD["feedback_detail"],
         "notes": "n/a",
     }
     monkeypatch.setattr(
@@ -179,6 +202,16 @@ async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
             "initiative": 6,
             "depth": 7,
             "delivery": 7,
+            "feedback_detail": {
+                **_DEFAULT_PAYLOAD["feedback_detail"],
+                "positive_moments": [
+                    {
+                        "transcript_snippet": "kept missing standups",
+                        "why_this_helped": "It names the problem clearly.",
+                        "keep_doing": "Keep naming the issue directly.",
+                    }
+                ],
+            },
             "notes": "Strong eye contact; expression could be warmer.",
         }
 
@@ -219,6 +252,7 @@ async def test_delivery_falls_back_when_model_omits_it_despite_cv_summary(monkey
         "impact": 5,
         "initiative": 6,
         "depth": 7,
+        "feedback_detail": _DEFAULT_PAYLOAD["feedback_detail"],
         "notes": "Content is decent, but delivery needs more warmth.",
     }
     monkeypatch.setattr(
@@ -247,6 +281,35 @@ async def test_delivery_falls_back_when_model_omits_it_despite_cv_summary(monkey
     )
 
     assert result.delivery == _compute_delivery_score(cv_summary)
+
+
+def test_feedback_detail_accepts_legacy_coaching_moments():
+    legacy = {
+        "main_takeaway": "Add a result.",
+        "coaching_moments": [
+            {
+                "transcript_snippet": "it worked out",
+                "issue_type": "missing_result",
+                "why_this_weakened": "The outcome is too vague.",
+                "how_to_strengthen": "Add a small result, like: 'They agreed to a trial.'",
+            }
+        ],
+        "quick_wins": ["End with a result."],
+    }
+
+    detail = EvaluatorOutput.model_validate(
+        {
+            "structure": 5,
+            "problem_solving": 5,
+            "impact": 4,
+            "initiative": 5,
+            "depth": 5,
+            "feedback_detail": legacy,
+            "notes": "Add a result.",
+        }
+    ).feedback_detail
+
+    assert detail.improvement_moments[0].transcript_snippet == "it worked out"
 
 
 def test_compute_delivery_score_penalizes_sustained_issues():

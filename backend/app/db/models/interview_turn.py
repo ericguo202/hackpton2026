@@ -101,6 +101,9 @@ class InterviewTurn(Base):
     )
 
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Structured coach feedback used by the current UI. The legacy `feedback`
+    # string remains populated as a fallback for older clients and rows.
+    feedback_detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # e.g. "gemini-2.5-flash" — useful for debugging / model comparison.
     ai_model_used: Mapped[str | None] = mapped_column(Text, nullable=True)
 

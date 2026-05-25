@@ -24,6 +24,28 @@ export type SessionStatus =
   | 'completed'
   | 'abandoned';
 
+export type PositiveMoment = {
+  transcript_snippet: string;
+  why_this_helped: string;
+  keep_doing: string;
+};
+
+export type ImprovementMoment = {
+  transcript_snippet: string;
+  issue_type: string;
+  why_this_weakened: string;
+  how_to_strengthen: string;
+};
+
+export type FeedbackDetail = {
+  main_takeaway: string;
+  positive_moments?: PositiveMoment[];
+  improvement_moments?: ImprovementMoment[];
+  // Legacy saved turns from the first structured-feedback iteration.
+  coaching_moments?: ImprovementMoment[];
+  quick_wins: string[];
+};
+
 export type SessionListItem = {
   id: string;
   company: string;
@@ -55,6 +77,7 @@ export type TurnDetail = {
     delivery: number | null;
   };
   feedback: string | null;
+  feedback_detail: FeedbackDetail | null;
   filler_word_count: number;
   filler_word_breakdown: Record<string, number>;
   evaluated_at: string | null;

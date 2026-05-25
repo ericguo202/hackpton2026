@@ -32,6 +32,7 @@ import { CameraPreview } from '../components/CameraPreview';
 import PageMorphTransition from '../components/PageMorphTransition';
 import QuestionPlayer from '../components/QuestionPlayer';
 import ScoreDimensions from '../components/ScoreDimensions';
+import StructuredFeedback from '../components/StructuredFeedback';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
@@ -224,10 +225,10 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
     });
   }
 
-  if (result.feedback) {
+  if (result.feedback_detail?.main_takeaway || result.feedback) {
     insights.push({
-      title: 'Model note',
-      detail: result.feedback,
+      title: 'Main takeaway',
+      detail: result.feedback_detail?.main_takeaway ?? result.feedback ?? '',
     });
   }
 
@@ -432,7 +433,9 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                       Model overlay
                     </div>
                     <p className="max-w-[48ch] text-sm leading-6 text-white/92">
-                      {result.feedback ?? 'Coaching note unavailable for this turn.'}
+                      {result.feedback_detail?.main_takeaway
+                        ?? result.feedback
+                        ?? 'Coaching note unavailable for this turn.'}
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
                       {insights.slice(0, 3).map((insight) => (
@@ -518,14 +521,15 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
         </div>
 
         <div className="space-y-10">
-          {result.feedback && (
+          {(result.feedback_detail || result.feedback) && (
             <div>
               <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
                 Coach notes
               </p>
-              <p className="text-[15px] leading-7 text-text">
-                {result.feedback}
-              </p>
+              <StructuredFeedback
+                feedback={result.feedback_detail}
+                fallback={result.feedback}
+              />
             </div>
           )}
 
@@ -604,6 +608,7 @@ function mergeServerScores(
       ...turn,
       scores: server.scores,
       feedback: server.feedback,
+      feedback_detail: server.feedback_detail,
       filler_word_count: server.filler_word_count,
       filler_word_breakdown: server.filler_word_breakdown,
       evaluation_pending: false,

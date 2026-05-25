@@ -9,6 +9,28 @@ export type Scores = {
   delivery: number | null;
 };
 
+export type PositiveMoment = {
+  transcript_snippet: string;
+  why_this_helped: string;
+  keep_doing: string;
+};
+
+export type ImprovementMoment = {
+  transcript_snippet: string;
+  issue_type: string;
+  why_this_weakened: string;
+  how_to_strengthen: string;
+};
+
+export type FeedbackDetail = {
+  main_takeaway: string;
+  positive_moments?: PositiveMoment[];
+  improvement_moments?: ImprovementMoment[];
+  // Legacy saved turns from the first structured-feedback iteration.
+  coaching_moments?: ImprovementMoment[];
+  quick_wins: string[];
+};
+
 export type TurnResult = {
   transcript: string;
   // Null while the evaluator is still running in the background (turn 1
@@ -16,6 +38,7 @@ export type TurnResult = {
   // the frontend can finalize without an extra round-trip to /sessions.
   scores: Scores | null;
   feedback: string | null;
+  feedback_detail: FeedbackDetail | null;
   filler_word_count: number;
   filler_word_breakdown: Record<string, number>;
   next_question: string | null;

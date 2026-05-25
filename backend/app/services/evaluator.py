@@ -19,8 +19,9 @@ the route handler at T+10-12 composes them. It also does NOT generate
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.services._field_rubrics import build_system_instruction
 from app.services._field_prompts import FieldCategory
@@ -39,6 +40,46 @@ CALIBRATED_EXPRESSION_BAD = 54.7
 CALIBRATED_EXPRESSION_GOOD = 66.4
 CALIBRATED_OVERALL_BAD = 50.0
 CALIBRATED_OVERALL_GOOD = 69.4
+
+
+class PositiveMoment(BaseModel):
+    transcript_snippet: str = Field(min_length=1, max_length=240)
+    why_this_helped: str = Field(min_length=1, max_length=360)
+    keep_doing: str = Field(min_length=1, max_length=240)
+
+
+class ImprovementMoment(BaseModel):
+    transcript_snippet: str = Field(min_length=1, max_length=240)
+    issue_type: Literal[
+        "too_vague",
+        "missing_detail",
+        "missing_result",
+        "missing_reasoning",
+        "off_track",
+        "unprofessional",
+        "does_not_answer_question",
+        "weak_wording",
+        "missed_opportunity",
+        "delivery",
+    ]
+    why_this_weakened: str = Field(min_length=1, max_length=360)
+    how_to_strengthen: str = Field(min_length=1, max_length=360)
+
+
+class FeedbackDetail(BaseModel):
+    main_takeaway: str = Field(min_length=1, max_length=240)
+    positive_moments: list[PositiveMoment] = Field(default_factory=list, max_length=3)
+    improvement_moments: list[ImprovementMoment] = Field(default_factory=list, max_length=4)
+    quick_wins: list[str] = Field(default_factory=list, max_length=3)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_coaching_moments(cls, data: object) -> object:
+        if isinstance(data, dict) and "improvement_moments" not in data:
+            legacy = data.get("coaching_moments")
+            if legacy is not None:
+                data = {**data, "improvement_moments": legacy}
+        return data
 
 
 def _normalize_band(value: float, bad: float, good: float) -> float:
@@ -68,6 +109,7 @@ class EvaluatorOutput(BaseModel):
     initiative: int
     depth: int
     delivery: int | None = None
+    feedback_detail: FeedbackDetail
     notes: str
 
     @field_validator(
@@ -232,6 +274,51 @@ def _build_prompt(
     return "\n".join(parts)
 
 
+def _feedback_text(feedback: FeedbackDetail) -> str:
+    parts = [feedback.main_takeaway]
+    if feedback.positive_moments:
+        moment = feedback.positive_moments[0]
+        parts.append(
+            f"What worked: you said \"{moment.transcript_snippet}\". "
+            f"{moment.why_this_helped}"
+        )
+    if feedback.improvement_moments:
+        moment = feedback.improvement_moments[0]
+        parts.append(
+            f"You said: \"{moment.transcript_snippet}\" "
+            f"{moment.why_this_weakened} {moment.how_to_strengthen}"
+        )
+    if feedback.quick_wins:
+        parts.append("Quick win: " + feedback.quick_wins[0])
+    return " ".join(part.strip() for part in parts if part.strip())
+
+
+def _drop_unanchored_moments(result: EvaluatorOutput, transcript: str) -> EvaluatorOutput:
+    """Keep only feedback moments tied to exact transcript text.
+
+    The model is prompted to quote exact snippets, but this keeps the
+    product promise enforceable at the backend boundary.
+    """
+    positive = [
+        moment
+        for moment in result.feedback_detail.positive_moments[:3]
+        if moment.transcript_snippet.strip()
+        and moment.transcript_snippet.strip() in transcript
+    ]
+    improvements = [
+        moment
+        for moment in result.feedback_detail.improvement_moments[:4]
+        if moment.transcript_snippet.strip()
+        and moment.transcript_snippet.strip() in transcript
+    ]
+    result.feedback_detail.positive_moments = positive
+    result.feedback_detail.improvement_moments = improvements
+    result.feedback_detail.quick_wins = result.feedback_detail.quick_wins[:3]
+    if not result.notes.strip():
+        result.notes = _feedback_text(result.feedback_detail)
+    return result
+
+
 async def evaluate_turn(
     question: str,
     transcript: str,
@@ -267,4 +354,4 @@ async def evaluate_turn(
     result = EvaluatorOutput.model_validate_json(extract_json_object(text))
     if cv_summary is not None:
         result.delivery = _compute_delivery_score(cv_summary)
-    return result
+    return _drop_unanchored_moments(result, transcript)

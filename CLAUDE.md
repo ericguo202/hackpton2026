@@ -9,6 +9,7 @@ Future plans: terms and conditions, security, add LiveAvatar, gamification with 
 - **Field-tailored opening question AND evaluator rubric.** The research agent classifies the candidate's interviewing context into one of 15 field/industry buckets (Tech/Product/Design, Data/AI/ML, Cybersecurity, Finance, Consulting, Legal, Government, Healthcare, Sales/Marketing, Ops/Supply Chain, Retail/Hospitality, Nonprofit, Education, Non-Software Engineering, Startups). The classification is driven primarily by the **job title** and secondarily by the company, so cross-functional roles (e.g. in-house counsel at a tech company → Legal) land in the right bucket. The category then drives **two** downstream choices: (1) the opening-question generator picks a category-specific system prompt from `app/services/_field_prompts.py` with field-appropriate tone and example shapes, and (2) the evaluator picks a category-specific rubric from `app/services/_field_rubrics.py` so the five content dimensions are scored against criteria that actually match the field (e.g. an Ops candidate's "Impact" is judged on throughput / cycle-time framing, not on a generic "what changed?" yardstick). Both prompt sets have markdown source-of-truth files in `backend/prompts/` (`opening_question_prompts.md` and `evaluator_prompts.md`) — keep the Python and markdown in sync.
 - **Two-turn interview session with auto-submit.** Each session is a locked two-turn loop: one opening question + one follow-up that references the first answer. The practice page has an **Auto-Submit** toggle (persisted per user) — on, tapping "End answer" fires the turn submission the moment MediaRecorder flushes the last chunk; off, the user sees a preview block with Submit / Re-record. Auto-submit has a one-shot retry on transient LLM errors so a flaky model call doesn't strand the session.
 - **Six scoring metrics per turn.** The evaluator returns five content scores — `structure`, `problem_solving`, `impact`, `initiative`, `depth` — plus `delivery`, a sixth score computed from optional webcam analytics (eye contact, expression, posture, energy). The five content dimensions have a single fixed JSON shape across all fields, but the **criteria each dimension is scored against** are loaded dynamically from `_field_rubrics.py` based on the session's classified category. Delivery is opt-in: if the user declines the camera, `delivery` is `null` and the other five still score. Filler words are counted by a hard-coded regex (ground truth), separate from the LLM.
+- **Balanced structured feedback per turn.** The evaluator's scoring dimensions stay fixed, but the feedback layer is structured as `positive_moments`, `main_takeaway`, `improvement_moments`, and `quick_wins`. Positive and improvement moments must quote exact transcript snippets. Positive moments explain what worked and what to keep doing; improvement moments explain why a phrase weakened the answer and give a concrete, bite-sized suggestion, not a polished replacement answer. Legacy `coaching_moments` are still accepted as fallback for older saved turns.
 - **History + per-metric improvement tracking.** Every completed session persists turns, scores, and aggregates to Postgres. The History page lists sessions and lets the user open a session to replay the audio, read the transcript, and see each score. The Stats endpoint surfaces per-metric trends so improvement across runs is visible, not guessed at.
 - **Interview voices (ElevenLabs) for non-native English speakers.** The Setup phase exposes a `VoicePicker` with multiple preset voices (different accents, tempos, and timbres) plus "Surprise me." This is aimed at non-native English speakers who want to practice hearing the kind of voice they'll face in a real screen — not just the one the app defaults to. Voice choice is per-session; switching between sessions is a single click.
 
@@ -58,9 +59,10 @@ interview_configs(id, user_id FK, company, job_title, job_description, company_c
 interview_turns(id, session_id FK, turn_number, question_text, transcript_text, is_followup, parent_turn_id FK,
 structure_score INT, problem_solving_score INT, initiative_score INT,
 impact_score INT, depth_score INT,
-filler_word_count INT, filler_word_breakdown JSONB, ai_model_used, evaluated_at, created_at)
+delivery_score INT NULL, feedback TEXT NULL, feedback_detail JSONB NULL,
+filler_word_count INT, filler_word_breakdown JSONB, cv_summary JSONB NULL, ai_model_used, evaluated_at, created_at)
 
-session_metrics(id, session_id FK, avg_structure, avg_problem_solving, avg_initiative, avg_impact, avg_depth, total_filler_word_count, overall_score, turns_evaluated, generated_at)
+session_metrics(id, session_id FK, avg_structure, avg_problem_solving, avg_initiative, avg_impact, avg_depth, avg_delivery, total_filler_word_count, overall_score, turns_evaluated, generated_at)
 ```
 
 ---
@@ -86,24 +88,43 @@ TTS audio: return base64 inline in JSON — no S3.
 
 ```json
 {
-  "scores": {
-    "structure": 0,
-    "problem_solving": 0,
-    "impact": 0,
-    "initiative": 0,
-    "depth": 0,
-    "delivery": 0
+  "structure": 0,
+  "problem_solving": 0,
+  "impact": 0,
+  "initiative": 0,
+  "depth": 0,
+  "delivery": 0,
+  "feedback_detail": {
+    "positive_moments": [
+      {
+        "transcript_snippet": "exact copied phrase",
+        "why_this_helped": "short specific reason this worked",
+        "keep_doing": "short coaching reinforcement"
+      }
+    ],
+    "main_takeaway": "one short sentence about the biggest improvement opportunity",
+    "improvement_moments": [
+      {
+        "transcript_snippet": "exact copied phrase",
+        "issue_type": "too_vague | missing_detail | missing_result | missing_reasoning | off_track | unprofessional | does_not_answer_question | weak_wording | missed_opportunity | delivery",
+        "why_this_weakened": "short practical explanation",
+        "how_to_strengthen": "specific bite-sized suggestion, not a full rewritten answer"
+      }
+    ],
+    "quick_wins": [
+      "one keep-doing bullet",
+      "one short practical fix"
+    ]
   },
-  "feedback": "3-4 sentence coaching note",
-  "filler_words": { "um": 0, "like": 0, "you know": 0 },
-  "next_question": "string, empty if is_final",
-  "is_final": false
+  "notes": "short backward-compatible summary for older clients"
 }
 ```
 
 - All LLM calls go through OpenRouter via the OpenAI Python SDK (`AsyncOpenAI(base_url="https://openrouter.ai/api/v1")`). JSON mode is `response_format={"type": "json_object"}` — NOT Gemini's `response_mime_type`.
 - **Evaluator** → `deepseek/deepseek-v3.2` (migrated from Gemma 4 after persistent Gemini rate-limiting and the Google SDK deprecation). **Company research + opening question + follow-up** → `google/gemini-2.5-flash`. No other model mixing.
 - **Six scores:** `structure`, `problem_solving`, `impact`, `initiative`, `depth` are LLM-scored 0–10 ints (clamped server-side). The field names are stable across all 15 fields, but the per-dimension criteria are loaded dynamically from `_field_rubrics.py` based on session category — so a Healthcare candidate's `problem_solving` is judged on patient-safety reasoning while a Finance candidate's is judged on quantitative trade-offs. `delivery` is a sixth score, computed server-side from optional webcam analytics (eye-contact, expression, posture, energy); it is `null` when the user declines the camera. The model is prompted to _consider_ delivery in the feedback text when analytics are present, but the numeric `delivery` score is always computed, never trusted from the model.
+- **Feedback detail:** `positive_moments` is capped at 3, `improvement_moments` at 4, and `quick_wins` at 3. All moment snippets are dropped server-side unless the quoted `transcript_snippet` appears exactly in the candidate transcript. `how_to_strengthen` should be concrete and small, such as adding a customer concern, one reasoning sentence, or a small result. Do not generate a full polished answer.
+- **Legacy feedback:** `notes` is still persisted in `interview_turns.feedback` for older clients. `feedback_detail.coaching_moments` is accepted as a legacy alias and normalized into `improvement_moments`.
 - Pass full turn history in prompt so follow-ups reference earlier answers.
 - Filler regex is ground truth; any LLM breakdown is supplemental only.
 
