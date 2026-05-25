@@ -69,11 +69,13 @@ export type TurnDetail = {
   transcript_text: string | null;
   is_followup: boolean;
   scores: {
-    structure: number;
-    problem_solving: number;
-    impact: number;
-    initiative: number;
-    depth: number;
+    // Null when the turn's evaluation never completed. Renders as an
+    // "Evaluation Failed" placeholder, NOT as 0/10.
+    structure: number | null;
+    problem_solving: number | null;
+    impact: number | null;
+    initiative: number | null;
+    depth: number | null;
     delivery: number | null;
   };
   feedback: string | null;
