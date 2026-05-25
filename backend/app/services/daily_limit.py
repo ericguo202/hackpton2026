@@ -24,6 +24,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import case, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Note: `or_` is still used by `increment`; `case` stays for that path too.
+# `check_and_reset` uses `is_distinct_from` so the UPDATE never fires on a
+# row whose `count_reset_date` is already today — see its docstring.
+
 from app.db.models.user import User
 
 
@@ -50,9 +54,16 @@ def _today_in_tz(tz_name: str | None) -> date:
 async def check_and_reset(db: AsyncSession, user: User) -> int:
     """Atomically roll the counter over if stale, then return its value.
 
-    Single `UPDATE ... RETURNING` so the read sees the post-reset count
-    and two concurrent callers can't both observe a stale value across
-    the day boundary. Commits inline because the reset must be durable
+    The UPDATE is gated by `count_reset_date IS DISTINCT FROM :today` so
+    the common path (counter already current for today's local date) does
+    zero writes — `/me` is hit on every route guard, so writing every
+    call would multiply write load by the read load. `IS DISTINCT FROM`
+    also handles the NULL case (first-ever call for a user) in the same
+    predicate, since `NULL IS DISTINCT FROM <date>` is TRUE.
+
+    When the UPDATE does fire, it's atomic + race-free: Postgres row-locks
+    the user row, so two concurrent callers crossing the day boundary
+    can't both reset. Commits inline because the reset must be durable
     before the caller decides whether to proceed with session creation —
     we don't want a crash mid-handler to leave the counter "still 5" on
     a fresh day.
@@ -60,28 +71,29 @@ async def check_and_reset(db: AsyncSession, user: User) -> int:
     today = _today_in_tz(user.timezone)
     stmt = (
         update(User)
-        .where(User.id == user.id)
+        .where(
+            User.id == user.id,
+            User.count_reset_date.is_distinct_from(today),
+        )
         .values(
-            daily_session_count=case(
-                (
-                    or_(
-                        User.count_reset_date.is_(None),
-                        User.count_reset_date < today,
-                    ),
-                    0,
-                ),
-                else_=User.daily_session_count,
-            ),
+            daily_session_count=0,
             count_reset_date=today,
         )
         .returning(User.daily_session_count)
     )
     result = await db.execute(stmt)
-    await db.commit()
-    # Keep the ORM-attached instance in sync so any later code in the same
-    # handler that reads user.daily_session_count sees the post-reset value.
-    await db.refresh(user, attribute_names=["daily_session_count", "count_reset_date"])
-    return result.scalar_one()
+    row = result.scalar_one_or_none()
+    if row is not None:
+        # Reset fired. Commit + resync the ORM instance so later code in
+        # the same handler reads the post-reset value.
+        await db.commit()
+        await db.refresh(
+            user, attribute_names=["daily_session_count", "count_reset_date"]
+        )
+        return row
+    # No reset needed — the stored counter is already today's. The ORM
+    # instance is already current; no commit because nothing was written.
+    return user.daily_session_count
 
 
 async def increment(db: AsyncSession, user: User) -> None:
