@@ -171,6 +171,10 @@ export default function Home() {
         body: JSON.stringify({
           company: trimmed,
           job_title: me?.target_role ?? 'Software Engineer',
+          // Browser-local IANA timezone — backend uses this to compute the
+          // user's "today" for the free-tier daily-limit reset. Untrusted
+          // on the server side (UTC fallback on parse failure).
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(voiceId ? { voice_id: voiceId } : {}),
         }),
       });
@@ -181,6 +185,18 @@ export default function Home() {
       };
       navigate('/practice', { state });
     } catch (err) {
+      // 429 = free-tier daily-limit hit. Surface as a FlashBanner notice
+      // (overlay near the top) rather than the inline error block, since
+      // it's not a transient form error — the user can't retry by
+      // tweaking the input, only by waiting until tomorrow or upgrading.
+      if (err instanceof ApiError && err.status === 429) {
+        navigate('/', {
+          replace: true,
+          state: { flash: extractApiErrorDetail(err) },
+        });
+        setSubmitting(false);
+        return;
+      }
       setSetupError(
         err instanceof ApiError
           ? extractApiErrorDetail(err)
@@ -193,6 +209,16 @@ export default function Home() {
   const targetRoleBadge = me?.target_role ? (
     <p className="text-[13px] text-text-subtle">
       Target role: <span className="text-text-muted">{me.target_role}</span>
+    </p>
+  ) : null;
+
+  // Free-tier usage indicator. Pro users see nothing — the counter is
+  // meaningless to them. Rendered as data, not celebration: no progress
+  // bar, no streak, no color. Refreshes automatically when the user
+  // returns to Home after completing a session (useMe refetches on mount).
+  const dailyLimitBadge = me?.tier === 'free' ? (
+    <p className="text-[13px] text-text-subtle">
+      <span className="text-text-muted">{me.daily_session_count}/5</span> sessions today
     </p>
   ) : null;
 
@@ -325,6 +351,7 @@ export default function Home() {
                     {submitting ? 'Starting...' : 'Begin session'}
                   </FlowHoverButton>
                   {targetRoleBadge}
+                  {dailyLimitBadge}
                 </div>
 
                 {errorBlock}
@@ -397,6 +424,7 @@ export default function Home() {
                     disabled={submitting}
                   />
                   {targetRoleBadge}
+                  {dailyLimitBadge}
                 </div>
 
                 {errorBlock}

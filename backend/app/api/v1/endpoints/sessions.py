@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from app.core.auth import get_current_user_db
-from app.db.models.enums import SessionStatus
+from app.db.models.enums import SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
 from app.db.models.session_metrics import SessionMetrics
@@ -44,6 +44,11 @@ from app.services.company_research import (
     research_company,
 )
 from app.services._field_prompts import FieldCategory
+from app.services.daily_limit import (
+    DAILY_LIMIT_FREE,
+    check_and_reset as daily_check_and_reset,
+    increment as daily_increment,
+)
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words
 from app.services.followup import generate_followup
@@ -110,6 +115,36 @@ async def create_session(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> SessionCreateOut:
+    # Persist the user's latest timezone whenever the client sends one.
+    # Stored on User (not on the session row) so the daily-limit gate can
+    # compute "today" in the user's local calendar consistently across
+    # sessions, even if the user later starts a request that omits TZ.
+    if body.timezone and body.timezone != user.timezone:
+        user.timezone = body.timezone
+        await db.commit()
+
+    # Free-tier daily-limit gate. Runs BEFORE moderation / research / TTS
+    # so a rate-limited request never spends Serper, OpenRouter, or
+    # ElevenLabs credits. `daily_check_and_reset` atomically rolls the
+    # counter back to 0 the first time we see this user on a new local
+    # day, then returns the post-reset count. The counter itself only
+    # advances at session finalization (`daily_increment` in the
+    # final-turn branch of `submit_turn`).
+    if user.tier == UserTier.free:
+        current_count = await daily_check_and_reset(db, user)
+        if current_count >= DAILY_LIMIT_FREE:
+            logger.info(
+                "Free-tier daily limit hit clerk_user_id=%s count=%s",
+                user.clerk_user_id, current_count,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    f"You have reached your daily limit of {DAILY_LIMIT_FREE} "
+                    "interviews. Come back tomorrow."
+                ),
+            )
+
     # Pre-flight moderation on the two user-authored string inputs that
     # feed downstream LLM prompts. Blocking HERE means the content never
     # reaches Serper, OpenRouter, or ElevenLabs — so a malicious company
@@ -680,6 +715,13 @@ async def submit_turn(
         overall_score=overall,
         turns_evaluated=turns_evaluated,
     )
+
+    # Free-tier daily counter: bump on FINALIZATION (not session-create) so
+    # a user who abandons mid-session isn't charged a slot. `daily_increment`
+    # is part of the same transaction as the session-completion commit
+    # below — if the commit fails, the counter doesn't advance either.
+    if user.tier == UserTier.free:
+        await daily_increment(db, user)
 
     await db.commit()
 
