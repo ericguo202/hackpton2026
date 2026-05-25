@@ -18,6 +18,13 @@ export default function StructuredFeedback({ feedback, fallback }: Props) {
 
   return (
     <div className="space-y-7">
+      <div>
+        <p className="mb-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+          Main takeaway
+        </p>
+        <p className="text-[15px] leading-7 text-text">{feedback.main_takeaway}</p>
+      </div>
+      
       {positiveMoments.length > 0 && (
         <div>
           <p className="mb-4 text-eyebrow uppercase tracking-eyebrow text-text-muted">
@@ -43,13 +50,6 @@ export default function StructuredFeedback({ feedback, fallback }: Props) {
           </div>
         </div>
       )}
-
-      <div>
-        <p className="mb-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-          Main takeaway
-        </p>
-        <p className="text-[15px] leading-7 text-text">{feedback.main_takeaway}</p>
-      </div>
 
       {improvementMoments.length > 0 && (
         <div>
