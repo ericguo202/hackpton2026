@@ -52,6 +52,9 @@ function turnAverage(t: TurnDetail): number {
 }
 
 function TurnCard({ turn }: { turn: TurnDetail }) {
+  // All five base scores fail/succeed together — a turn whose evaluation
+  // never completed has every base score NULL. Checking one is enough.
+  const evaluationFailed = turn.scores.structure === null;
   const avg = turnAverage(turn);
   return (
     <div className="mt-10 pt-10 border-t border-border max-w-[60ch]">
@@ -59,13 +62,15 @@ function TurnCard({ turn }: { turn: TurnDetail }) {
         <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
           Turn {turn.turn_number}{turn.is_followup ? ' · follow-up' : ''}
         </p>
-        <p className="text-sm text-text-muted">
-          Average:{' '}
-          <span className="text-text font-medium tabular-nums">
-            {avg.toFixed(1)}
-          </span>
-          <span className="text-text-subtle">/10</span>
-        </p>
+        {!evaluationFailed && (
+          <p className="text-sm text-text-muted">
+            Average:{' '}
+            <span className="text-text font-medium tabular-nums">
+              {avg.toFixed(1)}
+            </span>
+            <span className="text-text-subtle">/10</span>
+          </p>
+        )}
       </div>
 
       <p className="font-display text-lg md:text-xl text-text leading-snug mb-4">
@@ -95,20 +100,39 @@ function TurnCard({ turn }: { turn: TurnDetail }) {
         </div>
       )}
 
-      <div className="space-y-3 mb-6">
-        {SCORE_KEYS.map(([key, label]) => (
-          <div key={key} className="flex items-center justify-between gap-4">
-            <span className="text-sm text-text-muted">{label}</span>
-            <ScoreBar value={turn.scores[key]} />
-          </div>
-        ))}
-        {turn.scores.delivery !== null && (
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-sm text-text-muted">Delivery</span>
-            <ScoreBar value={turn.scores.delivery} />
-          </div>
-        )}
-      </div>
+      {evaluationFailed ? (
+        <div className="mb-6 p-4 border border-border-strong rounded-md">
+          <p className="text-[11px] uppercase tracking-eyebrow text-text-subtle mb-2">
+            Error
+          </p>
+          <p className="text-sm text-text">Evaluation Failed</p>
+          <p className="mt-1 text-sm text-text-muted">
+            The evaluator did not return scores for this turn. The transcript
+            and filler-word data above are still accurate.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3 mb-6">
+          {SCORE_KEYS.map(([key, label]) => {
+            const value = turn.scores[key];
+            // `evaluationFailed` already gated this branch, so a single
+            // null here would be an unexpected partial-eval state — skip it.
+            if (value === null) return null;
+            return (
+              <div key={key} className="flex items-center justify-between gap-4">
+                <span className="text-sm text-text-muted">{label}</span>
+                <ScoreBar value={value} />
+              </div>
+            );
+          })}
+          {turn.scores.delivery !== null && (
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm text-text-muted">Delivery</span>
+              <ScoreBar value={turn.scores.delivery} />
+            </div>
+          )}
+        </div>
+      )}
 
       {turn.filler_word_count > 0 && (
         <p className="text-sm text-text-muted mb-4">
@@ -126,7 +150,7 @@ function TurnCard({ turn }: { turn: TurnDetail }) {
         </p>
       )}
 
-      {(turn.feedback_detail || turn.feedback) && (
+      {!evaluationFailed && (turn.feedback_detail || turn.feedback) && (
         <StructuredFeedback
           feedback={turn.feedback_detail}
           fallback={turn.feedback}

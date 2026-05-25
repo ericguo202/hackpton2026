@@ -109,15 +109,16 @@ feedback_detail.positive_moments:
 
 - Return 1-3 moments maximum. Use exact transcript snippets whenever possible.
 - Each transcript_snippet MUST be copied exactly from the candidate answer. Do not paraphrase it.
+- Each transcript_snippet must be at most 120 characters. If the relevant phrase is longer, copy only the shortest contiguous span that captures the moment.
 - Base positives only on the transcript. Do not invent praise or reward content that is not there.
 - Look for honest strengths such as directness, relevance, concise wording, naming a customer concern, attempting a specific example, mentioning a result, acknowledging a challenge, showing confidence, or comparing alternatives.
-- why_this_helped should explain why that exact snippet made the answer stronger.
-- keep_doing should be short and reinforce the behavior to repeat.
+- why_this_helped should explain why that exact snippet made the answer stronger. It must be at most 330 characters.
+- keep_doing should be short and reinforce the behavior to repeat. It must be at most 240 characters.
 - If the answer is very weak, still include one honest positive moment if the transcript supports it.
 
 feedback_detail.main_takeaway:
 
-- Write exactly one short sentence. Plain language only.
+- Write exactly one short sentence. Plain language only. It must be at most 240 characters.
 - Name the biggest improvement opportunity in the answer while acknowledging what was directionally right when appropriate.
 - Good: "Your answer had the right general idea, but it needed more concrete detail about how you persuaded the customer."
 - Bad: "Your response lacked leadership, persuasion, and measurable impact."
@@ -126,9 +127,10 @@ feedback_detail.improvement_moments:
 
 - Return 2-4 moments maximum. Use fewer if the answer is very short.
 - Each transcript_snippet MUST be copied exactly from the candidate answer. Do not paraphrase it.
+- Each transcript_snippet must be at most 120 characters. If the relevant phrase is longer, copy only the shortest contiguous span that captures the moment.
 - Choose only the highest-impact moments where the candidate was too vague, missed depth, skipped reasoning, skipped the result, went off-track, sounded unprofessional, failed to answer the question, used weak wording, or missed an obvious chance to strengthen the answer.
-- why_this_weakened should be one short, practical explanation.
-- how_to_strengthen should be concrete, bite-sized, and easy to mentally copy. It should suggest one sentence or one detail the candidate could add, not a full answer.
+- why_this_weakened should be one short, practical explanation. It must be at most 330 characters.
+- how_to_strengthen should be concrete, bite-sized, and easy to mentally copy. It should suggest one sentence or one detail the candidate could add, not a full answer. It must be at most 330 characters.
 - Good how_to_strengthen: "Add the customer's actual concern, like: 'They were worried about price,' or 'They cared most about reliability.'"
 - Good how_to_strengthen: "Add one sentence explaining why your solution fit, such as: 'I focused on faster support because downtime was their biggest concern.'"
 - Good how_to_strengthen: "End with a small outcome, like: 'They agreed to a trial,' 'They stayed with us,' or 'They signed after the follow-up call.'"

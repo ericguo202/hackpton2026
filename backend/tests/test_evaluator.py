@@ -283,6 +283,51 @@ async def test_delivery_falls_back_when_model_omits_it_despite_cv_summary(monkey
     assert result.delivery == _compute_delivery_score(cv_summary)
 
 
+async def test_overlong_transcript_snippet_truncated_not_rejected(monkeypatch):
+    """Regression: DeepSeek occasionally over-quotes the transcript, producing
+    `transcript_snippet` values longer than the 240-char cap that shipped with
+    the feedback-proposal branch. The pre-fix behavior rejected the WHOLE
+    EvaluatorOutput, leaving turn 1 with NULL scores. Truncation in the
+    `BeforeValidator` keeps the moment alive and the rest of the scoring
+    intact.
+    """
+    overlong = "a" * 500  # well above the 270 schema cap
+    payload = {
+        **_DEFAULT_PAYLOAD,
+        "feedback_detail": {
+            **_DEFAULT_PAYLOAD["feedback_detail"],
+            "improvement_moments": [
+                {
+                    "transcript_snippet": overlong,
+                    "issue_type": "too_vague",
+                    "why_this_weakened": "The reasoning isn't specific enough.",
+                    "how_to_strengthen": "Add a small concrete result.",
+                },
+            ],
+        },
+    }
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(payload),
+    )
+
+    # Transcript contains the overlong "aaaa..." so `_drop_unanchored_moments`
+    # keeps the moment (substring check survives a no-ellipsis prefix-cut).
+    result = await evaluate_turn(question="q", transcript=overlong + " then more")
+
+    # All 5 base scores still populated — the validation didn't blow up.
+    for field in _RUBRIC_FIELDS:
+        assert isinstance(getattr(result, field), int)
+
+    # The moment survived, with the snippet hard-clipped to the 270-char cap.
+    moments = result.feedback_detail.improvement_moments
+    assert len(moments) == 1
+    assert len(moments[0].transcript_snippet) == 270
+    # No ellipsis on transcript_snippet — must stay a substring of the
+    # transcript so it can be re-anchored client-side.
+    assert "..." not in moments[0].transcript_snippet
+
+
 def test_feedback_detail_accepts_legacy_coaching_moments():
     legacy = {
         "main_takeaway": "Add a result.",
