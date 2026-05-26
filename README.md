@@ -46,6 +46,35 @@ candidate's is judged on patient-safety reasoning. The result feels less
 like a generic STAR drill and more like preparing for the screen you're
 actually walking into.
 
+### Research-inspired opening questions
+
+The first question of every session is shaped by live research, not pulled
+from a static bank. When a session starts, Logos fires two parallel Google
+searches via Serper — one for the company in general, and one specifically
+for its **behavioral interview style and culture** for the candidate's
+target role (the generic "interview questions" corpus was deliberately
+dropped because it's dominated by LeetCode and system-design content). A
+Gemini summarization pass distills both into a compact brief that includes
+two new fields the opening-question generator conditions on: **role values**
+— what the company is documented to look for in applicants for this
+specific role (cultural and soft-skill traits only — technical proficiencies
+are explicitly excluded), and **common question themes** — short labels (never
+verbatim questions) drawn from any behavioral interview leaks the search
+surfaced. For small or obscure companies where no concrete signal exists,
+both fields come back empty rather than invented, and the question
+generator falls back cleanly to the field-tailored defaults instead of
+hallucinating a role profile.
+
+On top of the brief, the generator samples two of five example question
+shapes per call from a per-field-category pool. That randomized rotation
+breaks the "fixed attractor" effect where the same model running the same
+prompt converged on the same question across companies — a beta-tester
+complaint that "Tell me about a time you faced a difficult technical
+challenge…" arrived verbatim at five different big-tech screens in a row.
+The post-session summary surfaces the same role values and question themes
+as bullets in the Company brief card, so the candidate can see what shaped
+the questions they were just asked.
+
 ### Six-dimension rubric with per-turn coaching
 
 Every answer is scored 0–10 on six dimensions: **Structure, Problem Solving,
@@ -81,7 +110,11 @@ and seniority instead of asking a stock question about teamwork.
 
 The whole session runs through voice: question audio plays, the mic engages
 automatically when it ends, you talk, you press **End answer**, and the
-follow-up arrives. You can pick from a pool of accented interviewer voices
+follow-up arrives. The follow-up is conditioned on the same field category
+and company-research signals (role values, behavioral themes) that shaped
+the opening question, so it lands in the right tone for the role and gently
+redirects rather than echoing back if your first answer was off-topic or
+nonsensical. You can pick from a pool of accented interviewer voices
 (or let the system surprise you) so non-native English speakers can rehearse
 against the kind of voice they'll actually face in a screen. The chosen voice
 persists across both turns so the interviewer never "changes person" mid-session.
@@ -156,9 +189,10 @@ single-shot scoring). A few directions worth exploring beyond this build:
   small calibration sample (`backend/recordings/calibration_*`). A larger
   labeled dataset would let us calibrate per ethnicity / lighting / camera
   angle and flag low-confidence frames instead of silently averaging them in.
-- **Comparative analytics** — anonymized cohort percentiles ("your STAR
-  scores trail the median for entry-level SWE candidates") would turn the
-  trend chart from a self-comparison into a benchmark.
+- **Comparative analytics** — anonymized cohort percentiles ("your
+  Structure and Impact scores trail the median for entry-level SWE
+  candidates") would turn the trend chart from a self-comparison into a
+  benchmark.
 - **Mobile capture** — the current MediaPipe loop assumes a laptop webcam;
   a dedicated phone capture flow with portrait framing and on-device STT
   would extend the practice context.

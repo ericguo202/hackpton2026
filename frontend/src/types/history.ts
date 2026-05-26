@@ -99,6 +99,11 @@ export type SessionDetail = {
     description: string;
     headlines: string[];
     values: string[];
+    // Optional on the wire: old sessions persisted before the brief was
+    // extended with these fields will not include them in the JSON the
+    // backend re-serves. Access via `?? []` at the call site.
+    role_signals?: string[];
+    sample_question_themes?: string[];
   } | null;
   turns: TurnDetail[];
   averages: DimensionAverages;

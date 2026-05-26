@@ -44,6 +44,18 @@ class CompanyBriefOut(BaseModel):
     # field-tailored rubric. Optional for legacy rows persisted before
     # categorization existed.
     category: FieldCategory | None = None
+    # Role-specific signals extracted from research — what the company
+    # is documented to value in applicants for the candidate's target
+    # role. Empty list when research found nothing concrete (small /
+    # obscure companies); the opening-question generator MUST NOT
+    # invent role framing in that case.
+    role_signals: list[str] = []
+    # Themes (NOT verbatim questions) drawn from any interview-question
+    # leaks the role-targeted search surfaced. Empty list when no
+    # interview content was found. Used by the opening-question
+    # generator as inspiration only — the model is instructed to riff
+    # off the theme, not copy the wording.
+    sample_question_themes: list[str] = []
 
 
 class SessionCreateOut(BaseModel):

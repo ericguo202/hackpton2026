@@ -4,63 +4,182 @@ Follow-up question generator (OpenRouter → `google/gemini-2.5-flash`).
 Separate from the evaluator so both can run in parallel — follow-up
 generation only needs the question + transcript and uses a plain-text
 prompt (no JSON schema), keeping latency to ~0.5-1 s.
+
+Threads the session's field category plus `role_signals` /
+`sample_question_themes` from the persisted CompanyBrief into the prompt so
+follow-ups match the interview's industry context — mirrors the threading
+already done in `opening_question.py` and `evaluator.py`.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 
+from app.services._field_prompts import FieldCategory
 from app.services._openrouter import get_client
 
 logger = logging.getLogger(__name__)
 
 FOLLOWUP_MODEL = "google/gemini-2.5-flash"
 
-_PROMPT = """\
+_FALLBACK = "Can you walk me through a specific challenge you faced and how you resolved it?"
+
+_SYSTEM_PROMPT = """\
 You are a behavioral interviewer conducting a mock interview. The candidate \
 just answered a question. Write ONE follow-up question that probes a specific \
 detail or gap in their answer.
 
-Rules:
-- Must be a complete question ending with "?"
-- 10-25 words total
-- Optionally open with a brief acknowledgment (2-4 words) before the question
-- Reference something concrete the candidate actually said
-- Do NOT ask a generic question that could apply to any answer
+Hard rules:
+- Output must be a complete question ending with "?".
+- 10-25 words total for the question itself.
+- Reference something concrete the candidate actually said (when their \
+answer was substantive — see the confused-candidate rule below).
+- Do NOT ask a generic question that could apply to any answer.
 
-Good examples:
+Confused-candidate rule:
+- If the candidate's answer is off-topic, nonsensical, single-word, or \
+doesn't actually engage with the question (e.g. "test test", random \
+declarations unrelated to a work or school context, content that reads \
+like a microphone test), do NOT pretend it was a substantive answer. Do \
+NOT quote the off-topic phrase back. Treat it as a confused or \
+unprepared response and gently redirect by re-asking the original \
+question with a more concrete framing such as: "Let me re-frame that — \
+can you describe a specific situation from work or school where [topic \
+from the original question]?".
+
+Output-format rules:
+- Return ONLY the follow-up question itself. A short prefatory STATEMENT \
+about the company or the candidate is fine and often welcome (e.g. \
+"Anthropic values AI safety. When you said you used AI tools to review \
+your code, how did you evaluate the accuracy of their outputs?").
+- What is NOT allowed: meta-reasoning about your own thought process or \
+the candidate's state. Sentences like "The user seems confused...", \
+"Let me ask them about...", "I'll redirect by..." must never appear in \
+your output.
+- Do NOT prefix the output with any label ("Question:", "Follow-up:", \
+"Q:", etc.).
+- Plain prose only. Do NOT use any markdown formatting — no asterisks, \
+no bold, no italics, no backticks.
+
+Good examples (note the variety in opener style):
   You mentioned the deadline was tight — how did you prioritize when everything felt urgent?
   Interesting. What did you learn from that outcome that changed how you work?
-  How did you handle the disagreement with your manager once it escalated?
+  Anthropic values careful safety review. How did you check the AI tool's outputs against your own judgment?
 
 Bad examples (do not do these):
   Okay.
   Can you tell me more?
   That's interesting, tell me more about that.
+  The user seems confused. Let me ask: what are you trying to test?"""
 
-Return ONLY the follow-up question. No quotes. No other text.
+_USER_PROMPT_HEADER = (
+    "Use the context below for tone and framing only. Do not directly quote it.\n"
+)
 
-Interview question: {question}
-Candidate's answer: {transcript}"""
+
+def _render_context_block(
+    category: FieldCategory | None,
+    role_signals: list[str] | None,
+    sample_question_themes: list[str] | None,
+) -> str:
+    """Render the optional context block, mirroring the empty-omission
+    pattern in `opening_question._company_digest`.
+
+    Empty / None inputs result in their sub-sections being omitted entirely
+    rather than rendered as "(none)" placeholders. The placeholder form
+    would cue the model to invent role framing from its own priors — the
+    same hallucination mode the opening-question generator was patched for.
+    """
+    lines: list[str] = []
+    if category is not None:
+        lines.append(f"Field: {category}")
+    if role_signals:
+        lines.append(
+            "What this company values in applicants for this role: "
+            + ", ".join(role_signals)
+        )
+    if sample_question_themes:
+        lines.append(
+            "Behavioral themes the company is known to probe: "
+            + ", ".join(sample_question_themes)
+        )
+    if not lines:
+        return ""
+    return _USER_PROMPT_HEADER + "\n".join(lines) + "\n\n"
 
 
-async def generate_followup(question: str, transcript: str) -> str:
+def _build_user_prompt(
+    question: str,
+    transcript: str,
+    category: FieldCategory | None,
+    role_signals: list[str] | None,
+    sample_question_themes: list[str] | None,
+) -> str:
+    return (
+        f"{_render_context_block(category, role_signals, sample_question_themes)}"
+        f"Interview question: {question}\n"
+        f"Candidate's answer: {transcript}"
+    )
+
+
+_LABEL_PREFIX_RE = re.compile(
+    r"^(?:question|follow[\s\-]?up|q)\s*:\s*", re.IGNORECASE
+)
+
+
+def _sanitize_followup(raw: str) -> str:
+    """Strip syntactic noise from the LLM's output.
+
+    Deliberately narrow: only patterns the follow-up question never
+    legitimately contains. Meta-reasoning prefixes are suppressed by the
+    system-prompt rule above, NOT by post-hoc trimming — a backward-walk
+    heuristic would false-positive on legitimate prefatory framing like
+    "Anthropic values AI safety. When you said you used AI tools..." which
+    we want to keep.
+    """
+    result = raw.strip()
+    # 1. Wrap quotes the model sometimes adds around the whole question.
+    if len(result) >= 2 and result[0] in {'"', "'"} and result[-1] == result[0]:
+        result = result[1:-1].strip()
+    # 2. Leading "Question:" / "Follow-up:" / "Q:" labels.
+    result = _LABEL_PREFIX_RE.sub("", result, count=1).lstrip()
+    # 3. Markdown emphasis (the model never legitimately emits a literal `*`).
+    result = result.replace("*", "")
+    return result.strip()
+
+
+async def generate_followup(
+    question: str,
+    transcript: str,
+    category: FieldCategory | None = None,
+    role_signals: list[str] | None = None,
+    sample_question_themes: list[str] | None = None,
+) -> str:
     """Return a probing follow-up question via Gemini 2.5 Flash."""
     client = get_client()
-    prompt = _PROMPT.format(question=question, transcript=transcript)
-    logger.warning("Followup prompt sent (question=%r, transcript_len=%d)", question, len(transcript))
+    user_prompt = _build_user_prompt(
+        question, transcript, category, role_signals, sample_question_themes,
+    )
+    logger.warning(
+        "Followup prompt sent (question=%r, transcript_len=%d, category=%r)",
+        question, len(transcript), category,
+    )
     response = await client.chat.completions.create(
         model=FOLLOWUP_MODEL,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
         temperature=0.4,
         max_tokens=256,
         timeout=30.0,
     )
     raw = response.choices[0].message.content or ""
     logger.warning("Followup raw response: %r", raw)
-    result = raw.strip().strip('"')
+    result = _sanitize_followup(raw)
     if "?" not in result or len(result) < 15:
         logger.warning("Followup fallback triggered (result=%r)", result)
-        result = "Can you walk me through a specific challenge you faced and how you resolved it?"
+        result = _FALLBACK
     logger.info("Followup generated: %d chars", len(result))
     return result
