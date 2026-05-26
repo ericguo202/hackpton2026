@@ -19,9 +19,9 @@ the route handler at T+10-12 composes them. It also does NOT generate
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Annotated, Any, Callable, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
 
 from app.services._field_rubrics import build_system_instruction
 from app.services._field_prompts import FieldCategory
@@ -42,14 +42,45 @@ CALIBRATED_OVERALL_BAD = 50.0
 CALIBRATED_OVERALL_GOOD = 69.4
 
 
+def _truncate_to(limit: int, *, ellipsis: bool) -> Callable[[Any], Any]:
+    """Factory for a Pydantic BeforeValidator that hard-truncates over-long strings.
+
+    The system prompt asks DeepSeek to stay well under each field's char budget,
+    but the model occasionally overshoots. Without this, a single overlong
+    string would `ValidationError` the whole `EvaluatorOutput` and the turn
+    would land in the DB with all-NULL scores. Clipping in `mode="before"`
+    keeps the rest of the response intact.
+
+    `ellipsis=False` is used for `transcript_snippet` so the clipped value
+    stays a substring of the candidate transcript — `_drop_unanchored_moments`
+    later does a `snippet in transcript` check, and a prefix-cut preserves
+    that. Prose fields use `ellipsis=True` for legibility.
+    """
+    def _truncate(v: Any) -> Any:
+        if not isinstance(v, str) or len(v) <= limit:
+            return v
+        if ellipsis and limit > 3:
+            return v[: limit - 3] + "..."
+        return v[:limit]
+    return _truncate
+
+
+# Annotated string types per cap. Each carries a BeforeValidator that clips
+# the string before `max_length` validation runs, so worst-case overshoot
+# from the model still validates and the moment survives.
+SnippetStr = Annotated[str, BeforeValidator(_truncate_to(270, ellipsis=False))]
+ProseStr270 = Annotated[str, BeforeValidator(_truncate_to(270, ellipsis=True))]
+ProseStr390 = Annotated[str, BeforeValidator(_truncate_to(390, ellipsis=True))]
+
+
 class PositiveMoment(BaseModel):
-    transcript_snippet: str = Field(min_length=1, max_length=240)
-    why_this_helped: str = Field(min_length=1, max_length=360)
-    keep_doing: str = Field(min_length=1, max_length=240)
+    transcript_snippet: SnippetStr = Field(min_length=1, max_length=270)
+    why_this_helped: ProseStr390 = Field(min_length=1, max_length=390)
+    keep_doing: ProseStr270 = Field(min_length=1, max_length=270)
 
 
 class ImprovementMoment(BaseModel):
-    transcript_snippet: str = Field(min_length=1, max_length=240)
+    transcript_snippet: SnippetStr = Field(min_length=1, max_length=270)
     issue_type: Literal[
         "too_vague",
         "missing_detail",
@@ -62,12 +93,12 @@ class ImprovementMoment(BaseModel):
         "missed_opportunity",
         "delivery",
     ]
-    why_this_weakened: str = Field(min_length=1, max_length=360)
-    how_to_strengthen: str = Field(min_length=1, max_length=360)
+    why_this_weakened: ProseStr390 = Field(min_length=1, max_length=390)
+    how_to_strengthen: ProseStr390 = Field(min_length=1, max_length=390)
 
 
 class FeedbackDetail(BaseModel):
-    main_takeaway: str = Field(min_length=1, max_length=240)
+    main_takeaway: ProseStr270 = Field(min_length=1, max_length=270)
     positive_moments: list[PositiveMoment] = Field(default_factory=list, max_length=3)
     improvement_moments: list[ImprovementMoment] = Field(default_factory=list, max_length=4)
     quick_wins: list[str] = Field(default_factory=list, max_length=3)

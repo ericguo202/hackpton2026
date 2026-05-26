@@ -69,11 +69,15 @@ class SessionCreateOut(BaseModel):
 
 
 class ScoresOut(BaseModel):
-    structure: int
-    problem_solving: int
-    impact: int
-    initiative: int
-    depth: int
+    # All five base scores are nullable: the route returns null for any turn
+    # whose evaluation never completed (background + inline-fallback both
+    # raised). The frontend renders an "Evaluation Failed" placeholder in
+    # that case rather than displaying 0s that would drag the average down.
+    structure: int | None = None
+    problem_solving: int | None = None
+    impact: int | None = None
+    initiative: int | None = None
+    depth: int | None = None
     # 6th dimension from browser webcam analytics. Null when the candidate
     # declined camera access; the UI hides the row in that case.
     delivery: int | None = None

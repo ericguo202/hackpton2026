@@ -863,17 +863,17 @@ async def get_session(
             transcript_text=t.transcript_text,
             is_followup=t.is_followup,
             scores=ScoresOut(
-                # `0` is a valid evaluator score; coerce nulls to 0 only for
-                # turns that haven't been evaluated yet (transcript is null).
-                # An evaluated turn always has all 5 base scores populated.
-                structure=int(t.structure_score or 0),
-                problem_solving=int(t.problem_solving_score or 0),
-                impact=int(t.impact_score or 0),
-                initiative=int(t.initiative_score or 0),
-                depth=int(t.depth_score or 0),
-                delivery=(
-                    int(t.delivery_score) if t.delivery_score is not None else None
-                ),
+                # `0` is a valid evaluator score, so null must round-trip as
+                # null — not coerced to 0 — otherwise the UI can't tell an
+                # unevaluated turn from a 0/10 score, and the per-session
+                # average gets dragged down by phantom zeros. The frontend
+                # renders an "Evaluation Failed" placeholder for null rows.
+                structure=int(t.structure_score) if t.structure_score is not None else None,
+                problem_solving=int(t.problem_solving_score) if t.problem_solving_score is not None else None,
+                impact=int(t.impact_score) if t.impact_score is not None else None,
+                initiative=int(t.initiative_score) if t.initiative_score is not None else None,
+                depth=int(t.depth_score) if t.depth_score is not None else None,
+                delivery=int(t.delivery_score) if t.delivery_score is not None else None,
             ),
             feedback=t.feedback,
             feedback_detail=t.feedback_detail,

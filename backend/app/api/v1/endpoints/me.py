@@ -22,19 +22,31 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_db
-from app.db.models.enums import SessionStatus
+from app.db.models.enums import SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.session_metrics import SessionMetrics
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.session import DimensionAverages, MeStatsOut
 from app.schemas.user import UserOut
+from app.services.daily_limit import check_and_reset as daily_check_and_reset
 
 router = APIRouter()
 
 
 @router.get("", response_model=UserOut)
-async def get_me(user: User = Depends(get_current_user_db)) -> User:
+async def get_me(
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    # Roll over the free-tier daily counter at view time so Home's "X/5
+    # sessions today" reflects the user's local-calendar today, not the
+    # day they last started a session. Without this, a user who hit the
+    # cap last night sees a stale "5/5" the next morning even though the
+    # gate at POST /sessions would let them through. `check_and_reset`
+    # refreshes the attached ORM instance, so the value below is current.
+    if user.tier == UserTier.free:
+        await daily_check_and_reset(db, user)
     return user
 
 

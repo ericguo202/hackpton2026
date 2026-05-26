@@ -1,9 +1,12 @@
 export type Scores = {
-  structure: number;
-  problem_solving: number;
-  impact: number;
-  initiative: number;
-  depth: number;
+  // All five base scores are nullable: the backend returns null for any
+  // turn whose evaluation never completed. UIs render an "Evaluation
+  // Failed" placeholder for those rows instead of 0s.
+  structure: number | null;
+  problem_solving: number | null;
+  impact: number | null;
+  initiative: number | null;
+  depth: number | null;
   // Null when the candidate declined camera access — the card hides
   // the row in that case.
   delivery: number | null;

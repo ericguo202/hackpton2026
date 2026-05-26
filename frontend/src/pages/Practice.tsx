@@ -235,11 +235,15 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
   return insights.slice(0, 4);
 }
 
-function turnAverage(result: TurnResult): number {
-  if (result.scores == null) return 0;
+function turnAverage(result: TurnResult): number | null {
+  // Returns null when the turn produced no usable scores (eval failed or
+  // never completed). Callers must filter null before averaging so failed
+  // turns don't drag the session-level overall down to NaN/0.
+  if (result.scores == null) return null;
   const vals = Object.values(result.scores).filter(
     (v): v is number => typeof v === 'number',
   );
+  if (vals.length === 0) return null;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
@@ -492,7 +496,7 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
             </div>
           )}
 
-          {scoreEntries.length > 0 && (
+          {scoreEntries.length > 0 ? (
             <div>
               <p className="mb-5 text-eyebrow uppercase tracking-eyebrow text-text-muted">
                 Scores
@@ -515,6 +519,17 @@ function ReplayCoachCard({ result, turnNum }: { result: ReplayTurnResult; turnNu
                   </div>
                 ))}
               </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-border-strong p-5">
+              <p className="mb-2 text-eyebrow uppercase tracking-eyebrow text-text-subtle">
+                Error
+              </p>
+              <p className="text-sm text-text">Evaluation Failed</p>
+              <p className="mt-1 text-sm text-text-muted">
+                The evaluator did not return scores for this turn. Your
+                transcript and filler-word data below are still accurate.
+              </p>
             </div>
           )}
 
@@ -1101,19 +1116,28 @@ function PracticeSession({
                       >
                         Here is how you did.
                       </h2>
-                      <p className="mb-2 text-sm text-text-muted">
-                        Overall:{' '}
-                        <span className="font-medium text-text">
-                          {turnResults.length > 0
-                            ? (
-                                turnResults.reduce((sum, r) => sum + turnAverage(r), 0) /
-                                turnResults.length
-                              ).toFixed(1)
-                            : '—'}
-                          /10
-                        </span>{' '}
-                        averaged across {turnResults.length} turn{turnResults.length === 1 ? '' : 's'}
-                      </p>
+                      {(() => {
+                        // Base the session-overall average on only the turns
+                        // that actually scored — a turn whose evaluation failed
+                        // contributes null and is excluded entirely, rather
+                        // than dragging the average down with phantom zeros.
+                        const evaluatedAverages = turnResults
+                          .map((r) => turnAverage(r))
+                          .filter((v): v is number => v !== null);
+                        const evaluatedCount = evaluatedAverages.length;
+                        const overall = evaluatedCount > 0
+                          ? (evaluatedAverages.reduce((a, b) => a + b, 0) / evaluatedCount).toFixed(1)
+                          : '—';
+                        return (
+                          <p className="mb-2 text-sm text-text-muted">
+                            Overall:{' '}
+                            <span className="font-medium text-text">
+                              {overall}/10
+                            </span>{' '}
+                            averaged across {evaluatedCount} of {turnResults.length} turn{turnResults.length === 1 ? '' : 's'}
+                          </p>
+                        );
+                      })()}
                       <p className="mb-12 max-w-[54ch] text-sm leading-6 text-text-subtle">
                         Each replay keeps your actual recording, the model feedback, and the delivery analytics together so you can review what to tighten on the next run instead of guessing.
                       </p>
