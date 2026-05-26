@@ -233,15 +233,30 @@ async def _insert_followup_turn(
 
 
 async def _followup_and_tts(
-    question: str, transcript: str, voice_id: str,
+    question: str,
+    transcript: str,
+    voice_id: str,
+    category: FieldCategory | None = None,
+    role_signals: list[str] | None = None,
+    sample_question_themes: list[str] | None = None,
 ) -> tuple[str, str]:
     """Generate follow-up via Flash then TTS — runs in parallel with Gemma 4 eval.
 
     `voice_id` is the per-session voice from `voice_for_session(session.id)`
     — passed in (rather than recomputed here) to keep this helper a pure
     string-in / string-out function the caller can compose freely.
+
+    `category`, `role_signals`, and `sample_question_themes` are passed
+    through to `generate_followup` so the follow-up prompt sees the same
+    field / research context the opening question and evaluator already do.
     """
-    next_q = await generate_followup(question, transcript)
+    next_q = await generate_followup(
+        question,
+        transcript,
+        category=category,
+        role_signals=role_signals,
+        sample_question_themes=sample_question_themes,
+    )
     audio_url = await synthesize_speech(next_q, voice_id=voice_id)
     return next_q, audio_url
 
@@ -567,6 +582,11 @@ async def submit_turn(
             current_turn.question_text,
             transcript,
             turn_voice_id,
+            category=category,
+            role_signals=brief_out.role_signals if brief_out else None,
+            sample_question_themes=(
+                brief_out.sample_question_themes if brief_out else None
+            ),
         )
         await _insert_followup_turn(db, session_id, current_turn.id, next_q)
         # Commit BEFORE registering the background task so the bg task's
