@@ -9,8 +9,13 @@ per-turn evaluator is on `deepseek/deepseek-v3.2`.
 
 Two Serper calls fire in parallel so total latency stays ~one Serper
 round-trip:
-  1. `{company}`                                  — description / headlines / general values / category
-  2. `{company} {job_title} interview questions`  — role-specific signal + any interview-question leaks
+  1. `{company}`                                       — description / headlines / general values / category
+  2. `{company} {job_title} behavioral interview culture` — role-specific BEHAVIORAL signal + culture/values leaks
+
+The second query intentionally drops the generic "interview questions"
+phrasing — that corpus is dominated by LeetCode / system-design content
+and biased role_signals + sample_question_themes toward technical
+proficiencies, which is wrong for a behavioral interview prep app.
 
 Intentionally narrow — not a "research agent". The brief fits in a single
 prompt downstream and lands in `interview_sessions.company_summary` as
@@ -71,11 +76,18 @@ class CompanyBrief(BaseModel):
 _CATEGORY_LIST = "\n".join(f"  - {c}" for c in FIELD_CATEGORIES)
 
 _SYSTEM_INSTRUCTION = f"""\
-You are a research summarizer and interview-context classifier. Given raw
-Google search output about a company AND a separate role-targeted search
-about that company's interview practices for the candidate's target job
-title, return ONLY a JSON object with these eight keys (no markdown, no
-prose, no thinking):
+You are a research summarizer for a BEHAVIORAL interview prep tool. The
+brief you produce is used to seed BEHAVIORAL practice questions only —
+the kind that start with "Tell me about a time…" and probe culture fit,
+ownership, communication, leadership, conflict, ambiguity, and values.
+It is NOT used for technical coding or system-design questions, so
+anything technical in `role_signals` or `sample_question_themes` is a
+defect that derails downstream prompts.
+
+Given raw Google search output about a company AND a separate
+role-targeted search about that company's behavioral interview style /
+culture for the candidate's target job title, return ONLY a JSON object
+with these eight keys (no markdown, no prose, no thinking):
 
 {{
   "description": "one or two sentences describing what the company does",
@@ -116,32 +128,50 @@ Rules:
   MUST set the category to be "Startups and High-Growth Environments".
 
 Rules for `role_signals` (ANTI-HALLUCINATION — read carefully):
-- Each item is a short phrase (3-10 words) describing something the
-  company is documented to value in applicants for THIS specific role.
-  Examples of good signal: "strong written communication", "history of
-  shipping at small companies", "comfort with on-call rotations",
-  "customer-obsession in product decisions".
+- Each item is a short phrase (3-10 words) describing a CULTURAL,
+  SOFT-SKILL, VALUES, or LEADERSHIP trait the company is documented to
+  look for in applicants for THIS specific role. Examples of good signal:
+  "customer obsession in product decisions", "bias for action over
+  deliberation", "strong written communication", "ownership of outcomes
+  beyond your scope", "comfort operating in ambiguity", "high humility
+  and coachability".
+- MUST NOT include technical proficiencies, hard skills, tools, or
+  domain knowledge. Bad signals to EXCLUDE: "strong coding skills",
+  "system design proficiency", "data structures expertise", "React /
+  Python / SQL experience", "machine learning background", "understanding
+  of frontend-backend interaction". If the only signal you can extract
+  is technical, return `[]` — a technical signal is worse than no signal
+  for this app.
 - `role_signals` MUST be drawn from the search results provided in the
   user message. If neither the COMPANY nor the ROLE-SPECIFIC digest
-  contains clear language about what this company values in this role,
-  return an EMPTY LIST `[]`.
+  contains clear language about cultural / soft-skill traits the company
+  values in this role, return an EMPTY LIST `[]`.
 - Do NOT infer role signals from the company's general industry or
   reputation. ("Big tech values rigor" is not acceptable.)
 - Do NOT invent or guess. Small / obscure companies often produce empty
   `role_signals` and that is the correct answer.
 
 Rules for `sample_question_themes` (ANTI-HALLUCINATION — read carefully):
-- Each item is a short THEME label (3-8 words) drawn from interview
-  questions actually present in the search results — typically Glassdoor,
-  Reddit, blog leaks, or recruiting-prep sites. Examples of theme labels:
-  "incident response under pressure", "cross-team negotiation",
-  "product launch ownership".
+- Each item is a short THEME label (3-8 words) drawn from BEHAVIORAL
+  interview questions actually present in the search results —
+  typically Glassdoor, Reddit, blog leaks, or recruiting-prep sites.
+  Examples of theme labels: "incident response under pressure",
+  "cross-team negotiation", "product launch ownership", "navigating
+  ambiguous priorities", "disagreeing with a senior leader", "learning
+  from a public failure".
+- MUST NOT include technical question themes. Bad themes to EXCLUDE:
+  "system design challenges", "array manipulation for specific sums",
+  "coding problem-solving", "algorithm questions", "data structures and
+  algorithms", "technical details of past projects" (the LAST one only
+  belongs here if the underlying question is behavioral — e.g. "tell me
+  about a project you're proud of" — NOT if it's a deep technical drill).
+  If the only themes you can extract are technical, return `[]`.
 - NEVER include verbatim questions. The output is theme labels only.
-- NEVER invent themes when no interview content was found. If the
-  role-targeted digest does not surface any actual interview question
-  content for this company-role, return an EMPTY LIST `[]`.
-- For small / obscure companies and roles with no published interview
-  signal, empty list is the correct answer.
+- NEVER invent themes when no behavioral interview content was found.
+  If the role-targeted digest does not surface any actual behavioral
+  question content for this company-role, return an EMPTY LIST `[]`.
+- For small / obscure companies and roles with no published behavioral
+  interview signal, empty list is the correct answer.
 
 Rules for `valid_company_query` (BE PERMISSIVE — default to true):
 - DEFAULT to true. Most inputs should pass. Small/recent startups,
@@ -285,8 +315,12 @@ async def research_company(company: str, job_title: str) -> CompanyBrief:
     # round-trip (~200-400ms). The first feeds the existing
     # description/headlines/values/category path. The second is the
     # role-targeted query whose digest carries role_signals +
-    # sample_question_themes signal.
-    role_query = f"{company} {job_title} interview questions"
+    # sample_question_themes signal. The "behavioral interview culture"
+    # phrasing intentionally avoids the generic "interview questions"
+    # corpus that's dominated by LeetCode / system-design content; this
+    # app coaches behavioral rounds, so technical results pollute the
+    # downstream brief.
+    role_query = f"{company} {job_title} behavioral interview culture"
     serp_company, serp_role = await asyncio.gather(
         _serper_search(company),
         _serper_search(role_query),

@@ -259,15 +259,34 @@ export default function SessionDetail() {
                   <p className="text-sm text-text leading-relaxed">
                     {session.summary.description}
                   </p>
-                  {session.summary.headlines.length > 0 && (
-                    <ul className="mt-3 space-y-1">
-                      {session.summary.headlines.map((h, i) => (
-                        <li key={i} className="text-xs text-text-muted">
-                          — {h}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {(() => {
+                    const roleSignals = session.summary.role_signals ?? [];
+                    const themes = session.summary.sample_question_themes ?? [];
+                    const hasAny =
+                      session.summary.headlines.length > 0 ||
+                      roleSignals.length > 0 ||
+                      themes.length > 0;
+                    if (!hasAny) return null;
+                    return (
+                      <ul className="mt-3 space-y-1">
+                        {session.summary.headlines.map((h, i) => (
+                          <li key={`h-${i}`} className="text-xs text-text-muted">
+                            — {h}
+                          </li>
+                        ))}
+                        {roleSignals.length > 0 && (
+                          <li className="text-xs text-text-muted">
+                            — What they value: {roleSignals.join(', ')}
+                          </li>
+                        )}
+                        {themes.length > 0 && (
+                          <li className="text-xs text-text-muted">
+                            — Common themes: {themes.join(', ')}
+                          </li>
+                        )}
+                      </ul>
+                    );
+                  })()}
                 </div>
               )}
 

@@ -123,7 +123,7 @@ async def test_research_company_fires_two_serper_calls(monkeypatch):
     # asyncio.gather doesn't guarantee call order, so use set comparison.
     assert set(queries) == {
         "Acme Robotics",
-        "Acme Robotics Robotics Engineer interview questions",
+        "Acme Robotics Robotics Engineer behavioral interview culture",
     }
 
 
