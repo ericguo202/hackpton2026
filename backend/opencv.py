@@ -386,6 +386,17 @@ class InterviewAnalyzer:
         self.overall_ema = 50.0
         self.best_eye_contact = 0.0
         self.best_expression = 0.0
+        self.eye_contact_samples: list[float] = []
+        self.expression_samples: list[float] = []
+        self.looked_away_frames = 0
+        self.posture_drift_frames = 0
+        self.low_energy_frames = 0
+        self.current_looked_away_streak = 0
+        self.current_posture_drift_streak = 0
+        self.current_low_energy_streak = 0
+        self.longest_looked_away_streak = 0
+        self.longest_posture_drift_streak = 0
+        self.longest_low_energy_streak = 0
         self.last_face_box: tuple[int, int, int, int] | None = None
         self.last_landmarks_px: list[tuple[int, int]] = []
         self.last_assessment = FrameAssessment(
@@ -508,6 +519,7 @@ class InterviewAnalyzer:
             self.eye_contact_ema = self._smooth(self.eye_contact_ema, 15.0)
             self.expression_ema = self._smooth(self.expression_ema, 15.0)
             self.overall_ema = self._smooth(self.overall_ema, 15.0)
+            self._reset_issue_streaks()
             self.last_assessment = FrameAssessment(
                 face_found=False,
                 eye_contact_score=self.eye_contact_ema,
@@ -535,6 +547,8 @@ class InterviewAnalyzer:
         self.overall_ema = self._smooth(self.overall_ema, overall_score)
         self.best_eye_contact = max(self.best_eye_contact, eye_contact_score)
         self.best_expression = max(self.best_expression, expression_score)
+        self.eye_contact_samples.append(self.eye_contact_ema)
+        self.expression_samples.append(self.expression_ema)
 
         guidance = self._guidance_text(self.eye_contact_ema, self.expression_ema, eye_label, expression_label)
         self.last_assessment = FrameAssessment(
@@ -546,9 +560,91 @@ class InterviewAnalyzer:
             expression_label=expression_label,
             guidance=guidance,
         )
+        self._record_delivery_issue_frame()
 
         self._draw_overlay(frame, points)
         return self.last_assessment
+
+    def _reset_issue_streaks(self) -> None:
+        self.current_looked_away_streak = 0
+        self.current_posture_drift_streak = 0
+        self.current_low_energy_streak = 0
+
+    def _record_issue_streak(self, issue_key: str, active: bool) -> None:
+        if issue_key == "looked_away":
+            if active:
+                self.looked_away_frames += 1
+                self.current_looked_away_streak += 1
+                self.longest_looked_away_streak = max(
+                    self.longest_looked_away_streak,
+                    self.current_looked_away_streak,
+                )
+            else:
+                self.current_looked_away_streak = 0
+            return
+
+        if issue_key == "posture_drift":
+            if active:
+                self.posture_drift_frames += 1
+                self.current_posture_drift_streak += 1
+                self.longest_posture_drift_streak = max(
+                    self.longest_posture_drift_streak,
+                    self.current_posture_drift_streak,
+                )
+            else:
+                self.current_posture_drift_streak = 0
+            return
+
+        if issue_key == "low_energy":
+            if active:
+                self.low_energy_frames += 1
+                self.current_low_energy_streak += 1
+                self.longest_low_energy_streak = max(
+                    self.longest_low_energy_streak,
+                    self.current_low_energy_streak,
+                )
+            else:
+                self.current_low_energy_streak = 0
+
+    def _record_delivery_issue_frame(self) -> None:
+        active_issue_keys = {issue["key"] for issue in self.current_issues()}
+        self._record_issue_streak("looked_away", "looked_away" in active_issue_keys)
+        self._record_issue_streak("posture_drift", "posture_drift" in active_issue_keys)
+        self._record_issue_streak("low_energy", "low_energy" in active_issue_keys)
+
+    @staticmethod
+    def _percentage(count: int, total: int) -> float:
+        return (count / total) * 100 if total > 0 else 0.0
+
+    @staticmethod
+    def _score_stability(samples: list[float]) -> float:
+        if len(samples) < 2:
+            return 100.0
+        mean = sum(samples) / len(samples)
+        variance = sum((value - mean) ** 2 for value in samples) / len(samples)
+        return clamp(100 - math.sqrt(variance) * 1.6)
+
+    @staticmethod
+    def _summary_guidance(
+        face_visible_pct: float,
+        looked_away_pct: float,
+        posture_drift_pct: float,
+        low_energy_pct: float,
+        fallback: str,
+    ) -> str:
+        if face_visible_pct < 85:
+            return "Keep your face centered and fully visible so delivery scoring has a reliable read."
+        top_pct, top_tip = max(
+            [
+                (looked_away_pct, "Hold your gaze closer to the camera lens for longer stretches."),
+                (low_energy_pct, "Add a little facial warmth and energy while you explain the answer."),
+                (posture_drift_pct, "Keep your head centered and posture steady through the full answer."),
+            ],
+            key=lambda item: item[0],
+        )
+        if top_pct >= 12:
+            return top_tip
+        return fallback
 
     def _landmark_to_pixel(self, landmark, width: int, height: int) -> tuple[int, int]:
         x = min(max(int(landmark.x * width), 0), width - 1)
@@ -916,6 +1012,9 @@ class InterviewAnalyzer:
         face_presence = 0.0
         if self.frame_count:
             face_presence = (self.detected_face_frames / self.frame_count) * 100
+        looked_away_pct = self._percentage(self.looked_away_frames, self.detected_face_frames)
+        posture_drift_pct = self._percentage(self.posture_drift_frames, self.detected_face_frames)
+        low_energy_pct = self._percentage(self.low_energy_frames, self.detected_face_frames)
 
         return {
             "frames_processed": self.frame_count,
@@ -923,12 +1022,26 @@ class InterviewAnalyzer:
             "eye_contact_score": round(self.eye_contact_ema, 1),
             "expression_score": round(self.expression_ema, 1),
             "overall_interview_score": round(self.overall_ema, 1),
+            "eye_contact_stability": round(self._score_stability(self.eye_contact_samples), 1),
+            "expression_stability": round(self._score_stability(self.expression_samples), 1),
+            "looked_away_pct": round(looked_away_pct, 1),
+            "posture_drift_pct": round(posture_drift_pct, 1),
+            "low_energy_pct": round(low_energy_pct, 1),
+            "longest_looked_away_streak_frames": self.longest_looked_away_streak,
+            "longest_posture_drift_streak_frames": self.longest_posture_drift_streak,
+            "longest_low_energy_streak_frames": self.longest_low_energy_streak,
             "eye_contact_rating": score_band(self.eye_contact_ema),
             "expression_rating": score_band(self.expression_ema),
             "interview_rating": score_band(self.overall_ema),
             "best_eye_contact_frame_score": round(self.best_eye_contact, 1),
             "best_expression_frame_score": round(self.best_expression, 1),
-            "coaching_tip": self.last_assessment.guidance,
+            "coaching_tip": self._summary_guidance(
+                face_presence,
+                looked_away_pct,
+                posture_drift_pct,
+                low_energy_pct,
+                self.last_assessment.guidance,
+            ),
             "notes": [
                 "Eye contact uses MediaPipe face and iris landmarks as a webcam-based gaze proxy.",
                 "Expression scoring uses mouth width, eye openness, and brow relaxation as engagement cues.",

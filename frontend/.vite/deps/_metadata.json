@@ -1,0 +1,84 @@
+{
+  "hash": "73303542",
+  "configHash": "28a79980",
+  "lockfileHash": "219a453e",
+  "browserHash": "94575e43",
+  "optimized": {
+    "@clerk/react": {
+      "src": "../../node_modules/@clerk/react/dist/index.mjs",
+      "file": "@clerk_react.js",
+      "fileHash": "8a76caa1",
+      "needsInterop": false
+    },
+    "@clerk/react/legacy": {
+      "src": "../../node_modules/@clerk/react/dist/legacy.mjs",
+      "file": "@clerk_react_legacy.js",
+      "fileHash": "c790c535",
+      "needsInterop": false
+    },
+    "@mediapipe/tasks-vision": {
+      "src": "../../node_modules/@mediapipe/tasks-vision/vision_bundle.mjs",
+      "file": "@mediapipe_tasks-vision.js",
+      "fileHash": "d786c735",
+      "needsInterop": false
+    },
+    "@paper-design/shaders-react": {
+      "src": "../../node_modules/@paper-design/shaders-react/dist/index.js",
+      "file": "@paper-design_shaders-react.js",
+      "fileHash": "1342d513",
+      "needsInterop": false
+    },
+    "@radix-ui/react-progress": {
+      "src": "../../node_modules/@radix-ui/react-progress/dist/index.mjs",
+      "file": "@radix-ui_react-progress.js",
+      "fileHash": "4bf62517",
+      "needsInterop": false
+    },
+    "lucide-react": {
+      "src": "../../node_modules/lucide-react/dist/esm/lucide-react.js",
+      "file": "lucide-react.js",
+      "fileHash": "0ed9102c",
+      "needsInterop": false
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "e9092f06",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "3e2efa4a",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "5356169e",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "chunk-E5QRIS4Z-Bf08S9Qg": {
+      "file": "chunk-E5QRIS4Z-Bf08S9Qg.js",
+      "isDynamicEntry": false
+    },
+    "client-CjVVo9qg": {
+      "file": "client-CjVVo9qg.js",
+      "isDynamicEntry": false
+    },
+    "jsx-runtime-BsRXCT-W": {
+      "file": "jsx-runtime-BsRXCT-W.js",
+      "isDynamicEntry": false
+    },
+    "react-B6J-hxuQ": {
+      "file": "react-B6J-hxuQ.js",
+      "isDynamicEntry": false
+    },
+    "react-dom-ZzMoJBLc": {
+      "file": "react-dom-ZzMoJBLc.js",
+      "isDynamicEntry": false
+    }
+  }
+}

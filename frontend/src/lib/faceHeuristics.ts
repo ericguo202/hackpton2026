@@ -70,6 +70,13 @@ const EMA_SEED = 50.0;
 // a brief drop-out doesn't crater the rolling average (opencv.py L508-510).
 const NO_FACE_TARGET = 15.0;
 
+const LOOKED_AWAY_EYE_THRESHOLD = 55;
+const POSTURE_HEAD_ALIGNMENT_MIN = 62;
+const POSTURE_VERTICAL_MAX = 0.22;
+const POSTURE_MIDPOINT_MAX = 0.20;
+const LOW_ENERGY_SMILE_MIN = 40;
+const LOW_ENERGY_MOUTH_OPEN_MAX = 0.15;
+
 // ── small helpers ─────────────────────────────────────────────────────────────
 export function clamp(value: number, minimum = 0, maximum = 100): number {
   return Math.max(minimum, Math.min(maximum, value));
@@ -80,6 +87,19 @@ export function scoreBand(score: number): 'strong' | 'good' | 'fair' | 'needs wo
   if (score >= 60) return 'good';
   if (score >= 40) return 'fair';
   return 'needs work';
+}
+
+function percentage(count: number, total: number): number {
+  return total > 0 ? (count / total) * 100 : 0;
+}
+
+function scoreStability(samples: number[]): number {
+  if (samples.length < 2) return 100;
+
+  const mean = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+  const variance =
+    samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) / samples.length;
+  return clamp(100 - Math.sqrt(variance) * 1.6);
 }
 
 function meanPoint(points: Point[], indices: readonly number[]): Point {
@@ -265,6 +285,36 @@ function guidanceText(
   return 'Nice balance. Maintain this level of eye contact and expression.';
 }
 
+function summaryGuidance(
+  faceVisiblePct: number,
+  lookedAwayPct: number,
+  postureDriftPct: number,
+  lowEnergyPct: number,
+  fallback: string,
+): string {
+  if (faceVisiblePct < 85) {
+    return 'Keep your face centered and fully visible so delivery scoring has a reliable read.';
+  }
+
+  const topIssue = [
+    {
+      pct: lookedAwayPct,
+      text: 'Hold your gaze closer to the camera lens for longer stretches.',
+    },
+    {
+      pct: lowEnergyPct,
+      text: 'Add a little facial warmth and energy while you explain the answer.',
+    },
+    {
+      pct: postureDriftPct,
+      text: 'Keep your head centered and posture steady through the full answer.',
+    },
+  ].sort((a, b) => b.pct - a.pct)[0];
+
+  if (topIssue.pct >= 12) return topIssue.text;
+  return fallback;
+}
+
 // ── summary accumulator ───────────────────────────────────────────────────────
 
 /** Shape matches `backend/interview_feedback_latest.json`. Keep the keys
@@ -276,6 +326,14 @@ export interface InterviewSummary {
   eye_contact_score: number;
   expression_score: number;
   overall_interview_score: number;
+  eye_contact_stability: number;
+  expression_stability: number;
+  looked_away_pct: number;
+  posture_drift_pct: number;
+  low_energy_pct: number;
+  longest_looked_away_streak_frames: number;
+  longest_posture_drift_streak_frames: number;
+  longest_low_energy_streak_frames: number;
   eye_contact_rating: string;
   expression_rating: string;
   interview_rating: string;
@@ -301,9 +359,26 @@ export class FrameSummary {
   private bestEye = 0;
   private bestExpression = 0;
   private lastGuidance = 'Move into frame so your face is visible.';
+  private eyeSamples: number[] = [];
+  private expressionSamples: number[] = [];
+  private lookedAwayFrames = 0;
+  private postureDriftFrames = 0;
+  private lowEnergyFrames = 0;
+  private currentLookedAwayStreak = 0;
+  private currentPostureDriftStreak = 0;
+  private currentLowEnergyStreak = 0;
+  private longestLookedAwayStreak = 0;
+  private longestPostureDriftStreak = 0;
+  private longestLowEnergyStreak = 0;
 
   private smooth(current: number, next: number): number {
     return clamp((1 - EMA_ALPHA) * current + EMA_ALPHA * next);
+  }
+
+  private resetIssueStreaks(): void {
+    this.currentLookedAwayStreak = 0;
+    this.currentPostureDriftStreak = 0;
+    this.currentLowEnergyStreak = 0;
   }
 
   /** Feed the 468+iris landmarks for one frame, in pixel coordinates.
@@ -317,6 +392,7 @@ export class FrameSummary {
       this.expressionEma = this.smooth(this.expressionEma, NO_FACE_TARGET);
       this.overallEma = this.smooth(this.overallEma, NO_FACE_TARGET);
       this.lastGuidance = 'Center your face in the camera to begin interview scoring.';
+      this.resetIssueStreaks();
       return;
     }
 
@@ -330,6 +406,50 @@ export class FrameSummary {
     this.overallEma = this.smooth(this.overallEma, overall);
     this.bestEye = Math.max(this.bestEye, eye.score);
     this.bestExpression = Math.max(this.bestExpression, expr.score);
+    this.eyeSamples.push(this.eyeEma);
+    this.expressionSamples.push(this.expressionEma);
+
+    const lookedAway = this.eyeEma < LOOKED_AWAY_EYE_THRESHOLD;
+    const postureDrift =
+      eye.headAlignmentScore < POSTURE_HEAD_ALIGNMENT_MIN ||
+      eye.verticalPosture > POSTURE_VERTICAL_MAX ||
+      eye.midpointOffset > POSTURE_MIDPOINT_MAX;
+    const lowEnergy =
+      expr.smileScore < LOW_ENERGY_SMILE_MIN &&
+      expr.mouthOpenRatio < LOW_ENERGY_MOUTH_OPEN_MAX;
+
+    if (lookedAway) {
+      this.lookedAwayFrames += 1;
+      this.currentLookedAwayStreak += 1;
+      this.longestLookedAwayStreak = Math.max(
+        this.longestLookedAwayStreak,
+        this.currentLookedAwayStreak,
+      );
+    } else {
+      this.currentLookedAwayStreak = 0;
+    }
+
+    if (postureDrift) {
+      this.postureDriftFrames += 1;
+      this.currentPostureDriftStreak += 1;
+      this.longestPostureDriftStreak = Math.max(
+        this.longestPostureDriftStreak,
+        this.currentPostureDriftStreak,
+      );
+    } else {
+      this.currentPostureDriftStreak = 0;
+    }
+
+    if (lowEnergy) {
+      this.lowEnergyFrames += 1;
+      this.currentLowEnergyStreak += 1;
+      this.longestLowEnergyStreak = Math.max(
+        this.longestLowEnergyStreak,
+        this.currentLowEnergyStreak,
+      );
+    } else {
+      this.currentLowEnergyStreak = 0;
+    }
 
     this.lastGuidance = guidanceText(
       this.eyeEma,
@@ -348,6 +468,17 @@ export class FrameSummary {
     this.bestEye = 0;
     this.bestExpression = 0;
     this.lastGuidance = 'Move into frame so your face is visible.';
+    this.eyeSamples = [];
+    this.expressionSamples = [];
+    this.lookedAwayFrames = 0;
+    this.postureDriftFrames = 0;
+    this.lowEnergyFrames = 0;
+    this.currentLookedAwayStreak = 0;
+    this.currentPostureDriftStreak = 0;
+    this.currentLowEnergyStreak = 0;
+    this.longestLookedAwayStreak = 0;
+    this.longestPostureDriftStreak = 0;
+    this.longestLowEnergyStreak = 0;
   }
 
   /** Returns null if no frames have been processed — the caller should
@@ -358,6 +489,9 @@ export class FrameSummary {
 
     const facePresence = (this.detectedFaceFrames / this.frameCount) * 100;
     const round1 = (n: number) => Math.round(n * 10) / 10;
+    const lookedAwayPct = percentage(this.lookedAwayFrames, this.detectedFaceFrames);
+    const postureDriftPct = percentage(this.postureDriftFrames, this.detectedFaceFrames);
+    const lowEnergyPct = percentage(this.lowEnergyFrames, this.detectedFaceFrames);
 
     return {
       frames_processed: this.frameCount,
@@ -365,12 +499,26 @@ export class FrameSummary {
       eye_contact_score: round1(this.eyeEma),
       expression_score: round1(this.expressionEma),
       overall_interview_score: round1(this.overallEma),
+      eye_contact_stability: round1(scoreStability(this.eyeSamples)),
+      expression_stability: round1(scoreStability(this.expressionSamples)),
+      looked_away_pct: round1(lookedAwayPct),
+      posture_drift_pct: round1(postureDriftPct),
+      low_energy_pct: round1(lowEnergyPct),
+      longest_looked_away_streak_frames: this.longestLookedAwayStreak,
+      longest_posture_drift_streak_frames: this.longestPostureDriftStreak,
+      longest_low_energy_streak_frames: this.longestLowEnergyStreak,
       eye_contact_rating: scoreBand(this.eyeEma),
       expression_rating: scoreBand(this.expressionEma),
       interview_rating: scoreBand(this.overallEma),
       best_eye_contact_frame_score: round1(this.bestEye),
       best_expression_frame_score: round1(this.bestExpression),
-      coaching_tip: this.lastGuidance,
+      coaching_tip: summaryGuidance(
+        facePresence,
+        lookedAwayPct,
+        postureDriftPct,
+        lowEnergyPct,
+        this.lastGuidance,
+      ),
       notes: [
         'Eye contact uses MediaPipe face and iris landmarks as a webcam-based gaze proxy.',
         'Expression scoring uses mouth width, eye openness, and brow relaxation as engagement cues.',
