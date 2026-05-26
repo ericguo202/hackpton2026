@@ -110,7 +110,11 @@ and seniority instead of asking a stock question about teamwork.
 
 The whole session runs through voice: question audio plays, the mic engages
 automatically when it ends, you talk, you press **End answer**, and the
-follow-up arrives. You can pick from a pool of accented interviewer voices
+follow-up arrives. The follow-up is conditioned on the same field category
+and company-research signals (role values, behavioral themes) that shaped
+the opening question, so it lands in the right tone for the role and gently
+redirects rather than echoing back if your first answer was off-topic or
+nonsensical. You can pick from a pool of accented interviewer voices
 (or let the system surprise you) so non-native English speakers can rehearse
 against the kind of voice they'll actually face in a screen. The chosen voice
 persists across both turns so the interviewer never "changes person" mid-session.
@@ -185,9 +189,10 @@ single-shot scoring). A few directions worth exploring beyond this build:
   small calibration sample (`backend/recordings/calibration_*`). A larger
   labeled dataset would let us calibrate per ethnicity / lighting / camera
   angle and flag low-confidence frames instead of silently averaging them in.
-- **Comparative analytics** — anonymized cohort percentiles ("your STAR
-  scores trail the median for entry-level SWE candidates") would turn the
-  trend chart from a self-comparison into a benchmark.
+- **Comparative analytics** — anonymized cohort percentiles ("your
+  Structure and Impact scores trail the median for entry-level SWE
+  candidates") would turn the trend chart from a self-comparison into a
+  benchmark.
 - **Mobile capture** — the current MediaPipe loop assumes a laptop webcam;
   a dedicated phone capture flow with portrait framing and on-device STT
   would extend the practice context.
