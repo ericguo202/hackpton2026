@@ -19,7 +19,7 @@ the route handler at T+10-12 composes them. It also does NOT generate
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Any, Callable, Literal
+from typing import Annotated, Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
 
@@ -324,11 +324,34 @@ def _feedback_text(feedback: FeedbackDetail) -> str:
     return " ".join(part.strip() for part in parts if part.strip())
 
 
-def _drop_unanchored_moments(result: EvaluatorOutput, transcript: str) -> EvaluatorOutput:
-    """Keep only feedback moments tied to exact transcript text.
+_MomentT = TypeVar("_MomentT", PositiveMoment, ImprovementMoment)
 
-    The model is prompted to quote exact snippets, but this keeps the
-    product promise enforceable at the backend boundary.
+
+def _dedupe_by_snippet(moments: list[_MomentT]) -> list[_MomentT]:
+    """Drop later moments that quote the same transcript_snippet as an earlier one.
+
+    Defense alongside the prompt's no-duplicates rule. Exact-string equality
+    only — substring/overlap dedup would be heuristic and could false-positive
+    on legitimate distinct quotes. First occurrence wins to preserve whatever
+    the model judged most important.
+    """
+    seen: set[str] = set()
+    out: list[_MomentT] = []
+    for moment in moments:
+        key = moment.transcript_snippet.strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(moment)
+    return out
+
+
+def _drop_unanchored_moments(result: EvaluatorOutput, transcript: str) -> EvaluatorOutput:
+    """Filter feedback moments: keep only those anchored in transcript, then dedupe by snippet.
+
+    The model is prompted to quote exact snippets AND to use distinct
+    snippets across improvement_moments; this keeps both product promises
+    enforceable at the backend boundary.
     """
     positive = [
         moment
@@ -342,8 +365,8 @@ def _drop_unanchored_moments(result: EvaluatorOutput, transcript: str) -> Evalua
         if moment.transcript_snippet.strip()
         and moment.transcript_snippet.strip() in transcript
     ]
-    result.feedback_detail.positive_moments = positive
-    result.feedback_detail.improvement_moments = improvements
+    result.feedback_detail.positive_moments = _dedupe_by_snippet(positive)
+    result.feedback_detail.improvement_moments = _dedupe_by_snippet(improvements)
     result.feedback_detail.quick_wins = result.feedback_detail.quick_wins[:3]
     if not result.notes.strip():
         result.notes = _feedback_text(result.feedback_detail)
