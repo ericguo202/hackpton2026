@@ -111,10 +111,11 @@ feedback_detail.positive_moments:
 - Each transcript_snippet MUST be copied exactly from the candidate answer. Do not paraphrase it.
 - Each transcript_snippet must be at most 120 characters. If the relevant phrase is longer, copy only the shortest contiguous span that captures the moment.
 - Base positives only on the transcript. Do not invent praise or reward content that is not there.
+- If the candidate's answer is unintelligible (laughter, gibberish, microphone-test utterances like "test test"), clearly off-topic (does not attempt to address the question), or inappropriate for a professional interview (vulgar, profane, joking responses), return an EMPTY positive_moments array. Do not invent praise to soften the feedback in these cases. In this case, improvement_moments should use issue_type "does_not_answer_question" or "off_track", and main_takeaway should plainly state that the response did not address the question.
 - Look for honest strengths such as directness, relevance, concise wording, naming a customer concern, attempting a specific example, mentioning a result, acknowledging a challenge, showing confidence, or comparing alternatives.
 - why_this_helped should explain why that exact snippet made the answer stronger. It must be at most 330 characters.
 - keep_doing should be short and reinforce the behavior to repeat. It must be at most 240 characters.
-- If the answer is very weak, still include one honest positive moment if the transcript supports it.
+- If the answer is weak but represents a genuine attempt at the question, you may still include one honest positive moment if the transcript supports it. (This is distinct from the unintelligible/off-topic/inappropriate case above, which empties positive_moments.)
 
 feedback_detail.main_takeaway:
 
@@ -128,6 +129,7 @@ feedback_detail.improvement_moments:
 - Return 2-4 moments maximum. Use fewer if the answer is very short.
 - Each transcript_snippet MUST be copied exactly from the candidate answer. Do not paraphrase it.
 - Each transcript_snippet must be at most 120 characters. If the relevant phrase is longer, copy only the shortest contiguous span that captures the moment.
+- Each transcript_snippet MUST be distinct across improvement_moments. Do not quote the same sentence or phrase in two different moments. If one phrase has multiple weaknesses, combine them into a single moment with the most important issue_type and a how_to_strengthen that addresses both.
 - Choose only the highest-impact moments where the candidate was too vague, missed depth, skipped reasoning, skipped the result, went off-track, sounded unprofessional, failed to answer the question, used weak wording, or missed an obvious chance to strengthen the answer.
 - why_this_weakened should be one short, practical explanation. It must be at most 330 characters.
 - how_to_strengthen should be concrete, bite-sized, and easy to mentally copy. It should suggest one sentence or one detail the candidate could add, not a full answer. It must be at most 330 characters.
