@@ -94,13 +94,16 @@ If you find yourself writing `bg-primary-500` in a component, pause — is this 
 
 ### Typography
 
-- `--font-display` = **Fraunces** (variable, opsz 9–144). Use for headings and marketing copy.
-- `--font-sans` = **Geist**. Default on `<body>`; inherits everywhere — don't apply `font-sans` explicitly.
-- `--font-mono` = Geist Mono fallback. Reserved for code blocks.
+- `--font-sans` = **Inter** (variable, opsz 14–32). Default on `<body>`; inherits everywhere — don't apply `font-sans` explicitly.
+- `--font-ui` = **Inter**. Semantic alias available for form / input / button typography if it ever needs to diverge from body.
+- `--font-display` = **Inter**. Used by base `h1..h6` styling for headings.
+- `--font-mono` = Geist Mono fallback. Reserved for code blocks; **not** currently `@import`ed — falls back to `ui-monospace, Consolas`. Add the import if a real mono usage lands.
 
-The base `h1..h6` selectors in `index.css` already set the display serif, weight 500, tightened letter-spacing, and a responsive `clamp()` for h1/h2. Use semantic heading tags (`<h1>`, `<h2>`, `<h3>`) and let the CSS do the work. Only add `font-display` / `font-sans` when you need the opposite of the default (e.g., a serif paragraph pull-quote, or a sans subtitle under a serif heading).
+All three app tokens (`--font-sans`, `--font-ui`, `--font-display`) resolve to Inter today. The three-token split is forward-looking: if one role needs to diverge later, swap a single token without a codebase-wide rename. Don't introduce a second face without a clear product reason.
 
-Fraunces and Geist load from Google Fonts via `@import` in `index.css`. If offline-demo reliability matters, swap to `@fontsource/fraunces` + `@fontsource/geist-sans` — the token names don't change.
+The base `h1..h6` selectors in `index.css` already set `--font-display`, weight 500, tightened letter-spacing, and a responsive `clamp()` for h1/h2. Use semantic heading tags (`<h1>`, `<h2>`, `<h3>`) and let the CSS do the work — applying `font-display` / `font-sans` / `font-ui` in components is rarely needed since all three resolve to Inter.
+
+Inter loads from Google Fonts via `@import` in `index.css`. If offline-demo reliability matters, swap to `@fontsource/inter` — the token names don't change.
 
 ### Radius
 
@@ -179,7 +182,7 @@ The hero is the current design priority. Treat it as the entry point to a voice-
 
 **Hero design principles**:
 
-- **Typography carries the emotional load.** Fraunces at confident size (clamp up to ~3.5rem) on a cream page does more than any illustration or gradient could. Resist hero images, mesh gradients, 3D objects, animated blobs.
+- **Typography carries the emotional load.** Inter at confident display size (clamp up to ~3.5rem) and weight 500 on a cream page does more than any illustration or gradient could. Resist hero images, mesh gradients, 3D objects, animated blobs.
 - **One action, alone on the surface.** Primary CTA sits in its own negative space with nothing competing. Secondary affordances (sign in, history, about) are quieter — text links or ghost buttons, not duplicate primaries.
 - **Copy is the decoration.** A well-written subheading replaces a decorative element. Write copy first, lay it out second.
 - **Asymmetric, not centered.** Left-aligned long-form hero text with an asymmetric action block reads more designed than the centered hero template.

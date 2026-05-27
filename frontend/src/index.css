@@ -1,8 +1,7 @@
-/* Fraunces (variable optical size) for display, Geist for body/UI.
+/* Inter (variable optical size + italic) for all app/display/UI text.
    Google Font imports MUST precede `@import "tailwindcss"` — Tailwind's
    import expands into `@layer` rules, and all `@import`s must come first. */
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -121,9 +120,14 @@
   --color-chart-5: #b58a2c;  /* amber      — depth           */
   --color-chart-6: #48538e;  /* indigo     — delivery        */
 
-  /* ---------- Fonts ---------- */
-  --font-sans:    "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  /* ---------- Fonts ----------
+     All three app tokens resolve to Inter today. The three-token split is
+     forward-looking — if UI/body/display ever need to diverge, swap one
+     token without a global rename. Geist Mono is reserved for code only;
+     no `@import` for it since nothing currently uses `font-mono`. */
+  --font-sans:    "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-ui:      "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono:    "Geist Mono", ui-monospace, Consolas, monospace;
 
   /* ---------- Editorial eyebrow ----------
@@ -174,7 +178,7 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
   color: var(--color-text);
   font-weight: 500;
-  /* Engage Fraunces's optical-size (opsz 9..144) axis so display sizes pick
+  /* Engage Inter's optical-size (opsz 14..32) axis so display sizes pick
      up the more delicate cuts and body-adjacent sizes stay sturdy. */
   font-optical-sizing: auto;
 }
