@@ -53,6 +53,20 @@ Three files work together — don't bypass them:
 
 Backend exposes `/api/v1/health`, `/api/v1/me`, `/api/v1/onboarding`. Frontend consumes `/me` (via `useMe`) and `/onboarding` (via `OnboardingForm`). **Not yet built**: `/sessions`, `/sessions/{id}/turns`, `/me/stats` — these are the next milestones per `../CLAUDE.md` build order. When you add UI for them, put network calls behind new hooks following the `useMe` pattern, not inline `apiFetch` in components.
 
+### Practice Interview phase shell
+
+The Interview half of `Practice.tsx` is **chrome-free and full-viewport**: TopBar and ScoreDimensions are both wrapped in `{isDone && …}` so they only render during Results. The Interview branch is a `flex h-screen flex-col` container with two children:
+
+1. **Body grid** — desktop renders `min-[900px]:grid` whose `grid-template-columns` flips between `[33%_67%]` (transcript closed) and `[25%_50%_25%]` (transcript open). Mobile collapses to a vertical `flex flex-col` stack. Three column components, all under `components/practice/`:
+   - **`QuestionColumn.tsx`** — eyebrow + invisible-underlay question text + `<audio>`. Sole consumer of `replayKey` (the audio remounts to retrigger `autoPlay` whenever Re-record OR the footer's Restart-turn button bumps the key). `min-[900px]:border-r` divider.
+   - **`CameraColumn.tsx`** — 16:9 box at **fixed `w-[45vw]` on desktop**, `w-full` on mobile. The 45vw lock is load-bearing for "camera width never changes when the transcript column opens" — the grid columns flex around the box (50% column tightly hugs the 45vw box with ~2.5vw gutter; the 67% column has more breathing room). Renders `<CameraPreview>` when `videoStream != null`, the recorded video when `showPreview`, otherwise a dark `bg-accent` placeholder with state-aware copy ("Camera will start once the question audio ends." / "Webcam not enabled — audio recorded only."). Submit / Re-record buttons render below the box and disable while `submitting`.
+   - **`TranscriptColumn.tsx`** — `min-[900px]:border-l` desktop / `border-t` mobile. X close button hidden on mobile (mobile toggles transcript only via the footer).
+2. **`PracticeFooter.tsx`** — sticky bottom bar (`h-20 shrink-0 border-t bg-surface-raised`). Left side: "Turn N" indicator + recording-state pill. Right side: five icon+label buttons (End recording / Restart turn / Show-hide question / Show-hide transcript / Quit session). The local `FooterButton` helper hides its text span via `min-[900px]:inline` so mobile renders icon-only. The End-recording button overrides the neutral defaults via className (`border-accent bg-accent text-accent-fg hover:bg-accent-hover`) — twMerge resolves the conflict. During `submitting`, the right-side button row is replaced by an inline spinner + status message. The big-red Quit button is a separate `QuitButton` inline helper, not a `FooterButton`.
+
+**`QuitConfirmDialog.tsx`** is mounted as a sibling of the body+footer container; it owns its own ESC-key effect (registered only while `open`), backdrop click closes via `onCancel`, inner card stops propagation.
+
+The legacy framed-card layout (`rounded-2xl bg-surface-raised p-10` constrained to `max-w-[80rem]`) is **gone for Interview only** — Results still uses that container with TopBar + ScoreDimensions visible. The old `RecordingStatusPill` component (and its `getAnalyzerStatusLabel`/`Class` helpers) was removed entirely; recording state is now surfaced only by the footer's pill. `analyzer.diagnostics` is still consumed by `handleSubmitTurn` for `cv_summary` payloads and logging, just not by any UI element.
+
 ## House style
 
 - `MePing` is a deliberate debug widget rendering the `/me` JSON — leave it in during development, remove before demo.
@@ -118,7 +132,6 @@ The system scales up on large external monitors via three coupled mechanisms. To
 **Explicit exceptions** — these stay hard-coded in px on purpose, don't sweep them:
 
 - `text-[10px] uppercase tracking-eyebrow` micro-labels (FlashBanner notice tag, error eyebrows, SessionDetail stat headers, etc.) — intentional editorial chrome, meant to be tiny.
-- The `text-[11px]` overlay chips in `Practice.tsx` that sit on the webcam feed — overlay UI on video, sized to the video not the page.
 
 **Don't add content to fill empty space on wide monitors.** The brand position (`frontend/.impeccable.md`: "Empty space is content") is that the scaling pass exists to make existing content feel intentionally sized at 1920+, not to add density, sidebars, or marketing tiles.
 

@@ -28,12 +28,15 @@ import {
   YAxis,
 } from 'recharts';
 
-import { CameraPreview } from '../components/CameraPreview';
 import PageMorphTransition from '../components/PageMorphTransition';
-import QuestionPlayer from '../components/QuestionPlayer';
+import { PracticeFooter } from '../components/PracticeFooter';
+import { QuitConfirmDialog } from '../components/QuitConfirmDialog';
 import ScoreDimensions from '../components/ScoreDimensions';
 import StructuredFeedback from '../components/StructuredFeedback';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
+import { CameraColumn } from '../components/practice/CameraColumn';
+import { QuestionColumn } from '../components/practice/QuestionColumn';
+import { TranscriptColumn } from '../components/practice/TranscriptColumn';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnalyzer';
@@ -41,6 +44,7 @@ import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError } from '../lib/api';
+import { cn } from '../lib/utils';
 import { fillerBreakdown, tokenizeTranscript } from '../lib/fillerWords';
 import { getReplayFaceLandmarker } from '../lib/faceLandmarker';
 import type { InterviewSummary } from '../lib/faceHeuristics';
@@ -76,17 +80,6 @@ const SCORE_LABELS: Record<keyof Scores, string> = {
   depth: 'Depth',
   delivery: 'Delivery',
 };
-
-function Spinner({ size = 18 }: { size?: number }) {
-  return (
-    <span
-      role="status"
-      aria-label="Loading"
-      className="inline-block animate-spin rounded-full border-2 border-current border-t-transparent"
-      style={{ width: size, height: size }}
-    />
-  );
-}
 
 function getScoreEntries(scores: Scores | null) {
   if (scores == null) return [];
@@ -125,40 +118,6 @@ function computeAverageScores(turns: ReplayTurnResult[]):
       value: agg ? agg.sum / agg.count : null,
     };
   });
-}
-
-function getAnalyzerStatusLabel(status: AnalyzerDiagnostics['status']) {
-  switch (status) {
-    case 'warming':
-      return 'warming model';
-    case 'ready':
-      return 'ready';
-    case 'running':
-      return 'tracking face';
-    case 'no-face':
-      return 'no face detected';
-    case 'error':
-      return 'analyzer error';
-    default:
-      return 'idle';
-  }
-}
-
-function getAnalyzerStatusClass(status: AnalyzerDiagnostics['status']) {
-  switch (status) {
-    case 'running':
-      return 'bg-green-600';
-    case 'no-face':
-      return 'bg-amber-500';
-    case 'error':
-      return 'bg-red-500';
-    case 'warming':
-      return 'bg-blue-500';
-    case 'ready':
-      return 'bg-accent';
-    default:
-      return 'bg-text-subtle';
-  }
 }
 
 function buildReplayInsights(result: ReplayTurnResult): Insight[] {
@@ -685,6 +644,8 @@ function PracticeSession({
   const [resultsDirection, setResultsDirection] = useState<'forward' | 'back'>('forward');
   const [endingTurn, setEndingTurn] = useState(false);
   const [replayKey, setReplayKey] = useState(0);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [showQuitConfirm, setShowQuitConfirm] = useState(false);
 
   useEffect(() => {
     turnResultsRef.current = turnResults;
@@ -874,6 +835,33 @@ function PracticeSession({
     setReplayKey((k) => k + 1);
   }
 
+  function handleEnd() {
+    if (recorder.state !== 'recording') return;
+    if (autoSubmit) setEndingTurn(true);
+    recorder.stop();
+  }
+
+  function handleRestart() {
+    if (recorder.state !== 'idle') recorder.stop();
+    recorder.reset();
+    setTurnError(null);
+    setEndingTurn(false);
+    setReplayKey((k) => k + 1);
+  }
+
+  function handleAudioEnded() {
+    if (recorder.state !== 'idle') return;
+    recorder.start().catch((err: Error) => {
+      setTurnError(`Could not start recording: ${err.message}`);
+    });
+  }
+
+  function handleQuit() {
+    if (recorder.state !== 'idle') recorder.stop();
+    recorder.reset();
+    navigate('/');
+  }
+
   function goToResultsStep(next: number) {
     if (next === resultsStep) return;
     setResultsDirection(next > resultsStep ? 'forward' : 'back');
@@ -881,189 +869,114 @@ function PracticeSession({
     setResultsStepKey((k) => k + 1);
   }
 
+  // Interview phase deliberately hides TopBar + ScoreDimensions for a
+  // focused recording mode; both reappear in Results.
+  const submitting = submittingTurn || endingTurn || retryingTurn;
+  const spinnerMessage = retryingTurn
+    ? 'Retrying…'
+    : currentQ && currentQ.num >= 2
+      ? 'Scoring — up to 40 seconds'
+      : 'Analyzing — 5–10 seconds';
+  const showPreview =
+    !autoSubmit && recorder.state === 'stopped' && recorder.audioUrl != null;
+  const previousTurn = turnResults.length > 0 ? turnResults[0] : null;
+
   return (
-    <div className="min-h-screen flex flex-col bg-surface text-text">
-      <TopBar
-        nav={
-          <>
-            <TopBarNavLink to="/" matchPatterns={['/practice']}>
-              Practice
-            </TopBarNavLink>
-            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-              History
-            </TopBarNavLink>
-            <TopBarNavLink to="/personalize">
-              Personalize
-            </TopBarNavLink>
-          </>
-        }
-        rightSlot={<UserButton />}
-      />
+    <div className="flex min-h-screen flex-col bg-surface text-text">
+      {isDone && (
+        <TopBar
+          nav={
+            <>
+              <TopBarNavLink to="/" matchPatterns={['/practice']}>
+                Practice
+              </TopBarNavLink>
+              <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
+                History
+              </TopBarNavLink>
+              <TopBarNavLink to="/personalize">
+                Personalize
+              </TopBarNavLink>
+            </>
+          }
+          rightSlot={<UserButton />}
+        />
+      )}
 
       <main className="flex-1">
         {!isDone && currentQ && (
-          <div className="mx-auto w-full max-w-[80rem] 2xl:max-w-[88rem] px-8 py-16 md:px-16">
-            <div className="max-w-[70rem]">
-              <QuestionPlayer
-                key={replayKey}
-                question={currentQ.text}
-                audioUrl={currentQ.audioUrl}
-                questionNum={currentQ.num}
-                showQuestion={showQuestionText}
-                onToggleShowQuestion={() => setShowQuestionText((v) => !v)}
-                onEnded={() => {
-                  if (recorder.state !== 'idle') return;
-                  recorder.start().catch((err: Error) => {
-                    setTurnError(`Could not start recording: ${err.message}`);
-                  });
-                }}
-              />
-
-              {recorder.videoStream && (
-                <div className="anim-crossfade mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
-                  <CameraPreview stream={recorder.videoStream} />
-                  <div className="rounded-2xl bg-surface-raised p-5">
-                    <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-                      Analyzer status
-                    </p>
-                    <div className="mb-4 flex items-center gap-3 text-sm text-text">
-                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${getAnalyzerStatusClass(analyzer.diagnostics.status)}`} />
-                      <span>{getAnalyzerStatusLabel(analyzer.diagnostics.status)}</span>
-                    </div>
-                    <div className="space-y-2 text-sm text-text-muted">
-                      <p>Frames processed: {analyzer.diagnostics.framesProcessed}</p>
-                      <p>Face frames: {analyzer.diagnostics.faceFrames}</p>
-                      <p>Model ready: {analyzer.isReady ? 'yes' : 'not yet'}</p>
-                      {analyzer.diagnostics.lastSummary && (
-                        <>
-                          <p>Live eye contact: {analyzer.diagnostics.lastSummary.eye_contact_score}/100</p>
-                          <p>Live expression: {analyzer.diagnostics.lastSummary.expression_score}/100</p>
-                        </>
-                      )}
-                      {analyzer.diagnostics.initError && (
-                        <p className="text-red-600">Init error: {analyzer.diagnostics.initError}</p>
-                      )}
-                      {!analyzer.diagnostics.initError && analyzer.diagnostics.framesProcessed === 0 && (
-                        <p>Waiting for the analyzer to accumulate enough live frames for delivery scoring.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
+          <div className="flex h-screen w-full flex-col bg-surface">
+            <div
+              className={cn(
+                'flex-1 overflow-y-auto min-[900px]:overflow-hidden',
+                'flex flex-col min-[900px]:grid min-[900px]:h-full',
+                showTranscript && previousTurn
+                  ? 'min-[900px]:grid-cols-[25%_50%_25%]'
+                  : 'min-[900px]:grid-cols-[33%_67%]',
               )}
+            >
+              <QuestionColumn
+                questionText={currentQ.text}
+                audioUrl={currentQ.audioUrl}
+                showQuestionText={showQuestionText}
+                replayKey={replayKey}
+                onAudioEnded={handleAudioEnded}
+              />
+              <CameraColumn
+                videoStream={recorder.videoStream}
+                recorderState={recorder.state}
+                replayUrl={recorder.replayUrl}
+                audioUrl={recorder.audioUrl}
+                showPreview={showPreview}
+                submitting={submitting}
+                onSubmitPreview={handleSubmitTurn}
+                onReRecordPreview={handleReRecord}
+              />
+              {showTranscript && previousTurn && (
+                <TranscriptColumn
+                  question={previousTurn.question}
+                  transcript={previousTurn.transcript}
+                  onClose={() => setShowTranscript(false)}
+                />
+              )}
+            </div>
 
-              <div className="mt-10 space-y-4">
-                <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
-                  Your answer
+            {turnError && (
+              <div className="border-t border-border bg-surface-raised px-6 py-3 min-[900px]:px-10">
+                <p role="alert" className="text-sm text-text-muted">
+                  <span className="mr-2 text-eyebrow uppercase tracking-eyebrow text-text">Error</span>
+                  {turnError}
                 </p>
-
-                {(submittingTurn || endingTurn || retryingTurn) ? (
-                  <div
-                    role="status"
-                    aria-live="polite"
-                    className="anim-crossfade flex items-center gap-3 py-4 text-text-muted"
-                  >
-                    <Spinner size={20} />
-                    <p className="text-sm">
-                      {retryingTurn
-                        ? 'The model briefly rejected the request. Retrying…'
-                        : currentQ.num >= 2
-                          ? 'Scoring your interview — this can take up to 40 seconds.'
-                          : 'Analyzing your response — usually takes 5–10 seconds.'}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {recorder.state === 'idle' && (
-                      <p className="anim-crossfade text-sm text-text-subtle">
-                        Recording will start automatically when the question finishes.
-                      </p>
-                    )}
-
-                    {recorder.state === 'recording' && (
-                      <div className="anim-crossfade flex flex-wrap items-center gap-4">
-                        <span className="flex items-center gap-2 text-sm text-text">
-                          <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                          Recording
-                        </span>
-                        <FlowHoverButton
-                          variant="dark"
-                          type="button"
-                          onClick={() => {
-                            if (autoSubmit) setEndingTurn(true);
-                            recorder.stop();
-                          }}
-                        >
-                          {autoSubmit ? 'End answer' : 'Stop recording'}
-                        </FlowHoverButton>
-                      </div>
-                    )}
-
-                    {!autoSubmit && recorder.state === 'stopped' && recorder.audioUrl && (
-                      <div className="anim-crossfade space-y-4">
-                        {recorder.replayUrl ? (
-                          <div className="aspect-video w-full max-w-md overflow-hidden rounded-2xl bg-surface-sunken">
-                            <video src={recorder.replayUrl} controls className="h-full w-full object-cover" />
-                          </div>
-                        ) : (
-                          <audio src={recorder.audioUrl} controls className="w-full max-w-md" />
-                        )}
-                        <div className="flex flex-wrap gap-3">
-                          <FlowHoverButton
-                            type="button"
-                            onClick={handleSubmitTurn}
-                          >
-                            Submit answer
-                          </FlowHoverButton>
-                          <FlowHoverButton
-                            variant="dark"
-                            type="button"
-                            onClick={handleReRecord}
-                          >
-                            Re-record
-                          </FlowHoverButton>
-                        </div>
-                        <p className="text-xs text-text-subtle">
-                          {analyzer.diagnostics.framesProcessed > 0
-                            ? `Delivery capture armed: ${analyzer.diagnostics.framesProcessed} analyzer frames processed.`
-                            : 'No analyzer frames were processed for this take, so delivery may come back unavailable.'}
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {turnError && (
-                  <div className="space-y-3">
-                    <p role="alert" className="text-sm text-text-muted">
-                      <span className="mr-2 text-[10px] uppercase tracking-eyebrow text-text">Error</span>
-                      {turnError}
-                    </p>
-                    {autoSubmit && recorder.audioBlob && (
-                      <FlowHoverButton
-                        type="button"
-                        onClick={() => { void handleSubmitTurn(); }}
-                      >
-                        Retry submission
-                      </FlowHoverButton>
-                    )}
+                {autoSubmit && recorder.audioBlob && (
+                  <div className="mt-2">
+                    <FlowHoverButton type="button" onClick={() => { void handleSubmitTurn(); }}>
+                      Retry submission
+                    </FlowHoverButton>
                   </div>
                 )}
               </div>
+            )}
 
-              {turnResults.length > 0 && (
-                <div
-                  key={`transcript-${turnResults.length}`}
-                  className="anim-crossfade mt-8 rounded-lg bg-surface-raised p-4"
-                >
-                  <p className="mb-1 text-[11px] uppercase tracking-eyebrow text-text-subtle">
-                    Transcript (turn {turnResults.length})
-                  </p>
-                  <p className="text-xs leading-relaxed text-text-muted">
-                    {turnResults.at(-1)!.transcript}
-                  </p>
-                </div>
-              )}
-            </div>
+            <PracticeFooter
+              turnNum={currentQ.num}
+              recorderState={recorder.state}
+              showQuestionText={showQuestionText}
+              showTranscript={showTranscript}
+              canShowTranscript={previousTurn != null}
+              submitting={submitting}
+              spinnerMessage={spinnerMessage}
+              canEnd={recorder.state === 'recording'}
+              onEnd={handleEnd}
+              onRestart={handleRestart}
+              onToggleQuestion={() => setShowQuestionText((v) => !v)}
+              onToggleTranscript={() => setShowTranscript((v) => !v)}
+              onQuit={() => setShowQuitConfirm(true)}
+            />
+
+            <QuitConfirmDialog
+              open={showQuitConfirm}
+              onCancel={() => setShowQuitConfirm(false)}
+              onConfirm={handleQuit}
+            />
           </div>
         )}
 
@@ -1223,7 +1136,9 @@ function PracticeSession({
         })()}
       </main>
 
-      <ScoreDimensions tagline="One opening question. One follow-up. Then the scores." />
+      {isDone && (
+        <ScoreDimensions tagline="One opening question. One follow-up. Then the scores." />
+      )}
       {transitioning && (
         <PageMorphTransition key={transitionKey} />
       )}
