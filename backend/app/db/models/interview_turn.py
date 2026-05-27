@@ -87,9 +87,9 @@ class InterviewTurn(Base):
     delivery_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     # Raw webcam-analytics summary the browser posts with each turn.
     # Same shape as `backend/interview_feedback_latest.json` (frames_processed,
-    # face_visible_pct, eye_contact_score, expression_score, overall_interview_score,
-    # band labels, best-frame peaks, coaching_tip, notes[]). Kept as JSONB for
-    # later analytics; not read back into feedback today.
+    # face_visible_pct, eye_contact_score, expression_score, posture_score,
+    # tilt/posture coverage, overall_interview_score, band labels,
+    # best-frame peaks, coaching_tip, notes[]). Kept as JSONB for later analytics.
     cv_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     filler_word_count: Mapped[int] = mapped_column(

@@ -74,6 +74,14 @@ const LOOKED_AWAY_EYE_THRESHOLD = 55;
 const POSTURE_HEAD_ALIGNMENT_MIN = 62;
 const POSTURE_VERTICAL_MAX = 0.22;
 const POSTURE_MIDPOINT_MAX = 0.20;
+const POSTURE_TILT_TOLERANCE_DEGREES = 4;
+const POSTURE_TILT_FLAG_DEGREES = 9;
+const POSTURE_TILT_SENSITIVITY = 7.5;
+const POSTURE_SCORE_MIN = 68;
+const POSTURE_HEAD_ALIGNMENT_WEIGHT = 0.30;
+const POSTURE_VERTICAL_WEIGHT = 0.25;
+const POSTURE_MIDPOINT_WEIGHT = 0.20;
+const POSTURE_TILT_WEIGHT = 0.25;
 const LOW_ENERGY_SMILE_MIN = 40;
 const LOW_ENERGY_MOUTH_OPEN_MAX = 0.15;
 
@@ -127,6 +135,9 @@ export interface EyeContactResult {
   headAlignmentScore: number;
   verticalPosture: number;
   midpointOffset: number;
+  postureScore: number;
+  headTiltDegrees: number;
+  headTiltScore: number;
 }
 
 /**
@@ -151,6 +162,14 @@ export function scoreEyeContact(points: Point[]): EyeContactResult {
   const rightEyeWidth = distance(rightOuter, rightInner);
   const faceWidth = distance(faceLeft, faceRight);
   const faceHeight = distance(forehead, chin);
+  const headTiltDegrees = Math.abs(
+    (Math.atan2(
+      Math.abs(rightOuter[1] - leftOuter[1]),
+      Math.abs(rightOuter[0] - leftOuter[0]),
+    ) *
+      180) /
+      Math.PI,
+  );
 
   // Parity note: Python uses `min(right_outer[0] - right_inner[0], -1)`
   // for the denominator so the ratio stays negative, then takes abs().
@@ -181,14 +200,24 @@ export function scoreEyeContact(points: Point[]): EyeContactResult {
 
   const headAlignmentScore = 100 - headYawOffset * HEAD_ALIGNMENT_SENSITIVITY;
   const midpointScore = 100 - midpointOffset * MIDPOINT_SENSITIVITY;
-  const postureScore = 100 - verticalPosture * POSTURE_SENSITIVITY;
+  const verticalPostureScore = 100 - verticalPosture * POSTURE_SENSITIVITY;
+  const headTiltScore =
+    100 -
+    Math.max(0, headTiltDegrees - POSTURE_TILT_TOLERANCE_DEGREES) *
+      POSTURE_TILT_SENSITIVITY;
+  const postureScore = clamp(
+    clamp(headAlignmentScore) * POSTURE_HEAD_ALIGNMENT_WEIGHT +
+      clamp(verticalPostureScore) * POSTURE_VERTICAL_WEIGHT +
+      clamp(midpointScore) * POSTURE_MIDPOINT_WEIGHT +
+      clamp(headTiltScore) * POSTURE_TILT_WEIGHT,
+  );
 
   const score = clamp(
     clamp(leftCenterScore) * EYE_LEFT_CENTER_WEIGHT +
       clamp(rightCenterScore) * EYE_RIGHT_CENTER_WEIGHT +
       clamp(headAlignmentScore) * EYE_HEAD_ALIGNMENT_WEIGHT +
       clamp(midpointScore) * EYE_MIDPOINT_WEIGHT +
-      clamp(postureScore) * EYE_POSTURE_WEIGHT +
+      clamp(verticalPostureScore) * EYE_POSTURE_WEIGHT +
       clamp(eyeSizeBalance) * EYE_BALANCE_WEIGHT,
   );
 
@@ -204,6 +233,9 @@ export function scoreEyeContact(points: Point[]): EyeContactResult {
     headAlignmentScore: clamp(headAlignmentScore),
     verticalPosture,
     midpointOffset,
+    postureScore,
+    headTiltDegrees,
+    headTiltScore: clamp(headTiltScore),
   };
 }
 
@@ -275,7 +307,15 @@ function guidanceText(
   expressionScore: number,
   eyeLabel: string,
   expressionLabel: string,
+  postureScore: number,
+  headTiltDegrees: number,
 ): string {
+  if (headTiltDegrees > POSTURE_TILT_FLAG_DEGREES) {
+    return 'Level your head with the camera so your posture reads more composed.';
+  }
+  if (postureScore < POSTURE_SCORE_MIN) {
+    return 'Sit upright and keep your head centered while you answer.';
+  }
   if (eyeScore < 45) return 'Look a bit closer to the camera and keep your head centered.';
   if (expressionScore < 45) return 'Add a slight smile and keep your eyes more open to look engaged.';
   if (eyeLabel.includes('drifting')) return 'Your gaze is close. Try holding it on the lens a little longer.';
@@ -288,7 +328,8 @@ function guidanceText(
 function summaryGuidance(
   faceVisiblePct: number,
   lookedAwayPct: number,
-  postureDriftPct: number,
+  badPosturePct: number,
+  tiltedPct: number,
   lowEnergyPct: number,
   fallback: string,
 ): string {
@@ -306,8 +347,11 @@ function summaryGuidance(
       text: 'Add a little facial warmth and energy while you explain the answer.',
     },
     {
-      pct: postureDriftPct,
-      text: 'Keep your head centered and posture steady through the full answer.',
+      pct: Math.max(badPosturePct, tiltedPct),
+      text:
+        tiltedPct > badPosturePct
+          ? 'Keep your head level with the camera instead of tilting through the answer.'
+          : 'Sit upright and keep your head centered through the full answer.',
     },
   ].sort((a, b) => b.pct - a.pct)[0];
 
@@ -325,20 +369,30 @@ export interface InterviewSummary {
   face_visible_pct: number;
   eye_contact_score: number;
   expression_score: number;
+  posture_score: number;
   overall_interview_score: number;
   eye_contact_stability: number;
   expression_stability: number;
+  posture_stability: number;
   looked_away_pct: number;
   posture_drift_pct: number;
+  bad_posture_pct: number;
+  tilted_pct: number;
   low_energy_pct: number;
   longest_looked_away_streak_frames: number;
   longest_posture_drift_streak_frames: number;
+  longest_bad_posture_streak_frames: number;
+  longest_tilted_streak_frames: number;
   longest_low_energy_streak_frames: number;
   eye_contact_rating: string;
   expression_rating: string;
+  posture_rating: string;
   interview_rating: string;
   best_eye_contact_frame_score: number;
   best_expression_frame_score: number;
+  best_posture_frame_score: number;
+  head_tilt_degrees_avg: number;
+  head_tilt_degrees_max: number;
   coaching_tip: string;
   notes: string[];
 }
@@ -355,20 +409,27 @@ export class FrameSummary {
   private detectedFaceFrames = 0;
   private eyeEma = EMA_SEED;
   private expressionEma = EMA_SEED;
+  private postureEma = EMA_SEED;
   private overallEma = EMA_SEED;
   private bestEye = 0;
   private bestExpression = 0;
+  private bestPosture = 0;
   private lastGuidance = 'Move into frame so your face is visible.';
   private eyeSamples: number[] = [];
   private expressionSamples: number[] = [];
+  private postureSamples: number[] = [];
+  private headTiltSamples: number[] = [];
   private lookedAwayFrames = 0;
   private postureDriftFrames = 0;
+  private tiltedFrames = 0;
   private lowEnergyFrames = 0;
   private currentLookedAwayStreak = 0;
   private currentPostureDriftStreak = 0;
+  private currentTiltedStreak = 0;
   private currentLowEnergyStreak = 0;
   private longestLookedAwayStreak = 0;
   private longestPostureDriftStreak = 0;
+  private longestTiltedStreak = 0;
   private longestLowEnergyStreak = 0;
 
   private smooth(current: number, next: number): number {
@@ -378,6 +439,7 @@ export class FrameSummary {
   private resetIssueStreaks(): void {
     this.currentLookedAwayStreak = 0;
     this.currentPostureDriftStreak = 0;
+    this.currentTiltedStreak = 0;
     this.currentLowEnergyStreak = 0;
   }
 
@@ -390,6 +452,7 @@ export class FrameSummary {
     if (!points) {
       this.eyeEma = this.smooth(this.eyeEma, NO_FACE_TARGET);
       this.expressionEma = this.smooth(this.expressionEma, NO_FACE_TARGET);
+      this.postureEma = this.smooth(this.postureEma, NO_FACE_TARGET);
       this.overallEma = this.smooth(this.overallEma, NO_FACE_TARGET);
       this.lastGuidance = 'Center your face in the camera to begin interview scoring.';
       this.resetIssueStreaks();
@@ -403,14 +466,21 @@ export class FrameSummary {
 
     this.eyeEma = this.smooth(this.eyeEma, eye.score);
     this.expressionEma = this.smooth(this.expressionEma, expr.score);
+    this.postureEma = this.smooth(this.postureEma, eye.postureScore);
     this.overallEma = this.smooth(this.overallEma, overall);
     this.bestEye = Math.max(this.bestEye, eye.score);
     this.bestExpression = Math.max(this.bestExpression, expr.score);
+    this.bestPosture = Math.max(this.bestPosture, eye.postureScore);
     this.eyeSamples.push(this.eyeEma);
     this.expressionSamples.push(this.expressionEma);
+    this.postureSamples.push(this.postureEma);
+    this.headTiltSamples.push(eye.headTiltDegrees);
 
     const lookedAway = this.eyeEma < LOOKED_AWAY_EYE_THRESHOLD;
-    const postureDrift =
+    const tilted = eye.headTiltDegrees > POSTURE_TILT_FLAG_DEGREES;
+    const badPosture =
+      this.postureEma < POSTURE_SCORE_MIN ||
+      tilted ||
       eye.headAlignmentScore < POSTURE_HEAD_ALIGNMENT_MIN ||
       eye.verticalPosture > POSTURE_VERTICAL_MAX ||
       eye.midpointOffset > POSTURE_MIDPOINT_MAX;
@@ -429,7 +499,7 @@ export class FrameSummary {
       this.currentLookedAwayStreak = 0;
     }
 
-    if (postureDrift) {
+    if (badPosture) {
       this.postureDriftFrames += 1;
       this.currentPostureDriftStreak += 1;
       this.longestPostureDriftStreak = Math.max(
@@ -438,6 +508,17 @@ export class FrameSummary {
       );
     } else {
       this.currentPostureDriftStreak = 0;
+    }
+
+    if (tilted) {
+      this.tiltedFrames += 1;
+      this.currentTiltedStreak += 1;
+      this.longestTiltedStreak = Math.max(
+        this.longestTiltedStreak,
+        this.currentTiltedStreak,
+      );
+    } else {
+      this.currentTiltedStreak = 0;
     }
 
     if (lowEnergy) {
@@ -456,6 +537,8 @@ export class FrameSummary {
       this.expressionEma,
       eye.label,
       expr.label,
+      this.postureEma,
+      eye.headTiltDegrees,
     );
   }
 
@@ -464,20 +547,27 @@ export class FrameSummary {
     this.detectedFaceFrames = 0;
     this.eyeEma = EMA_SEED;
     this.expressionEma = EMA_SEED;
+    this.postureEma = EMA_SEED;
     this.overallEma = EMA_SEED;
     this.bestEye = 0;
     this.bestExpression = 0;
+    this.bestPosture = 0;
     this.lastGuidance = 'Move into frame so your face is visible.';
     this.eyeSamples = [];
     this.expressionSamples = [];
+    this.postureSamples = [];
+    this.headTiltSamples = [];
     this.lookedAwayFrames = 0;
     this.postureDriftFrames = 0;
+    this.tiltedFrames = 0;
     this.lowEnergyFrames = 0;
     this.currentLookedAwayStreak = 0;
     this.currentPostureDriftStreak = 0;
+    this.currentTiltedStreak = 0;
     this.currentLowEnergyStreak = 0;
     this.longestLookedAwayStreak = 0;
     this.longestPostureDriftStreak = 0;
+    this.longestTiltedStreak = 0;
     this.longestLowEnergyStreak = 0;
   }
 
@@ -491,37 +581,57 @@ export class FrameSummary {
     const round1 = (n: number) => Math.round(n * 10) / 10;
     const lookedAwayPct = percentage(this.lookedAwayFrames, this.detectedFaceFrames);
     const postureDriftPct = percentage(this.postureDriftFrames, this.detectedFaceFrames);
+    const tiltedPct = percentage(this.tiltedFrames, this.detectedFaceFrames);
     const lowEnergyPct = percentage(this.lowEnergyFrames, this.detectedFaceFrames);
+    const headTiltAvg =
+      this.headTiltSamples.length > 0
+        ? this.headTiltSamples.reduce((sum, value) => sum + value, 0) /
+          this.headTiltSamples.length
+        : 0;
+    const headTiltMax =
+      this.headTiltSamples.length > 0 ? Math.max(...this.headTiltSamples) : 0;
 
     return {
       frames_processed: this.frameCount,
       face_visible_pct: round1(facePresence),
       eye_contact_score: round1(this.eyeEma),
       expression_score: round1(this.expressionEma),
+      posture_score: round1(this.postureEma),
       overall_interview_score: round1(this.overallEma),
       eye_contact_stability: round1(scoreStability(this.eyeSamples)),
       expression_stability: round1(scoreStability(this.expressionSamples)),
+      posture_stability: round1(scoreStability(this.postureSamples)),
       looked_away_pct: round1(lookedAwayPct),
       posture_drift_pct: round1(postureDriftPct),
+      bad_posture_pct: round1(postureDriftPct),
+      tilted_pct: round1(tiltedPct),
       low_energy_pct: round1(lowEnergyPct),
       longest_looked_away_streak_frames: this.longestLookedAwayStreak,
       longest_posture_drift_streak_frames: this.longestPostureDriftStreak,
+      longest_bad_posture_streak_frames: this.longestPostureDriftStreak,
+      longest_tilted_streak_frames: this.longestTiltedStreak,
       longest_low_energy_streak_frames: this.longestLowEnergyStreak,
       eye_contact_rating: scoreBand(this.eyeEma),
       expression_rating: scoreBand(this.expressionEma),
+      posture_rating: scoreBand(this.postureEma),
       interview_rating: scoreBand(this.overallEma),
       best_eye_contact_frame_score: round1(this.bestEye),
       best_expression_frame_score: round1(this.bestExpression),
+      best_posture_frame_score: round1(this.bestPosture),
+      head_tilt_degrees_avg: round1(headTiltAvg),
+      head_tilt_degrees_max: round1(headTiltMax),
       coaching_tip: summaryGuidance(
         facePresence,
         lookedAwayPct,
         postureDriftPct,
+        tiltedPct,
         lowEnergyPct,
         this.lastGuidance,
       ),
       notes: [
         'Eye contact uses MediaPipe face and iris landmarks as a webcam-based gaze proxy.',
         'Expression scoring uses mouth width, eye openness, and brow relaxation as engagement cues.',
+        'Posture scoring uses head tilt, face centering, and vertical head position as webcam posture cues.',
         'This is still a heuristic practice tool, not a validated interview or hiring assessment.',
       ],
     };

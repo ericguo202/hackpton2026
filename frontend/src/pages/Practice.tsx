@@ -216,6 +216,16 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
         detail: `Expression scored ${result.cvSummary.expression_score}/100. A small smile and slightly more open eyes will read as more engaged.`,
       });
     }
+    if (
+      result.cvSummary.posture_score < 68 ||
+      result.cvSummary.bad_posture_pct >= 12 ||
+      result.cvSummary.tilted_pct >= 12
+    ) {
+      insights.push({
+        title: 'Fix posture drift',
+        detail: `Posture scored ${result.cvSummary.posture_score}/100 with ${result.cvSummary.bad_posture_pct}% bad-posture frames and ${result.cvSummary.tilted_pct}% tilted frames. Sit upright and keep your head level with the camera.`,
+      });
+    }
   } else {
     insights.push({
       title: 'Delivery score unavailable',
@@ -938,6 +948,9 @@ function PracticeSession({
                         <>
                           <p>Live eye contact: {analyzer.diagnostics.lastSummary.eye_contact_score}/100</p>
                           <p>Live expression: {analyzer.diagnostics.lastSummary.expression_score}/100</p>
+                          <p>Live posture: {analyzer.diagnostics.lastSummary.posture_score}/100</p>
+                          <p>Head tilt: {analyzer.diagnostics.lastSummary.head_tilt_degrees_avg} deg avg</p>
+                          <p>Bad posture: {analyzer.diagnostics.lastSummary.bad_posture_pct}%</p>
                         </>
                       )}
                       {analyzer.diagnostics.initError && (

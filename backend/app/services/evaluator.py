@@ -40,6 +40,8 @@ CALIBRATED_EXPRESSION_BAD = 54.7
 CALIBRATED_EXPRESSION_GOOD = 66.4
 CALIBRATED_OVERALL_BAD = 50.0
 CALIBRATED_OVERALL_GOOD = 69.4
+CALIBRATED_POSTURE_BAD = 58.0
+CALIBRATED_POSTURE_GOOD = 82.0
 
 
 def _truncate_to(limit: int, *, ellipsis: bool) -> Callable[[Any], Any]:
@@ -183,17 +185,25 @@ def _compute_delivery_score(cv_summary: dict) -> int:
     overall = _summary_float(cv_summary, "overall_interview_score", 0.0)
     eye = _summary_float(cv_summary, "eye_contact_score", overall)
     expression = _summary_float(cv_summary, "expression_score", overall)
+    posture = _summary_float(cv_summary, "posture_score", overall)
     face_visible = _summary_float(cv_summary, "face_visible_pct", 100.0)
     eye_stability = _summary_float(cv_summary, "eye_contact_stability", 100.0)
     expression_stability = _summary_float(cv_summary, "expression_stability", 100.0)
+    posture_stability = _summary_float(cv_summary, "posture_stability", 100.0)
     looked_away_pct = _summary_float(cv_summary, "looked_away_pct", 0.0)
     posture_drift_pct = _summary_float(cv_summary, "posture_drift_pct", 0.0)
+    bad_posture_pct = _summary_float(cv_summary, "bad_posture_pct", posture_drift_pct)
+    tilted_pct = _summary_float(cv_summary, "tilted_pct", 0.0)
     low_energy_pct = _summary_float(cv_summary, "low_energy_pct", 0.0)
     looked_away_streak = _summary_float(
         cv_summary, "longest_looked_away_streak_frames", 0.0
     )
     posture_streak = _summary_float(
-        cv_summary, "longest_posture_drift_streak_frames", 0.0
+        cv_summary, "longest_bad_posture_streak_frames",
+        _summary_float(cv_summary, "longest_posture_drift_streak_frames", 0.0),
+    )
+    tilted_streak = _summary_float(
+        cv_summary, "longest_tilted_streak_frames", 0.0
     )
     low_energy_streak = _summary_float(
         cv_summary, "longest_low_energy_streak_frames", 0.0
@@ -211,34 +221,43 @@ def _compute_delivery_score(cv_summary: dict) -> int:
         CALIBRATED_OVERALL_BAD,
         CALIBRATED_OVERALL_GOOD,
     )
+    posture_quality = _normalize_band(
+        posture,
+        CALIBRATED_POSTURE_BAD,
+        CALIBRATED_POSTURE_GOOD,
+    )
     visual_stability = max(
         0.0,
         min(
             100.0,
-            (face_visible * 0.35)
-            + (eye_stability * 0.35)
-            + (expression_stability * 0.30),
+            (face_visible * 0.30)
+            + (eye_stability * 0.30)
+            + (expression_stability * 0.25)
+            + (posture_stability * 0.15),
         ),
     )
 
     calibrated_quality = (
-        (eye_quality * 0.34)
-        + (expression_quality * 0.24)
-        + (overall_quality * 0.22)
-        + (visual_stability * 0.20)
+        (eye_quality * 0.30)
+        + (expression_quality * 0.22)
+        + (overall_quality * 0.18)
+        + (posture_quality * 0.14)
+        + (visual_stability * 0.16)
     )
     raw_quality = (
-        (eye * 0.30)
-        + (expression * 0.25)
-        + (overall * 0.25)
-        + (visual_stability * 0.20)
+        (eye * 0.26)
+        + (expression * 0.22)
+        + (overall * 0.22)
+        + (posture * 0.14)
+        + (visual_stability * 0.16)
     )
     base_score = (calibrated_quality * 0.65) + (raw_quality * 0.35)
 
     # Coverage penalties: how much of the answer felt off, not just whether
     # a weak frame happened to occur.
     base_score -= looked_away_pct * 0.10
-    base_score -= posture_drift_pct * 0.07
+    base_score -= bad_posture_pct * 0.08
+    base_score -= tilted_pct * 0.04
     base_score -= low_energy_pct * 0.10
 
     # Streak penalties: sustained issues should matter more than scattered
@@ -246,9 +265,11 @@ def _compute_delivery_score(cv_summary: dict) -> int:
     if frames > 0:
         looked_away_streak_pct = (looked_away_streak / frames) * 100
         posture_streak_pct = (posture_streak / frames) * 100
+        tilted_streak_pct = (tilted_streak / frames) * 100
         low_energy_streak_pct = (low_energy_streak / frames) * 100
         base_score -= min(8.0, looked_away_streak_pct * 0.12)
-        base_score -= min(6.0, posture_streak_pct * 0.08)
+        base_score -= min(7.0, posture_streak_pct * 0.09)
+        base_score -= min(5.0, tilted_streak_pct * 0.08)
         base_score -= min(8.0, low_energy_streak_pct * 0.12)
 
     # Face visibility matters disproportionately; below this threshold the
@@ -265,6 +286,8 @@ def _delivery_quick_win(cv_summary: dict, delivery_score: int) -> str | None:
     expression = _summary_float(cv_summary, "expression_score", 0.0)
     looked_away_pct = _summary_float(cv_summary, "looked_away_pct", 0.0)
     posture_drift_pct = _summary_float(cv_summary, "posture_drift_pct", 0.0)
+    bad_posture_pct = _summary_float(cv_summary, "bad_posture_pct", posture_drift_pct)
+    tilted_pct = _summary_float(cv_summary, "tilted_pct", 0.0)
     low_energy_pct = _summary_float(cv_summary, "low_energy_pct", 0.0)
 
     if face_visible < 85:
@@ -283,8 +306,8 @@ def _delivery_quick_win(cv_summary: dict, delivery_score: int) -> str | None:
             "add a little facial warmth while you speak",
         ),
         (
-            posture_drift_pct,
-            "keep your head centered and posture steady",
+            max(bad_posture_pct, tilted_pct),
+            "sit upright and keep your head level with the camera",
         ),
     ]
     top_pct, top_tip = max(issue_tips, key=lambda item: item[0])
@@ -330,18 +353,30 @@ def _format_cv_block(cv_summary: dict) -> str:
     eye_rating = cv_summary.get("eye_contact_rating", "")
     expr = cv_summary.get("expression_score", "n/a")
     expr_rating = cv_summary.get("expression_rating", "")
+    posture = cv_summary.get("posture_score", "n/a")
+    posture_rating = cv_summary.get("posture_rating", "")
     overall = cv_summary.get("overall_interview_score", "n/a")
     overall_rating = cv_summary.get("interview_rating", "")
     best_eye = cv_summary.get("best_eye_contact_frame_score", "n/a")
     best_expr = cv_summary.get("best_expression_frame_score", "n/a")
+    best_posture = cv_summary.get("best_posture_frame_score", "n/a")
     eye_stability = cv_summary.get("eye_contact_stability", "n/a")
     expr_stability = cv_summary.get("expression_stability", "n/a")
+    posture_stability = cv_summary.get("posture_stability", "n/a")
     looked_away_pct = cv_summary.get("looked_away_pct", "n/a")
     posture_drift_pct = cv_summary.get("posture_drift_pct", "n/a")
+    bad_posture_pct = cv_summary.get("bad_posture_pct", posture_drift_pct)
+    tilted_pct = cv_summary.get("tilted_pct", "n/a")
     low_energy_pct = cv_summary.get("low_energy_pct", "n/a")
     longest_looked_away = cv_summary.get("longest_looked_away_streak_frames", "n/a")
-    longest_posture = cv_summary.get("longest_posture_drift_streak_frames", "n/a")
+    longest_posture = cv_summary.get(
+        "longest_bad_posture_streak_frames",
+        cv_summary.get("longest_posture_drift_streak_frames", "n/a"),
+    )
+    longest_tilted = cv_summary.get("longest_tilted_streak_frames", "n/a")
     longest_low_energy = cv_summary.get("longest_low_energy_streak_frames", "n/a")
+    head_tilt_avg = cv_summary.get("head_tilt_degrees_avg", "n/a")
+    head_tilt_max = cv_summary.get("head_tilt_degrees_max", "n/a")
     tip = cv_summary.get("coaching_tip", "")
 
     def _tag(rating: str) -> str:
@@ -352,17 +387,24 @@ def _format_cv_block(cv_summary: dict) -> str:
         f"  Face visible: {face_pct}% of frames\n"
         f"  Eye contact score (0-100): {eye}{_tag(eye_rating)}\n"
         f"  Expression score (0-100): {expr}{_tag(expr_rating)}\n"
+        f"  Posture score (0-100): {posture}{_tag(posture_rating)}\n"
         f"  Overall: {overall}{_tag(overall_rating)}\n"
         f"  Best eye-contact frame: {best_eye}\n"
         f"  Best expression frame: {best_expr}\n"
+        f"  Best posture frame: {best_posture}\n"
         f"  Eye-contact stability: {eye_stability}\n"
         f"  Expression stability: {expr_stability}\n"
+        f"  Posture stability: {posture_stability}\n"
         f"  Looked-away coverage: {looked_away_pct}% of analyzed face frames\n"
         f"  Posture-drift coverage: {posture_drift_pct}% of analyzed face frames\n"
+        f"  Bad-posture coverage: {bad_posture_pct}% of analyzed face frames\n"
+        f"  Tilted-head coverage: {tilted_pct}% of analyzed face frames\n"
         f"  Low-energy coverage: {low_energy_pct}% of analyzed face frames\n"
         f"  Longest looked-away streak: {longest_looked_away} frames\n"
-        f"  Longest posture-drift streak: {longest_posture} frames\n"
+        f"  Longest bad-posture streak: {longest_posture} frames\n"
+        f"  Longest tilted-head streak: {longest_tilted} frames\n"
         f"  Longest low-energy streak: {longest_low_energy} frames\n"
+        f"  Avg / max head tilt: {head_tilt_avg} / {head_tilt_max} degrees\n"
         f"  Heuristic coaching hint: \"{tip}\""
     )
 

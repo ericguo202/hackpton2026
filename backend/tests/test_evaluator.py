@@ -397,6 +397,45 @@ def test_compute_delivery_score_penalizes_sustained_issues():
     assert strong_score > weak_score
 
 
+def test_compute_delivery_score_penalizes_tilted_bad_posture():
+    baseline = {
+        "frames_processed": 180,
+        "face_visible_pct": 99.0,
+        "eye_contact_score": 76.0,
+        "expression_score": 70.0,
+        "posture_score": 86.0,
+        "overall_interview_score": 74.0,
+        "eye_contact_stability": 90.0,
+        "expression_stability": 88.0,
+        "posture_stability": 92.0,
+        "looked_away_pct": 4.0,
+        "posture_drift_pct": 4.0,
+        "bad_posture_pct": 4.0,
+        "tilted_pct": 2.0,
+        "low_energy_pct": 5.0,
+        "longest_looked_away_streak_frames": 4,
+        "longest_posture_drift_streak_frames": 4,
+        "longest_bad_posture_streak_frames": 4,
+        "longest_tilted_streak_frames": 2,
+        "longest_low_energy_streak_frames": 5,
+    }
+    tilted = {
+        **baseline,
+        "posture_score": 42.0,
+        "posture_stability": 45.0,
+        "posture_drift_pct": 42.0,
+        "bad_posture_pct": 42.0,
+        "tilted_pct": 38.0,
+        "longest_posture_drift_streak_frames": 76,
+        "longest_bad_posture_streak_frames": 76,
+        "longest_tilted_streak_frames": 64,
+        "head_tilt_degrees_avg": 13.5,
+        "head_tilt_degrees_max": 22.0,
+    }
+
+    assert _compute_delivery_score(tilted) < _compute_delivery_score(baseline)
+
+
 def test_compute_delivery_score_treats_zero_scores_as_real_signal():
     missing_expression = {
         "frames_processed": 120,

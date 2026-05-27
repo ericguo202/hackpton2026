@@ -310,6 +310,14 @@ class InterviewAnalyzer:
     LOWER_LIP = 14
     LEFT_BROW = 105
     RIGHT_BROW = 334
+    POSTURE_TILT_TOLERANCE_DEGREES = 4.0
+    POSTURE_TILT_FLAG_DEGREES = 9.0
+    POSTURE_TILT_SENSITIVITY = 7.5
+    POSTURE_SCORE_MIN = 68.0
+    POSTURE_HEAD_ALIGNMENT_WEIGHT = 0.30
+    POSTURE_VERTICAL_WEIGHT = 0.25
+    POSTURE_MIDPOINT_WEIGHT = 0.20
+    POSTURE_TILT_WEIGHT = 0.25
 
     def __init__(self) -> None:
         self.debug_mode = False
@@ -383,19 +391,26 @@ class InterviewAnalyzer:
         self.detected_face_frames = 0
         self.eye_contact_ema = 50.0
         self.expression_ema = 50.0
+        self.posture_ema = 50.0
         self.overall_ema = 50.0
         self.best_eye_contact = 0.0
         self.best_expression = 0.0
+        self.best_posture = 0.0
         self.eye_contact_samples: list[float] = []
         self.expression_samples: list[float] = []
+        self.posture_samples: list[float] = []
+        self.head_tilt_samples: list[float] = []
         self.looked_away_frames = 0
         self.posture_drift_frames = 0
+        self.tilted_frames = 0
         self.low_energy_frames = 0
         self.current_looked_away_streak = 0
         self.current_posture_drift_streak = 0
+        self.current_tilted_streak = 0
         self.current_low_energy_streak = 0
         self.longest_looked_away_streak = 0
         self.longest_posture_drift_streak = 0
+        self.longest_tilted_streak = 0
         self.longest_low_energy_streak = 0
         self.last_face_box: tuple[int, int, int, int] | None = None
         self.last_landmarks_px: list[tuple[int, int]] = []
@@ -518,6 +533,7 @@ class InterviewAnalyzer:
             self.last_metrics = {"status": "no face"}
             self.eye_contact_ema = self._smooth(self.eye_contact_ema, 15.0)
             self.expression_ema = self._smooth(self.expression_ema, 15.0)
+            self.posture_ema = self._smooth(self.posture_ema, 15.0)
             self.overall_ema = self._smooth(self.overall_ema, 15.0)
             self._reset_issue_streaks()
             self.last_assessment = FrameAssessment(
@@ -544,13 +560,30 @@ class InterviewAnalyzer:
 
         self.eye_contact_ema = self._smooth(self.eye_contact_ema, eye_contact_score)
         self.expression_ema = self._smooth(self.expression_ema, expression_score)
+        self.posture_ema = self._smooth(
+            self.posture_ema,
+            float(self.last_metrics.get("posture_score", 50.0)),
+        )
         self.overall_ema = self._smooth(self.overall_ema, overall_score)
         self.best_eye_contact = max(self.best_eye_contact, eye_contact_score)
         self.best_expression = max(self.best_expression, expression_score)
+        self.best_posture = max(
+            self.best_posture,
+            float(self.last_metrics.get("posture_score", 0.0)),
+        )
         self.eye_contact_samples.append(self.eye_contact_ema)
         self.expression_samples.append(self.expression_ema)
+        self.posture_samples.append(self.posture_ema)
+        self.head_tilt_samples.append(float(self.last_metrics.get("head_tilt_degrees", 0.0)))
 
-        guidance = self._guidance_text(self.eye_contact_ema, self.expression_ema, eye_label, expression_label)
+        guidance = self._guidance_text(
+            self.eye_contact_ema,
+            self.expression_ema,
+            eye_label,
+            expression_label,
+            self.posture_ema,
+            float(self.last_metrics.get("head_tilt_degrees", 0.0)),
+        )
         self.last_assessment = FrameAssessment(
             face_found=True,
             eye_contact_score=self.eye_contact_ema,
@@ -568,6 +601,7 @@ class InterviewAnalyzer:
     def _reset_issue_streaks(self) -> None:
         self.current_looked_away_streak = 0
         self.current_posture_drift_streak = 0
+        self.current_tilted_streak = 0
         self.current_low_energy_streak = 0
 
     def _record_issue_streak(self, issue_key: str, active: bool) -> None:
@@ -595,6 +629,18 @@ class InterviewAnalyzer:
                 self.current_posture_drift_streak = 0
             return
 
+        if issue_key == "tilted":
+            if active:
+                self.tilted_frames += 1
+                self.current_tilted_streak += 1
+                self.longest_tilted_streak = max(
+                    self.longest_tilted_streak,
+                    self.current_tilted_streak,
+                )
+            else:
+                self.current_tilted_streak = 0
+            return
+
         if issue_key == "low_energy":
             if active:
                 self.low_energy_frames += 1
@@ -610,6 +656,7 @@ class InterviewAnalyzer:
         active_issue_keys = {issue["key"] for issue in self.current_issues()}
         self._record_issue_streak("looked_away", "looked_away" in active_issue_keys)
         self._record_issue_streak("posture_drift", "posture_drift" in active_issue_keys)
+        self._record_issue_streak("tilted", "tilted" in active_issue_keys)
         self._record_issue_streak("low_energy", "low_energy" in active_issue_keys)
 
     @staticmethod
@@ -628,7 +675,8 @@ class InterviewAnalyzer:
     def _summary_guidance(
         face_visible_pct: float,
         looked_away_pct: float,
-        posture_drift_pct: float,
+        bad_posture_pct: float,
+        tilted_pct: float,
         low_energy_pct: float,
         fallback: str,
     ) -> str:
@@ -638,7 +686,12 @@ class InterviewAnalyzer:
             [
                 (looked_away_pct, "Hold your gaze closer to the camera lens for longer stretches."),
                 (low_energy_pct, "Add a little facial warmth and energy while you explain the answer."),
-                (posture_drift_pct, "Keep your head centered and posture steady through the full answer."),
+                (
+                    max(bad_posture_pct, tilted_pct),
+                    "Keep your head level with the camera instead of tilting through the answer."
+                    if tilted_pct > bad_posture_pct
+                    else "Sit upright and keep your head centered through the full answer.",
+                ),
             ],
             key=lambda item: item[0],
         )
@@ -700,6 +753,14 @@ class InterviewAnalyzer:
         right_eye_width = self._distance(right_outer, right_inner)
         face_width = self._distance(face_left, face_right)
         face_height = self._distance(forehead, chin)
+        head_tilt_degrees = abs(
+            math.degrees(
+                math.atan2(
+                    abs(right_outer[1] - left_outer[1]),
+                    abs(right_outer[0] - left_outer[0]),
+                )
+            )
+        )
 
         left_gaze_ratio = self._safe_ratio(left_iris[0] - left_outer[0], max(left_inner[0] - left_outer[0], 1))
         right_gaze_ratio = self._safe_ratio(right_iris[0] - right_inner[0], min(right_outer[0] - right_inner[0], -1))
@@ -725,14 +786,24 @@ class InterviewAnalyzer:
 
         head_alignment_score = 100 - (head_yaw_offset * head_sensitivity)
         midpoint_score = 100 - (midpoint_offset * midpoint_sensitivity)
-        posture_score = 100 - (vertical_posture * posture_sensitivity)
+        vertical_posture_score = 100 - (vertical_posture * posture_sensitivity)
+        head_tilt_score = 100 - (
+            max(0.0, head_tilt_degrees - self.POSTURE_TILT_TOLERANCE_DEGREES)
+            * self.POSTURE_TILT_SENSITIVITY
+        )
+        posture_score = clamp(
+            (clamp(head_alignment_score) * self.POSTURE_HEAD_ALIGNMENT_WEIGHT)
+            + (clamp(vertical_posture_score) * self.POSTURE_VERTICAL_WEIGHT)
+            + (clamp(midpoint_score) * self.POSTURE_MIDPOINT_WEIGHT)
+            + (clamp(head_tilt_score) * self.POSTURE_TILT_WEIGHT)
+        )
 
         score = clamp(
             (clamp(left_center_score) * self._tunable_value("eye_left_center_weight"))
             + (clamp(right_center_score) * self._tunable_value("eye_right_center_weight"))
             + (clamp(head_alignment_score) * self._tunable_value("eye_head_alignment_weight"))
             + (clamp(midpoint_score) * self._tunable_value("eye_midpoint_weight"))
-            + (clamp(posture_score) * self._tunable_value("eye_posture_weight"))
+            + (clamp(vertical_posture_score) * self._tunable_value("eye_posture_weight"))
             + (clamp(eye_size_balance) * self._tunable_value("eye_balance_weight"))
         )
 
@@ -743,11 +814,14 @@ class InterviewAnalyzer:
                 "head_yaw_offset": round(head_yaw_offset, 4),
                 "midpoint_offset": round(midpoint_offset, 4),
                 "vertical_posture": round(vertical_posture, 4),
+                "head_tilt_degrees": round(head_tilt_degrees, 2),
                 "eye_size_balance": round(eye_size_balance, 2),
                 "left_center_score": round(clamp(left_center_score), 2),
                 "right_center_score": round(clamp(right_center_score), 2),
                 "head_alignment_score": round(clamp(head_alignment_score), 2),
                 "midpoint_score": round(clamp(midpoint_score), 2),
+                "vertical_posture_score": round(clamp(vertical_posture_score), 2),
+                "head_tilt_score": round(clamp(head_tilt_score), 2),
                 "posture_score": round(clamp(posture_score), 2),
                 "eye_contact_raw_score": round(score, 2),
             }
@@ -835,7 +909,13 @@ class InterviewAnalyzer:
         expression_score: float,
         eye_label: str,
         expression_label: str,
+        posture_score: float,
+        head_tilt_degrees: float,
     ) -> str:
+        if head_tilt_degrees > self.POSTURE_TILT_FLAG_DEGREES:
+            return "Level your head with the camera so your posture reads more composed."
+        if posture_score < self.POSTURE_SCORE_MIN:
+            return "Sit upright and keep your head centered while you answer."
         if eye_contact_score < 45:
             return "Look a bit closer to the camera and keep your head centered."
         if expression_score < 45:
@@ -865,6 +945,8 @@ class InterviewAnalyzer:
         head_alignment = float(self.last_metrics.get("head_alignment_score", 100.0))
         vertical_posture = float(self.last_metrics.get("vertical_posture", 0.0))
         midpoint_offset = float(self.last_metrics.get("midpoint_offset", 0.0))
+        posture_score = float(self.last_metrics.get("posture_score", 100.0))
+        head_tilt_degrees = float(self.last_metrics.get("head_tilt_degrees", 0.0))
         smile_score = float(self.last_metrics.get("smile_score", 0.0))
         mouth_open_ratio = float(self.last_metrics.get("mouth_open_ratio", 0.0))
 
@@ -878,17 +960,39 @@ class InterviewAnalyzer:
                     "severity": clamp(100 - eye_score),
                 }
             )
-        if head_alignment < 62 or vertical_posture > 0.22 or midpoint_offset > 0.20:
+        if head_tilt_degrees > self.POSTURE_TILT_FLAG_DEGREES:
+            issues.append(
+                {
+                    "key": "tilted",
+                    "label": "Head tilted",
+                    "reason": "Your head tilted enough to make your posture look less composed.",
+                    "metric": f"head_tilt={head_tilt_degrees:.1f}deg",
+                    "severity": clamp((head_tilt_degrees - self.POSTURE_TILT_TOLERANCE_DEGREES) * 8),
+                }
+            )
+        if (
+            posture_score < self.POSTURE_SCORE_MIN
+            or head_alignment < 62
+            or vertical_posture > 0.22
+            or midpoint_offset > 0.20
+            or head_tilt_degrees > self.POSTURE_TILT_FLAG_DEGREES
+        ):
             posture_severity = max(
+                clamp(self.POSTURE_SCORE_MIN - posture_score),
                 clamp(72 - head_alignment),
                 clamp(vertical_posture * 180),
                 clamp(midpoint_offset * 220),
+                clamp((head_tilt_degrees - self.POSTURE_TILT_TOLERANCE_DEGREES) * 8),
             )
             posture_metric = f"head_align={head_alignment:.1f}"
-            if clamp(vertical_posture * 180) >= clamp(72 - head_alignment) and clamp(vertical_posture * 180) >= clamp(midpoint_offset * 220):
+            if clamp((head_tilt_degrees - self.POSTURE_TILT_TOLERANCE_DEGREES) * 8) >= posture_severity:
+                posture_metric = f"head_tilt={head_tilt_degrees:.1f}deg"
+            elif clamp(vertical_posture * 180) >= clamp(72 - head_alignment) and clamp(vertical_posture * 180) >= clamp(midpoint_offset * 220):
                 posture_metric = f"vertical_posture={vertical_posture:.3f}"
             elif clamp(midpoint_offset * 220) >= clamp(72 - head_alignment):
                 posture_metric = f"midpoint_offset={midpoint_offset:.3f}"
+            elif clamp(self.POSTURE_SCORE_MIN - posture_score) >= clamp(72 - head_alignment):
+                posture_metric = f"posture_score={posture_score:.1f}"
             issues.append(
                 {
                     "key": "posture_drift",
@@ -956,11 +1060,13 @@ class InterviewAnalyzer:
             f"head_yaw_offset={self.last_metrics.get('head_yaw_offset', 'n/a')}",
             f"midpoint_offset={self.last_metrics.get('midpoint_offset', 'n/a')}",
             f"vertical_posture={self.last_metrics.get('vertical_posture', 'n/a')}",
+            f"head_tilt_degrees={self.last_metrics.get('head_tilt_degrees', 'n/a')}",
             f"eye_size_balance={self.last_metrics.get('eye_size_balance', 'n/a')}",
             f"left_center_score={self.last_metrics.get('left_center_score', 'n/a')}",
             f"right_center_score={self.last_metrics.get('right_center_score', 'n/a')}",
             f"head_alignment_score={self.last_metrics.get('head_alignment_score', 'n/a')}",
             f"midpoint_score={self.last_metrics.get('midpoint_score', 'n/a')}",
+            f"head_tilt_score={self.last_metrics.get('head_tilt_score', 'n/a')}",
             f"posture_score={self.last_metrics.get('posture_score', 'n/a')}",
             f"smile_ratio={self.last_metrics.get('smile_ratio', 'n/a')}",
             f"mouth_open_ratio={self.last_metrics.get('mouth_open_ratio', 'n/a')}",
@@ -1014,37 +1120,56 @@ class InterviewAnalyzer:
             face_presence = (self.detected_face_frames / self.frame_count) * 100
         looked_away_pct = self._percentage(self.looked_away_frames, self.detected_face_frames)
         posture_drift_pct = self._percentage(self.posture_drift_frames, self.detected_face_frames)
+        tilted_pct = self._percentage(self.tilted_frames, self.detected_face_frames)
         low_energy_pct = self._percentage(self.low_energy_frames, self.detected_face_frames)
+        head_tilt_avg = (
+            sum(self.head_tilt_samples) / len(self.head_tilt_samples)
+            if self.head_tilt_samples
+            else 0.0
+        )
+        head_tilt_max = max(self.head_tilt_samples) if self.head_tilt_samples else 0.0
 
         return {
             "frames_processed": self.frame_count,
             "face_visible_pct": round(face_presence, 1),
             "eye_contact_score": round(self.eye_contact_ema, 1),
             "expression_score": round(self.expression_ema, 1),
+            "posture_score": round(self.posture_ema, 1),
             "overall_interview_score": round(self.overall_ema, 1),
             "eye_contact_stability": round(self._score_stability(self.eye_contact_samples), 1),
             "expression_stability": round(self._score_stability(self.expression_samples), 1),
+            "posture_stability": round(self._score_stability(self.posture_samples), 1),
             "looked_away_pct": round(looked_away_pct, 1),
             "posture_drift_pct": round(posture_drift_pct, 1),
+            "bad_posture_pct": round(posture_drift_pct, 1),
+            "tilted_pct": round(tilted_pct, 1),
             "low_energy_pct": round(low_energy_pct, 1),
             "longest_looked_away_streak_frames": self.longest_looked_away_streak,
             "longest_posture_drift_streak_frames": self.longest_posture_drift_streak,
+            "longest_bad_posture_streak_frames": self.longest_posture_drift_streak,
+            "longest_tilted_streak_frames": self.longest_tilted_streak,
             "longest_low_energy_streak_frames": self.longest_low_energy_streak,
             "eye_contact_rating": score_band(self.eye_contact_ema),
             "expression_rating": score_band(self.expression_ema),
+            "posture_rating": score_band(self.posture_ema),
             "interview_rating": score_band(self.overall_ema),
             "best_eye_contact_frame_score": round(self.best_eye_contact, 1),
             "best_expression_frame_score": round(self.best_expression, 1),
+            "best_posture_frame_score": round(self.best_posture, 1),
+            "head_tilt_degrees_avg": round(head_tilt_avg, 1),
+            "head_tilt_degrees_max": round(head_tilt_max, 1),
             "coaching_tip": self._summary_guidance(
                 face_presence,
                 looked_away_pct,
                 posture_drift_pct,
+                tilted_pct,
                 low_energy_pct,
                 self.last_assessment.guidance,
             ),
             "notes": [
                 "Eye contact uses MediaPipe face and iris landmarks as a webcam-based gaze proxy.",
                 "Expression scoring uses mouth width, eye openness, and brow relaxation as engagement cues.",
+                "Posture scoring uses head tilt, face centering, and vertical head position as webcam posture cues.",
                 "This is still a heuristic practice tool, not a validated interview or hiring assessment.",
             ],
         }

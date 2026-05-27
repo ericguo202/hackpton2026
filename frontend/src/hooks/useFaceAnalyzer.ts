@@ -58,6 +58,7 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
   const publishDiagnostics = useCallback((force = false) => {
     publishCounterRef.current += 1;
     if (!force && publishCounterRef.current % 5 !== 0) return;
+    lastSummaryRef.current = summaryRef.current.buildSummary();
     setDiagnostics({
       isReady,
       status: statusRef.current,
@@ -137,6 +138,9 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
           face_visible_pct: diagnostics.lastSummary.face_visible_pct,
           eye_contact_score: diagnostics.lastSummary.eye_contact_score,
           expression_score: diagnostics.lastSummary.expression_score,
+          posture_score: diagnostics.lastSummary.posture_score,
+          bad_posture_pct: diagnostics.lastSummary.bad_posture_pct,
+          tilted_pct: diagnostics.lastSummary.tilted_pct,
           overall_interview_score: diagnostics.lastSummary.overall_interview_score,
         }
       : null;
@@ -221,7 +225,7 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
-  }, [active, stream, isReady]);
+  }, [active, stream, isReady, publishDiagnostics]);
 
   const buildSummary = useCallback((): InterviewSummary | null => {
     const summary = summaryRef.current.buildSummary();
