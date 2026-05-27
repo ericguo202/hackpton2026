@@ -8,7 +8,7 @@ type Props = {
 export default function StructuredFeedback({ feedback, fallback }: Props) {
   if (!feedback) {
     return fallback ? (
-      <p className="text-[15px] leading-7 text-text">{fallback}</p>
+      <p className="text-base leading-7 text-text">{fallback}</p>
     ) : null;
   }
 
@@ -22,7 +22,7 @@ export default function StructuredFeedback({ feedback, fallback }: Props) {
         <p className="mb-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
           Main takeaway
         </p>
-        <p className="text-[15px] leading-7 text-text">{feedback.main_takeaway}</p>
+        <p className="text-base leading-7 text-text">{feedback.main_takeaway}</p>
       </div>
       
       {positiveMoments.length > 0 && (
@@ -34,7 +34,7 @@ export default function StructuredFeedback({ feedback, fallback }: Props) {
             {positiveMoments.map((moment, idx) => (
               <div key={`${moment.transcript_snippet}-${idx}`} className="border-l-2 border-chart-3/55 pl-4">
                 <p className="mb-2 text-sm text-text-muted">You said:</p>
-                <p className="mb-3 text-[15px] leading-7 text-text">
+                <p className="mb-3 text-base leading-7 text-text">
                   &ldquo;{moment.transcript_snippet}&rdquo;
                 </p>
                 <p className="mb-2 text-sm leading-6 text-text-muted">
@@ -60,7 +60,7 @@ export default function StructuredFeedback({ feedback, fallback }: Props) {
             {improvementMoments.map((moment, idx) => (
               <div key={`${moment.transcript_snippet}-${idx}`} className="border-l-2 border-accent/45 pl-4">
                 <p className="mb-2 text-sm text-text-muted">You said:</p>
-                <p className="mb-3 text-[15px] leading-7 text-text">
+                <p className="mb-3 text-base leading-7 text-text">
                   &ldquo;{moment.transcript_snippet}&rdquo;
                 </p>
                 <p className="mb-2 text-sm leading-6 text-text-muted">

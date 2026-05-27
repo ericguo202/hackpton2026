@@ -199,7 +199,7 @@ export default function SessionDetail() {
       />
 
       <main className="flex-1">
-        <div className="w-full max-w-[80rem] mx-auto px-8 md:px-16 py-12 md:py-16">
+        <div className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-8 md:px-16 py-12 md:py-16">
           <div className="mb-10">
             <FlowHoverButton
               variant="dark"

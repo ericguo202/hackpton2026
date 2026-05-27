@@ -67,7 +67,7 @@ export default function AdvancedPanelDrawer({
       <header className="flex items-center justify-between border-b border-border px-5 py-4 shrink-0">
         <p
           id="advanced-panel-title"
-          className="text-eyebrow uppercase tracking-eyebrow text-text-muted text-[13px]"
+          className="text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm"
         >
           Advanced
         </p>

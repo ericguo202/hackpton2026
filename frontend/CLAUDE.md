@@ -60,7 +60,7 @@ Backend exposes `/api/v1/health`, `/api/v1/me`, `/api/v1/onboarding`. Frontend c
 
 ## Design system
 
-Earth-tone editorial palette with serif display + sans body. Everything is wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js` exists, and none should be added**.
+Earth-tone editorial palette unified on **Inter** for all app/display/UI typography (Geist Mono reserved for code). Everything is wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js` exists, and none should be added**.
 
 ### Source of truth
 
@@ -103,7 +103,24 @@ All three app tokens (`--font-sans`, `--font-ui`, `--font-display`) resolve to I
 
 The base `h1..h6` selectors in `index.css` already set `--font-display`, weight 500, tightened letter-spacing, and a responsive `clamp()` for h1/h2. Use semantic heading tags (`<h1>`, `<h2>`, `<h3>`) and let the CSS do the work — applying `font-display` / `font-sans` / `font-ui` in components is rarely needed since all three resolve to Inter.
 
+The h1/h2 clamp upper bounds (`4.5rem` / `2.75rem`) are tuned to keep growing on wide monitors past where root-font scaling alone plateaus — see "Wide-monitor scaling" below for how the three mechanisms interact. Don't lower these caps without understanding the trade-off.
+
 Inter loads from Google Fonts via `@import` in `index.css`. If offline-demo reliability matters, swap to `@fontsource/inter` — the token names don't change.
+
+### Wide-monitor scaling
+
+The system scales up on large external monitors via three coupled mechanisms. Touch all three together when changing anything that affects "how big does X feel on a 4K display":
+
+1. **Root font-size media queries** in `index.css` step `:root { font-size }` from `16px` → `17px` at `≥1536px`, `18px` at `≥1920px`, `20px` at `≥2560px`. Because the entire system is rem-based (max-widths, padding, gaps, clamp bounds, line-heights), this single change scales every rem unit proportionally — that's why we don't need hundreds of per-component `2xl:` overrides. **Use rem or the semantic Tailwind size utilities (`text-xs` / `text-sm` / `text-base` / `text-lg` …) for any body or metadata text.** Hard-coded `text-[NNpx]` does NOT participate in scaling and will look tiny on a 1920+ display.
+2. **`h1`/`h2` `clamp()` upper bounds** in the base styles (`4.5rem` / `2.75rem`) are tuned so headings continue growing past the root-font plateau. The `vw` term in the clamp does the work between root-font breakpoints; the upper cap stops it before it gets absurd.
+3. **`2xl:max-w-[88rem]` (and `2xl:max-w-[92rem]` for the two larger Practice/SessionDetail layouts) on outer page containers**. Pattern is established on `Home`, `Hero`, the Practice phase containers, `History`, `SessionDetail`, and `FlashBanner`. Inner typographic max-widths (`max-w-[54rem]`, `max-w-[42rem]`, `max-w-[56ch]`) deliberately stay tight — they're line-length caps and should NOT grow with viewport (long lines hurt readability regardless of monitor size).
+
+**Explicit exceptions** — these stay hard-coded in px on purpose, don't sweep them:
+
+- `text-[10px] uppercase tracking-eyebrow` micro-labels (FlashBanner notice tag, error eyebrows, SessionDetail stat headers, etc.) — intentional editorial chrome, meant to be tiny.
+- The `text-[11px]` overlay chips in `Practice.tsx` that sit on the webcam feed — overlay UI on video, sized to the video not the page.
+
+**Don't add content to fill empty space on wide monitors.** The brand position (`frontend/.impeccable.md`: "Empty space is content") is that the scaling pass exists to make existing content feel intentionally sized at 1920+, not to add density, sidebars, or marketing tiles.
 
 ### Radius
 

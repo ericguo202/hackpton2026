@@ -902,7 +902,7 @@ function PracticeSession({
 
       <main className="flex-1">
         {!isDone && currentQ && (
-          <div className="mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16">
+          <div className="mx-auto w-full max-w-[80rem] 2xl:max-w-[88rem] px-8 py-16 md:px-16">
             <div className="max-w-[70rem]">
               <QuestionPlayer
                 key={replayKey}
@@ -1076,7 +1076,7 @@ function PracticeSession({
           const averageScores = computeAverageScores(turnResults);
           const hasAnyAverage = averageScores.some((s) => s.value != null);
           return (
-            <div className="mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16">
+            <div className="mx-auto w-full max-w-[80rem] 2xl:max-w-[88rem] px-8 py-16 md:px-16">
               <div className="max-w-[72rem]">
                 <div className="mb-10 flex items-center gap-3" role="tablist" aria-label="Results sections">
                   {Array.from({ length: resultsTotalSteps }).map((_, i) => {
