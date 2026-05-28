@@ -171,7 +171,7 @@ export default function SessionDetail() {
                     aria-labelledby={tabs[safeIndex]?.tabId}
                     onTouchStart={handleTouchStart}
                     onTouchEnd={handleTouchEnd}
-                    className="anim-crossfade rounded-lg bg-tertiary-200 min-[900px]:rounded-tl-none"
+                    className="anim-crossfade rounded-lg border border-border-strong bg-tertiary-200 min-[900px]:rounded-tl-none"
                   >
                     {safeIndex === 0 ? (
                       <OverviewPanel session={session} />
