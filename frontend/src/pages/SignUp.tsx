@@ -139,7 +139,7 @@ export default function SignUp() {
           <button
             type="button"
             onClick={onBack}
-            className="mb-8 inline-block cursor-pointer text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs"
+            className="mb-8 inline-block cursor-pointer text-sm text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs"
           >
             Back
           </button>
@@ -157,7 +157,7 @@ export default function SignUp() {
                 <div>
                   <label
                     htmlFor="code"
-                    className="block text-[13px] font-medium text-text-muted mb-1.5"
+                    className="block text-sm font-medium text-text-muted mb-1.5"
                   >
                     Verification code
                   </label>
@@ -209,7 +209,7 @@ export default function SignUp() {
                 <div>
                   <label
                     htmlFor="email"
-                    className="block text-[13px] font-medium text-text-muted mb-1.5"
+                    className="block text-sm font-medium text-text-muted mb-1.5"
                   >
                     Email
                   </label>
@@ -229,7 +229,7 @@ export default function SignUp() {
                 <div>
                   <label
                     htmlFor="password"
-                    className="block text-[13px] font-medium text-text-muted mb-1.5"
+                    className="block text-sm font-medium text-text-muted mb-1.5"
                   >
                     Password
                   </label>
@@ -283,7 +283,7 @@ export default function SignUp() {
 
               <div className="relative flex items-center justify-center py-1">
                 <span className="w-full border-t border-border" />
-                <span className="px-4 text-[13px] text-text-subtle bg-surface absolute">
+                <span className="px-4 text-sm text-text-subtle bg-surface absolute">
                   Or continue with
                 </span>
               </div>

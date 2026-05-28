@@ -71,8 +71,8 @@ export default function AdvancedPanel({
           aria-pressed={showQuestionText}
           className={
             showQuestionText
-              ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-              : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+              ? 'rounded-full border border-accent bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+              : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-sm text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
           }
         >
           Show question text: {showQuestionText ? 'On' : 'Off'}
@@ -92,7 +92,7 @@ function Section({ label, hint, children }: SectionProps) {
   return (
     <section className="space-y-3">
       <div className="space-y-1">
-        <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted text-[13px]">
+        <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm">
           {label}
         </p>
         {hint && <p className="text-text-subtle text-sm">{hint}</p>}
@@ -118,8 +118,8 @@ function VoiceTile({ active, disabled, onClick, children }: VoiceTileProps) {
       aria-pressed={active}
       className={
         active
-          ? 'rounded-full border border-accent bg-accent px-4 py-2 text-[13px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-          : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-[13px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+          ? 'rounded-full border border-accent bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+          : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-sm text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
       }
     >
       {children}

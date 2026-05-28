@@ -107,7 +107,7 @@ function StatCell({
         {value}
       </span>
       {hint && (
-        <span className="text-[11px] text-text-subtle">{hint}</span>
+        <span className="text-xs text-text-subtle">{hint}</span>
       )}
     </div>
   );
@@ -143,7 +143,7 @@ function ChartTooltip({ active, payload }: {
       <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted mb-1">
         Session #{ctx.idx} · {ctx.company}
       </p>
-      <p className="text-[11px] text-text-subtle mb-2">
+      <p className="text-xs text-text-subtle mb-2">
         {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
       </p>
       <ul className="space-y-1">
@@ -248,7 +248,7 @@ export default function History() {
       />
 
       <main className="flex-1">
-        <div className="w-full max-w-[80rem] mx-auto px-8 md:px-16 py-12 md:py-16">
+        <div className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-8 md:px-16 py-12 md:py-16">
 
           {/* Eyebrow + heading */}
           <p
@@ -480,7 +480,7 @@ function ToggleChip({
       onClick={onClick}
       aria-pressed={active}
       className={
-        'cursor-pointer inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
+        'cursor-pointer inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
         (active
           ? 'border-border-strong text-text bg-surface-raised'
           : 'border-border text-text-subtle hover:text-text-muted')

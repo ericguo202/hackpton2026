@@ -56,7 +56,7 @@ export default function FlashBanner() {
       <div
         role="status"
         aria-live="polite"
-        className="anim-reveal pointer-events-auto mx-auto flex w-full max-w-[80rem] items-start justify-between gap-4 rounded-md border border-border bg-surface-raised px-4 py-3 shadow-[0_8px_24px_-12px_rgba(23,21,15,0.18)]"
+        className="anim-reveal pointer-events-auto mx-auto flex w-full max-w-[80rem] 2xl:max-w-[88rem] items-start justify-between gap-4 rounded-md border border-border bg-surface-raised px-4 py-3 shadow-[0_8px_24px_-12px_rgba(23,21,15,0.18)]"
       >
         <p className="text-sm leading-[1.55] text-text-muted">
           <span className="mr-2 text-[10px] uppercase tracking-eyebrow text-text">

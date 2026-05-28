@@ -53,6 +53,69 @@ Three files work together — don't bypass them:
 
 Backend exposes `/api/v1/health`, `/api/v1/me`, `/api/v1/onboarding`. Frontend consumes `/me` (via `useMe`) and `/onboarding` (via `OnboardingForm`). **Not yet built**: `/sessions`, `/sessions/{id}/turns`, `/me/stats` — these are the next milestones per `../CLAUDE.md` build order. When you add UI for them, put network calls behind new hooks following the `useMe` pattern, not inline `apiFetch` in components.
 
+### Practice Interview phase shell
+
+The Interview half of `Practice.tsx` is **chrome-free and full-viewport**: TopBar is wrapped in `{isDone && …}` so it only renders during Results. The Interview branch is a `flex h-screen flex-col` container with two children:
+
+1. **Body grid** — desktop renders `min-[900px]:grid` whose `grid-template-columns` flips between `[33%_67%]` (transcript closed) and `[25%_50%_25%]` (transcript open). Mobile collapses to a vertical `flex flex-col` stack. Three column components, all under `components/practice/`:
+   - **`QuestionColumn.tsx`** — eyebrow + invisible-underlay question text + `<audio>`. Sole consumer of `replayKey` (the audio remounts to retrigger `autoPlay` whenever Re-record OR the footer's Restart-turn button bumps the key). `min-[900px]:border-r` divider.
+   - **`CameraColumn.tsx`** — 16:9 box at **fixed `w-[45vw]` on desktop**, `w-full` on mobile. The 45vw lock is load-bearing for "camera width never changes when the transcript column opens" — the grid columns flex around the box (50% column tightly hugs the 45vw box with ~2.5vw gutter; the 67% column has more breathing room). Renders `<CameraPreview>` when `videoStream != null`, the recorded video when `showPreview`, otherwise a dark `bg-accent` placeholder with state-aware copy ("Camera will start once the question audio ends." / "Webcam not enabled — audio recorded only."). Submit / Re-record buttons render below the box and disable while `submitting`.
+   - **`TranscriptColumn.tsx`** — `min-[900px]:border-l` desktop / `border-t` mobile. X close button hidden on mobile (mobile toggles transcript only via the footer).
+2. **`PracticeFooter.tsx`** — sticky bottom bar (`h-20 shrink-0 border-t bg-surface-raised`). Left side: "Turn N" indicator + recording-state pill. Right side: five icon+label buttons (End recording / Restart turn / Show-hide question / Show-hide transcript / Quit session). The local `FooterButton` helper hides its text span via `min-[900px]:inline` so mobile renders icon-only. The End-recording button overrides the neutral defaults via className (`border-accent bg-accent text-accent-fg hover:bg-accent-hover`) — twMerge resolves the conflict. During `submitting`, the right-side button row is replaced by an inline spinner + status message. The big-red Quit button is a separate `QuitButton` inline helper, not a `FooterButton`.
+
+**`QuitConfirmDialog.tsx`** is mounted as a sibling of the body+footer container; it owns its own ESC-key effect (registered only while `open`), backdrop click closes via `onCancel`, inner card stops propagation.
+
+Both Interview and Results phases are now chrome-light by design. The old `RecordingStatusPill` component (and its `getAnalyzerStatusLabel`/`Class` helpers) was removed entirely; recording state is now surfaced only by the footer's pill. `analyzer.diagnostics` is still consumed by `handleSubmitTurn` for `cv_summary` payloads and logging, just not by any UI element.
+
+### Practice Results phase shell
+
+When `isDone === true`, `Practice.tsx` renders a folder-tab "case file" shell that mirrors `SessionDetail.tsx` — same `FolderTabs` + circular `SideNavButton` chevrons in desktop gutters, same `sticky top-[50vh] -translate-y-1/2` + `items-start` choice for the chevrons (load-bearing — see the SessionDetail section below for why), same mobile collapse to swipe + Prev/Next FlowHoverButton row, same `anim-crossfade` panel transition. The previous pill-dot stepper + slide animation + bottom CTA row are gone; TopBar covers post-session navigation.
+
+The data flow has three pieces:
+
+- **`sessionDetail: SessionDetail | null`** — populated by the final-turn refetch in `handleSubmitTurn` (already happening; now stored on state instead of merged back into local turn results). Source of truth for the Overview averages, company brief, and the canonical per-turn `TurnDetail`s.
+- **`turnResults: ReplayTurnResult[]`** — local-only data the server never sees: object-URL replay blobs (`replayUrl`, `audioReplayUrl`), the analyzer's `cvSummary`, and the per-turn `analyzerDiagnostics`. Survives even when the refetch fails.
+- **`replayToTurnDetail(replay, idx)`** — fallback adapter at module scope. Synthesizes a `TurnDetail` from a `ReplayTurnResult` so the Results panels always have something to render if the server refetch fails. Used through the `effectiveTurns = sessionDetail?.turns ?? turnResults.map(replayToTurnDetail)` pattern inside the `isDone` branch. `localAverages(turnResults)` is the parallel fallback for `DimensionAverages`.
+
+`PracticeLocationState` now carries `company` and `jobTitle` (echoed by `Home.tsx`) so the Overview's left column can identify the session without waiting on the refetch.
+
+Two panel components under `components/practice/`:
+
+- **`PracticeOverviewPanel.tsx`** — two-column shape matching SessionDetail's `OverviewPanel`. Left column: "Let's look at how you did" heading, company name + target role, editorial body paragraph. Right column: `<ScoresOverviewColumn averages caption={...} />` reused from `components/session-detail/OverviewPanel.tsx` (extracted as a named export for this purpose); the `caption` slot carries the session-overall line ("Overall X/10 averaged across N of M turns"). SessionDetail's own usage omits the caption.
+- **`PracticeTurnPanel.tsx`** — six inner cards in three rows × two columns at ≥900px; single column stack below.
+  - **Row 1**: `<QuestionAnswerCard turn={turn} />` | `<VideoReplayCard replay={replay} />`. Row container has `min-[900px]:h-[clamp(22rem,30vw,28rem)]` so the video card never grows into a long empty rectangle when the transcript is short; long transcripts scroll inside the Q+A card's existing `flex-1 min-h-0 overflow-y-auto` region. **Don't drop this clamp** — without it, sibling-stretch + `aspect-video` interact badly and leave empty space below the video.
+  - **Row 2**: composed `<InnerCard>` with `<MainTakeawaySection />` + `<QuickWinsSection />` | `<WhatWorkedCard turn={turn} />`. Natural height, items-stretch.
+  - **Row 3**: `<ImprovementMomentsCard turn={turn} />` | `<ImproveNextCard replay={replay} />`. Natural height, items-stretch.
+
+The first three turn-card pieces (`QuestionAnswerCard`, `WhatWorkedCard`, `ImprovementMomentsCard`) plus three section renderers (`ScoresSection`, `MainTakeawaySection`, `QuickWinsSection`) live in `components/session-detail/_turnInnerCards.tsx` — shared with SessionDetail's `TurnPanel`. The Practice-only `VideoReplayCard.tsx` and `ImproveNextCard.tsx` sit under `components/practice/`.
+
+**`VideoReplayCard`** wraps the `<video>` element with a face-mesh toggle and download link. The `ReplayLandmarkOverlay` (face-landmark canvas) lives inside this file — Practice.tsx no longer owns any video-overlay code. The legacy "Show notes / coaching overlay" gradient on top of the video was deliberately removed: the main takeaway is already in Row 2's Takeaway card, so duplicating it on the video would just compete for attention.
+
+**`ImproveNextCard`** carries the `buildReplayInsights` logic relocated from Practice.tsx (weakest / strongest / filler-word warning / CV-summary signals / "Delivery score unavailable" fallback). The original "Main takeaway" insight bullet was dropped here because that line is already covered by Row 2's Takeaway card.
+
+### SessionDetail folder-tab shell
+
+`SessionDetail.tsx` at `/sessions/:id` is a folder-tab "case file" — one large dark-beige card (`bg-tertiary-200`) with three folder-shaped tabs (Overview, Turn 1, Turn 2) attached to its top edge, plus circular `←` / `→` chevron buttons in the desktop gutters. The compact header that used to live above the card (back-link, date eyebrow, company `<h1>`, stats tiles) was deliberately removed — the card IS the page; TopBar's History link covers back-navigation, and per-session metadata lives inside the Overview panel.
+
+The orchestrator (`src/pages/SessionDetail.tsx`) is small: load session, hold `activeTabIndex`, compose the three pieces below, wire keyboard + swipe nav. **Tab reset on `sessionId` change** uses the React-19 "compare prop to tracked state during render" pattern (`useState` + render-time `if (sessionId !== trackedSessionId) { setTrackedSessionId(sessionId); setActiveTabIndex(0); }`) rather than a `useEffect` that calls `setActiveTabIndex(0)` — the latter trips `react-hooks/set-state-in-effect`.
+
+Three extracted components plus a helper module, all under `src/components/session-detail/`:
+
+- **`FolderTabs.tsx`** — exports `FolderTabs` (the strip) and `SideNavButton` (the chevron). Tabs are `<button>`s with `rounded-t-lg border border-b-0` and `-mb-px` overlap onto the card so there's no seam. Inactive: `bg-tertiary-200 text-text-muted` (same fill as card body — they read as one continuous folder piece). Active: `bg-accent text-accent-fg`. Full ARIA tabs pattern with `←`/`→`/`Home`/`End` keyboard nav via a ref array.
+- **`OverviewPanel.tsx`** — split layout (1-col below 900px, 2-col above). Left side renders the company brief block from `session.summary` (omitting empty sections entirely — never "(none)" placeholders). Right side is six `ScoreTile`s in a `grid-cols-2 min-[900px]:grid-cols-3` grid; each tile's progress bar uses inline `style={{ background: SCORE_COLOR_MAP[key] }}` for the per-dimension hue.
+- **`TurnPanel.tsx`** — four inner sub-cards in **two independent row grids**, NOT one grid with `grid-rows-2 auto-rows-fr`. The single-grid version was tried first and rejected: `auto-rows-fr` makes both rows match the height of the taller, which left enormous empty gutters under the top-row cards when bottom-row feedback was long. Two row grids each `grid-cols-2` let each row size to its own content while still equalizing within-row heights (grid default `items-stretch` + `InnerCard`'s `h-full`).
+- **`_helpers.ts`** — `SCORE_KEYS`, `SCORE_COLOR_MAP`, `num()`, `turnAverage()`. `SCORE_COLOR_MAP` mirrors `History.tsx:DIMENSIONS` so the trend chart and the per-session score tiles share one color language. If you change one, change both.
+
+**The leftmost-tab / card-corner alignment** is load-bearing. The `FolderTabs` strip lives **inside** the same flex column as the card body (NOT in the outer flex row containing the side-button gutters) so its left edge aligns with the card's left edge. The leftmost tab's `rounded-t-lg` provides the rounded top-left corner of the combined shape; the card itself carries `min-[900px]:rounded-tl-none` so its underlying squared corner is hidden beneath the tab. Move the strip outside the column and the active tab floats into the prev-side-button gutter; remove `rounded-tl-none` and the card's curve emerges from under the tab as a visual artifact. Both bugs were caught and fixed during iteration — don't re-introduce them.
+
+**Sticky chevron buttons** use `items-start` on the gutter column + `position: sticky; top: 50vh; -translate-y-1/2` on the inner wrapper. `items-start` is the load-bearing choice: with `items-center` the button's natural layout position is the column's vertical middle, which on a long card sits hundreds of pixels BELOW the viewport. Sticky's `top: 50vh` constraint says "the element's top must be ≥ 50vh from viewport top" — a position below the constraint *satisfies* it, so sticky never engages on first paint and the chevrons are invisible until the user scrolls down. With `items-start`, the natural position is at the column top (above the threshold = closer to viewport top, smaller y), which **violates** the constraint, so sticky engages immediately and pins the button at viewport middle from first render.
+
+**Native `title` for the chevron hover hint** (not a custom tooltip pill). An earlier `<span role="tooltip">` inside the button with `group-hover:opacity-100` was tried and removed: the sticky wrapper applies `transform: translateY(-50%)`, which creates a new containing block for absolute descendants, and the tooltip's absolute positioning resolved against it in unexpected ways. Native `title` works regardless — paired with `aria-label` (canonical screen-reader text), it covers both audiences. Mobile drops the chevrons entirely.
+
+**Mobile (<900px)** drops the folder tabs strip, the side chevrons, and the desktop two-column / 2×2 layouts. Each panel collapses to a single vertical stack. A small `"Overview · 1 of 3"`-style eyebrow at the top of the active panel labels the section. Tab navigation: horizontal swipe (`touchstart`/`touchend` with `|dx| > 60 && |dx| > 1.5·|dy|` thresholding so vertical scrolls don't accidentally page) plus a `FlowHoverButton` Previous/Next row at the bottom of each panel. The absent direction renders an invisible `flex-1` spacer so the visible button stays edge-aligned.
+
+**Issue-type chip formatting**: `formatIssueType(raw)` is a generic snake_case → Title Case formatter local to `TurnPanel.tsx`. Don't hard-code a switch on the canonical 10 evaluator categories — the generic formatter is correct for unknown / legacy values too.
+
 ## House style
 
 - `MePing` is a deliberate debug widget rendering the `/me` JSON — leave it in during development, remove before demo.
@@ -60,7 +123,7 @@ Backend exposes `/api/v1/health`, `/api/v1/me`, `/api/v1/onboarding`. Frontend c
 
 ## Design system
 
-Earth-tone editorial palette with serif display + sans body. Everything is wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js` exists, and none should be added**.
+Earth-tone editorial palette unified on **Inter** for all app/display/UI typography (Geist Mono reserved for code). Everything is wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js` exists, and none should be added**.
 
 ### Source of truth
 
@@ -94,13 +157,32 @@ If you find yourself writing `bg-primary-500` in a component, pause — is this 
 
 ### Typography
 
-- `--font-display` = **Fraunces** (variable, opsz 9–144). Use for headings and marketing copy.
-- `--font-sans` = **Geist**. Default on `<body>`; inherits everywhere — don't apply `font-sans` explicitly.
-- `--font-mono` = Geist Mono fallback. Reserved for code blocks.
+- `--font-sans` = **Inter** (variable, opsz 14–32). Default on `<body>`; inherits everywhere — don't apply `font-sans` explicitly.
+- `--font-ui` = **Inter**. Semantic alias available for form / input / button typography if it ever needs to diverge from body.
+- `--font-display` = **Inter**. Used by base `h1..h6` styling for headings.
+- `--font-mono` = Geist Mono fallback. Reserved for code blocks; **not** currently `@import`ed — falls back to `ui-monospace, Consolas`. Add the import if a real mono usage lands.
 
-The base `h1..h6` selectors in `index.css` already set the display serif, weight 500, tightened letter-spacing, and a responsive `clamp()` for h1/h2. Use semantic heading tags (`<h1>`, `<h2>`, `<h3>`) and let the CSS do the work. Only add `font-display` / `font-sans` when you need the opposite of the default (e.g., a serif paragraph pull-quote, or a sans subtitle under a serif heading).
+All three app tokens (`--font-sans`, `--font-ui`, `--font-display`) resolve to Inter today. The three-token split is forward-looking: if one role needs to diverge later, swap a single token without a codebase-wide rename. Don't introduce a second face without a clear product reason.
 
-Fraunces and Geist load from Google Fonts via `@import` in `index.css`. If offline-demo reliability matters, swap to `@fontsource/fraunces` + `@fontsource/geist-sans` — the token names don't change.
+The base `h1..h6` selectors in `index.css` already set `--font-display`, weight 500, tightened letter-spacing, and a responsive `clamp()` for h1/h2. Use semantic heading tags (`<h1>`, `<h2>`, `<h3>`) and let the CSS do the work — applying `font-display` / `font-sans` / `font-ui` in components is rarely needed since all three resolve to Inter.
+
+The h1/h2 clamp upper bounds (`4.5rem` / `2.75rem`) are tuned to keep growing on wide monitors past where root-font scaling alone plateaus — see "Wide-monitor scaling" below for how the three mechanisms interact. Don't lower these caps without understanding the trade-off.
+
+Inter loads from Google Fonts via `@import` in `index.css`. If offline-demo reliability matters, swap to `@fontsource/inter` — the token names don't change.
+
+### Wide-monitor scaling
+
+The system scales up on large external monitors via three coupled mechanisms. Touch all three together when changing anything that affects "how big does X feel on a 4K display":
+
+1. **Root font-size media queries** in `index.css` step `:root { font-size }` from `16px` → `17px` at `≥1536px`, `18px` at `≥1920px`, `20px` at `≥2560px`. Because the entire system is rem-based (max-widths, padding, gaps, clamp bounds, line-heights), this single change scales every rem unit proportionally — that's why we don't need hundreds of per-component `2xl:` overrides. **Use rem or the semantic Tailwind size utilities (`text-xs` / `text-sm` / `text-base` / `text-lg` …) for any body or metadata text.** Hard-coded `text-[NNpx]` does NOT participate in scaling and will look tiny on a 1920+ display.
+2. **`h1`/`h2` `clamp()` upper bounds** in the base styles (`4.5rem` / `2.75rem`) are tuned so headings continue growing past the root-font plateau. The `vw` term in the clamp does the work between root-font breakpoints; the upper cap stops it before it gets absurd.
+3. **`2xl:max-w-[88rem]` (and `2xl:max-w-[92rem]` for the two larger Practice/SessionDetail layouts) on outer page containers**. Pattern is established on `Home`, `Hero`, the Practice phase containers, `History`, `SessionDetail`, and `FlashBanner`. Inner typographic max-widths (`max-w-[54rem]`, `max-w-[42rem]`, `max-w-[56ch]`) deliberately stay tight — they're line-length caps and should NOT grow with viewport (long lines hurt readability regardless of monitor size).
+
+**Explicit exceptions** — these stay hard-coded in px on purpose, don't sweep them:
+
+- `text-[10px] uppercase tracking-eyebrow` micro-labels (FlashBanner notice tag, error eyebrows, etc.) — intentional editorial chrome, meant to be tiny. (The old SessionDetail compact-header stat tiles also fell in this bucket and were removed entirely in the folder-tab redesign; `text-eyebrow` from `--text-eyebrow: 11px` covers most remaining cases.)
+
+**Don't add content to fill empty space on wide monitors.** The brand position (`frontend/.impeccable.md`: "Empty space is content") is that the scaling pass exists to make existing content feel intentionally sized at 1920+, not to add density, sidebars, or marketing tiles.
 
 ### Radius
 
@@ -179,7 +261,7 @@ The hero is the current design priority. Treat it as the entry point to a voice-
 
 **Hero design principles**:
 
-- **Typography carries the emotional load.** Fraunces at confident size (clamp up to ~3.5rem) on a cream page does more than any illustration or gradient could. Resist hero images, mesh gradients, 3D objects, animated blobs.
+- **Typography carries the emotional load.** Inter at confident display size (clamp up to ~3.5rem) and weight 500 on a cream page does more than any illustration or gradient could. Resist hero images, mesh gradients, 3D objects, animated blobs.
 - **One action, alone on the surface.** Primary CTA sits in its own negative space with nothing competing. Secondary affordances (sign in, history, about) are quieter — text links or ghost buttons, not duplicate primaries.
 - **Copy is the decoration.** A well-written subheading replaces a decorative element. Write copy first, lay it out second.
 - **Asymmetric, not centered.** Left-aligned long-form hero text with an asymmetric action block reads more designed than the centered hero template.
