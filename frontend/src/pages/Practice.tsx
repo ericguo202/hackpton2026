@@ -130,8 +130,6 @@ function replayFor(r: ReplayTurnResult | undefined): PracticeTurnReplay {
     return {
       replayUrl: null,
       audioReplayUrl: null,
-      scores: null,
-      fillerWordCount: 0,
       cvSummary: null,
       analyzerDiagnostics: {
         isReady: false,
@@ -146,8 +144,6 @@ function replayFor(r: ReplayTurnResult | undefined): PracticeTurnReplay {
   return {
     replayUrl: r.replayUrl,
     audioReplayUrl: r.audioReplayUrl,
-    scores: r.scores,
-    fillerWordCount: r.filler_word_count,
     cvSummary: r.cvSummary,
     analyzerDiagnostics: r.analyzerDiagnostics,
   };

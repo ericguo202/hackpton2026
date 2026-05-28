@@ -9,6 +9,16 @@
  * of `PracticeTurnPanel` and would be redundant here.
  */
 
+import type { ReactNode } from 'react';
+import {
+  Bar,
+  BarChart,
+  LabelList,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
 import type { Scores } from '../../types/session';
 import type { InterviewSummary } from '../../lib/faceHeuristics';
 import type { AnalyzerDiagnostics } from '../../hooks/useFaceAnalyzer';
@@ -17,6 +27,9 @@ import { Eyebrow, InnerCard } from '../session-detail/_turnInnerCards';
 type Insight = {
   title: string;
   detail: string;
+  // Optional supplementary block rendered below `detail`. Used for the
+  // "Trim filler words" insight to attach a per-word distribution chart.
+  extra?: ReactNode;
 };
 
 const SCORE_LABELS: Record<keyof Scores, string> = {
@@ -31,6 +44,7 @@ const SCORE_LABELS: Record<keyof Scores, string> = {
 type Props = {
   scores: Scores | null;
   fillerWordCount: number;
+  fillerWordBreakdown: Record<string, number>;
   cvSummary: InterviewSummary | null;
   analyzerDiagnostics: AnalyzerDiagnostics;
 };
@@ -38,10 +52,17 @@ type Props = {
 export function ImproveNextCard({
   scores,
   fillerWordCount,
+  fillerWordBreakdown,
   cvSummary,
   analyzerDiagnostics,
 }: Props) {
-  const insights = buildInsights({ scores, fillerWordCount, cvSummary, analyzerDiagnostics });
+  const insights = buildInsights({
+    scores,
+    fillerWordCount,
+    fillerWordBreakdown,
+    cvSummary,
+    analyzerDiagnostics,
+  });
 
   return (
     <InnerCard>
@@ -57,6 +78,7 @@ export function ImproveNextCard({
               <li key={insight.title} className="border-l-2 border-accent/45 pl-4">
                 <p className="mb-1 text-sm font-medium text-text">{insight.title}</p>
                 <p className="text-sm leading-6 text-text-muted">{insight.detail}</p>
+                {insight.extra}
               </li>
             ))}
           </ul>
@@ -69,6 +91,7 @@ export function ImproveNextCard({
 function buildInsights({
   scores,
   fillerWordCount,
+  fillerWordBreakdown,
   cvSummary,
   analyzerDiagnostics,
 }: Props): Insight[] {
@@ -109,9 +132,14 @@ function buildInsights({
   }
 
   if (fillerWordCount > 0) {
+    const breakdownEntries = sortedBreakdown(fillerWordBreakdown);
     insights.push({
       title: 'Trim filler words',
       detail: `${fillerWordCount} filler words showed up in this turn. Check the highlighted spans in your transcript.`,
+      extra:
+        breakdownEntries.length > 0 ? (
+          <FillerBreakdownChart entries={breakdownEntries} />
+        ) : undefined,
     });
   }
 
@@ -145,4 +173,50 @@ function buildInsights({
   }
 
   return insights.slice(0, 4);
+}
+
+type FillerEntry = { word: string; count: number };
+
+function sortedBreakdown(breakdown: Record<string, number>): FillerEntry[] {
+  return Object.entries(breakdown)
+    .filter(([, count]) => count > 0)
+    .map(([word, count]) => ({ word, count }))
+    .sort((a, b) => b.count - a.count || a.word.localeCompare(b.word))
+    .slice(0, 6);
+}
+
+function FillerBreakdownChart({ entries }: { entries: FillerEntry[] }) {
+  const rowHeight = 22;
+  const height = entries.length * rowHeight + 8;
+  return (
+    <div className="mt-3" aria-label="Filler word distribution">
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart
+          layout="vertical"
+          data={entries}
+          margin={{ top: 2, right: 28, bottom: 2, left: 0 }}
+          barCategoryGap={4}
+        >
+          <XAxis type="number" hide domain={[0, 'dataMax']} />
+          <YAxis
+            type="category"
+            dataKey="word"
+            tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
+            axisLine={false}
+            tickLine={false}
+            width={64}
+          />
+          <Bar dataKey="count" fill="var(--color-chart-2)" radius={[0, 3, 3, 0]} barSize={12}>
+            <LabelList
+              dataKey="count"
+              position="right"
+              fontSize={11}
+              fill="var(--color-text-muted)"
+              offset={6}
+            />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }

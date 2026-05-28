@@ -21,7 +21,6 @@
  */
 
 import type { TurnDetail } from '../../types/history';
-import type { Scores } from '../../types/session';
 import type { InterviewSummary } from '../../lib/faceHeuristics';
 import type { AnalyzerDiagnostics } from '../../hooks/useFaceAnalyzer';
 import {
@@ -39,8 +38,6 @@ import { VideoReplayCard } from './VideoReplayCard';
 export type PracticeTurnReplay = {
   replayUrl: string | null;
   audioReplayUrl: string | null;
-  scores: Scores | null;
-  fillerWordCount: number;
   cvSummary: InterviewSummary | null;
   analyzerDiagnostics: AnalyzerDiagnostics;
 };
@@ -83,8 +80,9 @@ export function PracticeTurnPanel({ turn, turnNum, replay }: Props) {
       <div className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-2">
         <ImprovementMomentsCard turn={turn} />
         <ImproveNextCard
-          scores={replay.scores}
-          fillerWordCount={replay.fillerWordCount}
+          scores={turn.scores}
+          fillerWordCount={turn.filler_word_count}
+          fillerWordBreakdown={turn.filler_word_breakdown}
           cvSummary={replay.cvSummary}
           analyzerDiagnostics={replay.analyzerDiagnostics}
         />
