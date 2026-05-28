@@ -29,7 +29,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
 
   return (
     <header className="relative flex items-center justify-between gap-6 px-8 md:px-16 pt-8 pb-4">
-      <div className="flex items-baseline gap-3 text-eyebrow text-[14px] uppercase tracking-eyebrow text-text-muted">
+      <div className="flex items-baseline gap-3 text-eyebrow text-sm uppercase tracking-eyebrow text-text-muted">
         <span className="font-medium text-text tabular-nums">Logos</span>
         <span aria-hidden className="hidden sm:inline">·</span>
         <span className="hidden sm:inline">Interview Practice</span>
@@ -37,7 +37,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
 
       <div className="flex items-center gap-4">
         {nav && (
-          <nav className="hidden min-[900px]:flex items-baseline gap-6 text-eyebrow text-[14px] uppercase tracking-eyebrow text-text-muted">
+          <nav className="hidden min-[900px]:flex items-baseline gap-6 text-eyebrow text-sm uppercase tracking-eyebrow text-text-muted">
             {nav}
           </nav>
         )}
@@ -89,7 +89,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
           className="min-[900px]:hidden absolute left-0 right-0 top-full z-40 border-b border-border bg-surface px-8 py-4 shadow-sm"
           onClick={() => setMobileNavOpen(false)}
         >
-          <nav className="flex flex-col items-start gap-4 text-eyebrow text-[14px] uppercase tracking-eyebrow text-text-muted">
+          <nav className="flex flex-col items-start gap-4 text-eyebrow text-sm uppercase tracking-eyebrow text-text-muted">
             {nav}
           </nav>
         </div>

@@ -25,7 +25,7 @@ export default function Hero() {
           <button
             type="button"
             onClick={onSignInClick}
-            className="relative cursor-pointer text-[13px] text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs before:absolute before:-inset-[14px] before:content-['']"
+            className="relative cursor-pointer text-sm text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs before:absolute before:-inset-[14px] before:content-['']"
           >
             Sign in
           </button>
@@ -59,7 +59,7 @@ export default function Hero() {
           />
         </div>
 
-        <div className="relative z-10 w-full max-w-[80rem] mx-auto px-8 md:px-16 py-16 md:py-24">
+        <div className="relative z-10 w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-8 md:px-16 py-16 md:py-24">
           <div className="max-w-[54rem]">
             <p
               className="anim-reveal font-display font-medium text-text mb-0"
@@ -99,7 +99,7 @@ export default function Hero() {
             >
               <GetStartedButton onClick={onSignInClick} />
 
-              <p className="text-[13px] text-text-subtle">
+              <p className="text-sm text-text-subtle">
                 λόγος (Logos)— Greek for word, speech, reason.
               </p>
             </div>

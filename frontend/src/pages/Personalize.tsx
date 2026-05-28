@@ -324,7 +324,7 @@ type FieldProps = {
 function Field({ label, hint, children }: FieldProps) {
   return (
     <label className="block space-y-2">
-      <span className="block text-eyebrow uppercase tracking-eyebrow text-text-muted text-[13px]">
+      <span className="block text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm">
         {label}
       </span>
       {hint && <span className="block text-text-subtle text-sm">{hint}</span>}

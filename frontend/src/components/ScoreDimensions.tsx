@@ -31,7 +31,7 @@ export default function ScoreDimensions({ tagline }: Props) {
         ))}
       </dl>
       {tagline && (
-        <p className="font-display italic text-[15px] text-text-muted">
+        <p className="font-display italic text-base text-text-muted">
           {tagline}
         </p>
       )}

@@ -25,9 +25,9 @@ const clerkAppearance = {
     colorShimmer: 'rgba(23, 21, 15, 0.06)',
     borderRadius: '12px',
     fontFamily:
-      '"Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+      '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
     fontFamilyButtons:
-      '"Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+      '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
     fontSize: '0.875rem',
   },
   elements: {
