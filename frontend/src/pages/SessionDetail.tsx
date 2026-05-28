@@ -1,173 +1,48 @@
 /**
  * SessionDetail — read-only view of one completed interview session.
  *
- * Mirrors the layout of Home's "Phase 3" complete screen, but sources data
- * from `GET /sessions/{id}` instead of the in-memory results from a live
- * session. Use cases:
- *   - Drilled into from the History list
- *   - Linked back to from the share-style "Session complete" card later
+ * Renders three folder-shaped tabs (Overview, Turn 1, Turn 2) attached to
+ * a dark-beige "case file" card. The desktop layout has clickable folder
+ * tabs plus circular side-arrow buttons in the gutters; mobile drops the
+ * tabs/arrows in favor of a single visible panel with touch-swipe
+ * navigation and a Previous/Next button row at the bottom.
+ *
+ * The page state is just `activeTabIndex`: 0 = Overview, 1..N = each
+ * turn. Tab content is delegated to OverviewPanel / TurnPanel.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { UserButton } from '@clerk/react';
 import { useNavigate, useParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import StructuredFeedback from '../components/StructuredFeedback';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import {
+  FolderTabs,
+  SideNavButton,
+  type FolderTab,
+} from '../components/session-detail/FolderTabs';
+import OverviewPanel from '../components/session-detail/OverviewPanel';
+import TurnPanel from '../components/session-detail/TurnPanel';
 import { useSessionDetail } from '../hooks/useSessionDetail';
-import { tokenizeTranscript } from '../lib/fillerWords';
-import type { TurnDetail } from '../types/history';
-
-const SCORE_KEYS = [
-  ['structure',       'Structure'],
-  ['problem_solving', 'Problem Solving'],
-  ['impact',          'Impact'],
-  ['initiative',      'Initiative'],
-  ['depth',           'Depth'],
-] as const;
-
-function ScoreBar({ value }: { value: number }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-24 h-[3px] bg-border rounded-full overflow-hidden">
-        <div
-          className="h-full bg-accent rounded-full"
-          style={{ width: `${value * 10}%` }}
-        />
-      </div>
-      <span className="text-xs text-text-muted tabular-nums w-8">{value}/10</span>
-    </div>
-  );
-}
-
-function turnAverage(t: TurnDetail): number {
-  // Filter nulls (delivery may be absent on camera-declined turns) so the
-  // average reflects only populated dimensions.
-  const vals = Object.values(t.scores).filter(
-    (v): v is number => typeof v === 'number',
-  );
-  if (vals.length === 0) return 0;
-  return vals.reduce((a, b) => a + b, 0) / vals.length;
-}
-
-function TurnCard({ turn }: { turn: TurnDetail }) {
-  // All five base scores fail/succeed together — a turn whose evaluation
-  // never completed has every base score NULL. Checking one is enough.
-  const evaluationFailed = turn.scores.structure === null;
-  const avg = turnAverage(turn);
-  return (
-    <div className="mt-10 pt-10 border-t border-border max-w-[60ch]">
-      <div className="flex items-baseline justify-between gap-4 mb-3">
-        <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
-          Turn {turn.turn_number}{turn.is_followup ? ' · follow-up' : ''}
-        </p>
-        {!evaluationFailed && (
-          <p className="text-sm text-text-muted">
-            Average:{' '}
-            <span className="text-text font-medium tabular-nums">
-              {avg.toFixed(1)}
-            </span>
-            <span className="text-text-subtle">/10</span>
-          </p>
-        )}
-      </div>
-
-      <p className="font-display text-lg md:text-xl text-text leading-snug mb-4">
-        {turn.question_text}
-      </p>
-
-      {turn.transcript_text && (
-        <div className="mb-6 p-4 bg-surface-raised rounded-md">
-          <p className="text-[11px] uppercase tracking-eyebrow text-text-subtle mb-2">
-            Your answer
-          </p>
-          <p className="text-sm text-text-muted leading-relaxed">
-            {tokenizeTranscript(turn.transcript_text).map((tok, i) =>
-              tok.kind === 'filler' ? (
-                <span
-                  key={i}
-                  className="rounded-sm bg-red-500/30 px-1 text-red-900"
-                  title={`Filler word: "${tok.canonical}"`}
-                >
-                  {tok.text}
-                </span>
-              ) : (
-                <span key={i}>{tok.text}</span>
-              ),
-            )}
-          </p>
-        </div>
-      )}
-
-      {evaluationFailed ? (
-        <div className="mb-6 p-4 border border-border-strong rounded-md">
-          <p className="text-[11px] uppercase tracking-eyebrow text-text-subtle mb-2">
-            Error
-          </p>
-          <p className="text-sm text-text">Evaluation Failed</p>
-          <p className="mt-1 text-sm text-text-muted">
-            The evaluator did not return scores for this turn. The transcript
-            and filler-word data above are still accurate.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3 mb-6">
-          {SCORE_KEYS.map(([key, label]) => {
-            const value = turn.scores[key];
-            // `evaluationFailed` already gated this branch, so a single
-            // null here would be an unexpected partial-eval state — skip it.
-            if (value === null) return null;
-            return (
-              <div key={key} className="flex items-center justify-between gap-4">
-                <span className="text-sm text-text-muted">{label}</span>
-                <ScoreBar value={value} />
-              </div>
-            );
-          })}
-          {turn.scores.delivery !== null && (
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-sm text-text-muted">Delivery</span>
-              <ScoreBar value={turn.scores.delivery} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {turn.filler_word_count > 0 && (
-        <p className="text-sm text-text-muted mb-4">
-          Filler words:{' '}
-          <span className="text-text font-medium">{turn.filler_word_count}</span>
-          {Object.keys(turn.filler_word_breakdown).length > 0 && (
-            <span className="text-text-subtle">
-              {' '}(
-              {Object.entries(turn.filler_word_breakdown)
-                .map(([w, n]) => `"${w}" ×${n}`)
-                .join(', ')}
-              )
-            </span>
-          )}
-        </p>
-      )}
-
-      {!evaluationFailed && (turn.feedback_detail || turn.feedback) && (
-        <StructuredFeedback
-          feedback={turn.feedback_detail}
-          fallback={turn.feedback}
-        />
-      )}
-    </div>
-  );
-}
 
 export default function SessionDetail() {
   const { id: sessionId = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { session, isLoading, error, errorStatus } = useSessionDetail(sessionId);
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
+  // Reset the active tab when the URL session id changes. Storing the
+  // previous id in state + comparing during render is the React-19-blessed
+  // alternative to a useEffect with `setActiveTabIndex(0)` — see
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [trackedSessionId, setTrackedSessionId] = useState(sessionId);
+  if (sessionId !== trackedSessionId) {
+    setTrackedSessionId(sessionId);
+    setActiveTabIndex(0);
+  }
 
-  // 4xx (404 not found, 422 invalid id, 403 not yours) — the session
-  // can't be loaded for this user. Send them back to / with a flash.
-  // 5xx flakes fall through to the inline error display below.
+  // 4xx (404, 422, 403) — bounce back to / with a flash. 5xx falls
+  // through to the inline error block so transient flakes stay visible.
   const shouldRedirect =
     errorStatus !== null && errorStatus >= 400 && errorStatus < 500;
   useEffect(() => {
@@ -178,6 +53,44 @@ export default function SessionDetail() {
       });
     }
   }, [shouldRedirect, navigate]);
+
+  const tabs: FolderTab[] = session
+    ? [
+        { label: 'Overview', tabId: 'sd-tab-overview', panelId: 'sd-panel-overview' },
+        ...session.turns.map((_, i) => ({
+          label: `Turn ${i + 1}`,
+          tabId: `sd-tab-turn-${i + 1}`,
+          panelId: `sd-panel-turn-${i + 1}`,
+        })),
+      ]
+    : [];
+
+  const safeIndex = Math.min(activeTabIndex, Math.max(0, tabs.length - 1));
+  const prevTab = safeIndex > 0 ? tabs[safeIndex - 1] : null;
+  const nextTab = safeIndex < tabs.length - 1 ? tabs[safeIndex + 1] : null;
+
+  // Touch-swipe to switch tabs on mobile. Commit a tab change only when
+  // the horizontal delta dominates and exceeds the threshold so a normal
+  // vertical scroll inside an inner card doesn't accidentally page.
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  function handleTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+  }
+  function handleTouchEnd(e: React.TouchEvent) {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < 0 && nextTab) {
+      setActiveTabIndex(safeIndex + 1);
+    } else if (dx > 0 && prevTab) {
+      setActiveTabIndex(safeIndex - 1);
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
@@ -199,17 +112,7 @@ export default function SessionDetail() {
       />
 
       <main className="flex-1">
-        <div className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-8 md:px-16 py-12 md:py-16">
-          <div className="mb-10">
-            <FlowHoverButton
-              variant="dark"
-              type="button"
-              onClick={() => navigate('/history')}
-              icon={<span aria-hidden>←</span>}
-            >
-              Back to history
-            </FlowHoverButton>
-          </div>
+        <div className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-6 min-[900px]:px-16 py-8 min-[900px]:py-12">
 
           {isLoading && (
             <p className="text-sm text-text-muted">Loading session…</p>
@@ -224,81 +127,97 @@ export default function SessionDetail() {
 
           {session && (
             <>
-              <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted mb-4">
-                {new Date(session.created_at).toLocaleDateString(undefined, {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
-              </p>
-              <h1
-                className="font-display font-medium tracking-[-0.02em] leading-[1.05] text-text mb-4"
-                style={{ fontSize: 'clamp(2rem, 4vw, 3.25rem)' }}
-              >
-                {session.company}
-              </h1>
-              <p className="text-sm text-text-muted mb-2">
-                {session.job_title}
-                {session.overall_score && (
-                  <>
-                    {' '}·{' '}Overall:{' '}
-                    <span className="text-text font-medium tabular-nums">
-                      {parseFloat(session.overall_score).toFixed(1)}
-                    </span>
-                    <span className="text-text-subtle">/100</span>
-                  </>
-                )}
-              </p>
-
-              {session.summary?.description && (
-                <div className="mt-8 max-w-[60ch] p-5 bg-surface-raised rounded-md">
-                  <p className="text-[11px] uppercase tracking-eyebrow text-text-subtle mb-2">
-                    Company brief
-                  </p>
-                  <p className="text-sm text-text leading-relaxed">
-                    {session.summary.description}
-                  </p>
-                  {(() => {
-                    const roleSignals = session.summary.role_signals ?? [];
-                    const themes = session.summary.sample_question_themes ?? [];
-                    const hasAny =
-                      session.summary.headlines.length > 0 ||
-                      roleSignals.length > 0 ||
-                      themes.length > 0;
-                    if (!hasAny) return null;
-                    return (
-                      <ul className="mt-3 space-y-1">
-                        {session.summary.headlines.map((h, i) => (
-                          <li key={`h-${i}`} className="text-xs text-text-muted">
-                            — {h}
-                          </li>
-                        ))}
-                        {roleSignals.length > 0 && (
-                          <li className="text-xs text-text-muted">
-                            — What they value: {roleSignals.join(', ')}
-                          </li>
-                        )}
-                        {themes.length > 0 && (
-                          <li className="text-xs text-text-muted">
-                            — Common themes: {themes.join(', ')}
-                          </li>
-                        )}
-                      </ul>
-                    );
-                  })()}
+              <div className="flex items-stretch gap-3 min-[900px]:gap-4">
+                {/* Sticky-to-viewport-middle side button so it remains
+                    reachable when the active card is tall enough to require
+                    page scrolling. items-center inside the gutter column
+                    sets the natural starting position (column middle ≈
+                    viewport middle when the card fits), and sticky pins it
+                    at top: 50vh once page scroll would push it higher. */}
+                <div className="hidden min-[900px]:flex items-start">
+                  <div className="sticky top-[50vh] -translate-y-1/2">
+                    <SideNavButton
+                      direction="prev"
+                      onClick={() => prevTab && setActiveTabIndex(safeIndex - 1)}
+                      targetLabel={prevTab?.label ?? ''}
+                      hidden={prevTab === null}
+                    />
+                  </div>
                 </div>
-              )}
 
-              {session.turns.length === 0 && (
-                <p className="mt-10 text-sm text-text-muted">
-                  This session has no recorded turns.
-                </p>
-              )}
+                <div className="flex-1 min-w-0 flex flex-col">
+                  {/* Mobile tab indicator. Visible only below 900px since
+                      desktop already labels the active section in the tabs.
+                      Lives inside the middle column so it shares the same
+                      left edge as the card. */}
+                  <p className="min-[900px]:hidden mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                    {tabs[safeIndex]?.label} · {safeIndex + 1} of {tabs.length}
+                  </p>
 
-              {session.turns.map((t) => (
-                <TurnCard key={t.id} turn={t} />
-              ))}
+                  {/* Desktop folder tabs. Live inside the middle column so
+                      the strip aligns with the card's left edge — placing
+                      them outside the gutter row would float them past the
+                      side-button column. */}
+                  <FolderTabs
+                    tabs={tabs}
+                    activeIndex={safeIndex}
+                    onChange={setActiveTabIndex}
+                  />
+
+                  <section
+                    key={safeIndex}
+                    id={tabs[safeIndex]?.panelId}
+                    role="tabpanel"
+                    aria-labelledby={tabs[safeIndex]?.tabId}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                    className="anim-crossfade rounded-lg bg-tertiary-200 min-[900px]:rounded-tl-none"
+                  >
+                    {safeIndex === 0 ? (
+                      <OverviewPanel session={session} />
+                    ) : (
+                      <TurnPanel turn={session.turns[safeIndex - 1]} />
+                    )}
+                  </section>
+
+                  {/* Mobile-only previous / next row. Hidden on desktop
+                      because the side circular buttons handle nav there. */}
+                  <div className="min-[900px]:hidden mt-6 flex items-center justify-between gap-3">
+                    {prevTab ? (
+                      <FlowHoverButton
+                        variant="dark"
+                        type="button"
+                        onClick={() => setActiveTabIndex(safeIndex - 1)}
+                      >
+                        ← Prev: {prevTab.label}
+                      </FlowHoverButton>
+                    ) : (
+                      <div className="flex-1" />
+                    )}
+                    {nextTab ? (
+                      <FlowHoverButton
+                        type="button"
+                        onClick={() => setActiveTabIndex(safeIndex + 1)}
+                      >
+                        Next: {nextTab.label} →
+                      </FlowHoverButton>
+                    ) : (
+                      <div className="flex-1" />
+                    )}
+                  </div>
+                </div>
+
+                <div className="hidden min-[900px]:flex items-start">
+                  <div className="sticky top-[50vh] -translate-y-1/2">
+                    <SideNavButton
+                      direction="next"
+                      onClick={() => nextTab && setActiveTabIndex(safeIndex + 1)}
+                      targetLabel={nextTab?.label ?? ''}
+                      hidden={nextTab === null}
+                    />
+                  </div>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -306,3 +225,4 @@ export default function SessionDetail() {
     </div>
   );
 }
+

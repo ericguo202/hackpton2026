@@ -284,6 +284,23 @@ navigate("/", {
 
 **Why Interview + Results stay in one component (instead of `/practice/interview` + `/practice/results`):** they share state (`sessionId`, `turnResults`, `recorder`, `analyzer`) and the Interview → Results transition is an animated sweep that shouldn't be interruptible by the browser back button. Splitting them would force a global store or heavy prop-drilling for zero user-visible benefit, since neither sub-phase has a meaningful URL of its own.
 
+### `SessionDetail.tsx` is a folder-tab case file
+
+`SessionDetail.tsx` at `/sessions/:id` is a single dark-beige outer card with three folder-shaped tabs attached to its top edge — Overview, Turn 1, Turn 2. (The orchestrator iterates `session.turns.length + 1` rather than hardcoding three, but the locked 2-turn session rule means three in steady state.) The card is the page; there is no separate compact header, back-link, or stats strip — `TopBar`'s History nav link covers the back affordance, and the per-session metadata lives inside the Overview panel.
+
+State is just `activeTabIndex` (0 = Overview, 1..N = each turn). Reset on `sessionId` change uses the React-19 "compare prop to tracked state during render" pattern (a `useState` + render-time comparison), not a `useEffect`-driven `setState` — the linter rejects the latter under `react-hooks/set-state-in-effect`.
+
+**Component composition** (all under `frontend/src/components/session-detail/`):
+
+- **`FolderTabs.tsx`** — the tabs strip + the circular side-nav buttons (also exports `SideNavButton`). Tabs are `<button>`s with `rounded-t-lg`, `border-b-0`, and `-mb-px` overlap onto the card so there's no seam. Active is `bg-accent text-accent-fg`; inactive is `bg-tertiary-200 text-text-muted` — the same fill as the card body, so inactive tabs read as one continuous folder piece. Standard ARIA tabs (`role="tablist"` / `role="tab"` / `aria-controls` / `aria-selected`) with `←`/`→`/`Home`/`End` keyboard navigation via refs.
+- **`OverviewPanel.tsx`** — split into "case file" identity (left) and per-dimension averages (right). 1-col below 900px, 2-col above. Six `ScoreTile`s in a `grid-cols-2 min-[900px]:grid-cols-3` grid. The case-file column conditionally renders `summary.description`, `headlines`, `role_signals`, `sample_question_themes` — empty-array sections are omitted entirely so the card never shows "(none)" placeholders.
+- **`TurnPanel.tsx`** — four inner cards arranged as two independent 2-column row grids (Q+A | Scores+Takeaway+QuickWins, then What Worked | Improvement Moments). Below 900px it's a single column stack. A single grid with `grid-rows-2 auto-rows-fr` was tried first and rejected because it forced both rows to match the taller of the two, leaving huge empty gutters under the top row when the bottom row had long feedback; two independent row grids let each row size to its own content while still equalizing height within a row via grid `items-stretch` + `InnerCard`'s `h-full`.
+- **`_helpers.ts`** — `SCORE_KEYS`, `SCORE_COLOR_MAP`, `num()`, `turnAverage()`. The color map is the **single source of truth** for per-dimension chart hues across SessionDetail; it mirrors `History.tsx:DIMENSIONS` so the trend chart and the per-session tiles share one visual language (structure → chart-1 teal, problem_solving → chart-2 terracotta, impact → chart-3 forest, initiative → chart-4 plum, depth → chart-5 amber, delivery → chart-6 indigo).
+
+**Mobile (<900px)**: the folder tabs strip and the side circular buttons both hide (`hidden min-[900px]:flex`). A small "Overview · 1 of 3"-style indicator replaces the tab strip at the top of the active panel. Tab navigation comes from two inputs: horizontal swipe (`touchstart`/`touchend` thresholding `|dx| > 60 && |dx| > 1.5·|dy|` so vertical scrolls don't accidentally page) and a Previous/Next `FlowHoverButton` row at the bottom of each panel (Prev = `variant="dark"`, Next = `variant="light"`, absent direction replaced by an invisible `flex-1` spacer to keep the visible button aligned).
+
+**Issue-type chips** in Improvement Moments render `formatIssueType(raw)` — a generic snake_case → Title Case formatter, so `off_track` → `Off Track`, `missing_result` → `Missing Result`. Don't hard-code a switch for the canonical 10 issue types; the generic formatter handles unknown / legacy categories gracefully too.
+
 ## Verification Checklist
 
 - [ ] **Auth**: no JWT → 401, invalid JWT → 401, valid JWT → 200

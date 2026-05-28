@@ -67,6 +67,29 @@ The Interview half of `Practice.tsx` is **chrome-free and full-viewport**: TopBa
 
 The legacy framed-card layout (`rounded-2xl bg-surface-raised p-10` constrained to `max-w-[80rem]`) is **gone for Interview only** — Results still uses that container with TopBar + ScoreDimensions visible. The old `RecordingStatusPill` component (and its `getAnalyzerStatusLabel`/`Class` helpers) was removed entirely; recording state is now surfaced only by the footer's pill. `analyzer.diagnostics` is still consumed by `handleSubmitTurn` for `cv_summary` payloads and logging, just not by any UI element.
 
+### SessionDetail folder-tab shell
+
+`SessionDetail.tsx` at `/sessions/:id` is a folder-tab "case file" — one large dark-beige card (`bg-tertiary-200`) with three folder-shaped tabs (Overview, Turn 1, Turn 2) attached to its top edge, plus circular `←` / `→` chevron buttons in the desktop gutters. The compact header that used to live above the card (back-link, date eyebrow, company `<h1>`, stats tiles) was deliberately removed — the card IS the page; TopBar's History link covers back-navigation, and per-session metadata lives inside the Overview panel.
+
+The orchestrator (`src/pages/SessionDetail.tsx`) is small: load session, hold `activeTabIndex`, compose the three pieces below, wire keyboard + swipe nav. **Tab reset on `sessionId` change** uses the React-19 "compare prop to tracked state during render" pattern (`useState` + render-time `if (sessionId !== trackedSessionId) { setTrackedSessionId(sessionId); setActiveTabIndex(0); }`) rather than a `useEffect` that calls `setActiveTabIndex(0)` — the latter trips `react-hooks/set-state-in-effect`.
+
+Three extracted components plus a helper module, all under `src/components/session-detail/`:
+
+- **`FolderTabs.tsx`** — exports `FolderTabs` (the strip) and `SideNavButton` (the chevron). Tabs are `<button>`s with `rounded-t-lg border border-b-0` and `-mb-px` overlap onto the card so there's no seam. Inactive: `bg-tertiary-200 text-text-muted` (same fill as card body — they read as one continuous folder piece). Active: `bg-accent text-accent-fg`. Full ARIA tabs pattern with `←`/`→`/`Home`/`End` keyboard nav via a ref array.
+- **`OverviewPanel.tsx`** — split layout (1-col below 900px, 2-col above). Left side renders the company brief block from `session.summary` (omitting empty sections entirely — never "(none)" placeholders). Right side is six `ScoreTile`s in a `grid-cols-2 min-[900px]:grid-cols-3` grid; each tile's progress bar uses inline `style={{ background: SCORE_COLOR_MAP[key] }}` for the per-dimension hue.
+- **`TurnPanel.tsx`** — four inner sub-cards in **two independent row grids**, NOT one grid with `grid-rows-2 auto-rows-fr`. The single-grid version was tried first and rejected: `auto-rows-fr` makes both rows match the height of the taller, which left enormous empty gutters under the top-row cards when bottom-row feedback was long. Two row grids each `grid-cols-2` let each row size to its own content while still equalizing within-row heights (grid default `items-stretch` + `InnerCard`'s `h-full`).
+- **`_helpers.ts`** — `SCORE_KEYS`, `SCORE_COLOR_MAP`, `num()`, `turnAverage()`. `SCORE_COLOR_MAP` mirrors `History.tsx:DIMENSIONS` so the trend chart and the per-session score tiles share one color language. If you change one, change both.
+
+**The leftmost-tab / card-corner alignment** is load-bearing. The `FolderTabs` strip lives **inside** the same flex column as the card body (NOT in the outer flex row containing the side-button gutters) so its left edge aligns with the card's left edge. The leftmost tab's `rounded-t-lg` provides the rounded top-left corner of the combined shape; the card itself carries `min-[900px]:rounded-tl-none` so its underlying squared corner is hidden beneath the tab. Move the strip outside the column and the active tab floats into the prev-side-button gutter; remove `rounded-tl-none` and the card's curve emerges from under the tab as a visual artifact. Both bugs were caught and fixed during iteration — don't re-introduce them.
+
+**Sticky chevron buttons** use `items-start` on the gutter column + `position: sticky; top: 50vh; -translate-y-1/2` on the inner wrapper. `items-start` is the load-bearing choice: with `items-center` the button's natural layout position is the column's vertical middle, which on a long card sits hundreds of pixels BELOW the viewport. Sticky's `top: 50vh` constraint says "the element's top must be ≥ 50vh from viewport top" — a position below the constraint *satisfies* it, so sticky never engages on first paint and the chevrons are invisible until the user scrolls down. With `items-start`, the natural position is at the column top (above the threshold = closer to viewport top, smaller y), which **violates** the constraint, so sticky engages immediately and pins the button at viewport middle from first render.
+
+**Native `title` for the chevron hover hint** (not a custom tooltip pill). An earlier `<span role="tooltip">` inside the button with `group-hover:opacity-100` was tried and removed: the sticky wrapper applies `transform: translateY(-50%)`, which creates a new containing block for absolute descendants, and the tooltip's absolute positioning resolved against it in unexpected ways. Native `title` works regardless — paired with `aria-label` (canonical screen-reader text), it covers both audiences. Mobile drops the chevrons entirely.
+
+**Mobile (<900px)** drops the folder tabs strip, the side chevrons, and the desktop two-column / 2×2 layouts. Each panel collapses to a single vertical stack. A small `"Overview · 1 of 3"`-style eyebrow at the top of the active panel labels the section. Tab navigation: horizontal swipe (`touchstart`/`touchend` with `|dx| > 60 && |dx| > 1.5·|dy|` thresholding so vertical scrolls don't accidentally page) plus a `FlowHoverButton` Previous/Next row at the bottom of each panel. The absent direction renders an invisible `flex-1` spacer so the visible button stays edge-aligned.
+
+**Issue-type chip formatting**: `formatIssueType(raw)` is a generic snake_case → Title Case formatter local to `TurnPanel.tsx`. Don't hard-code a switch on the canonical 10 evaluator categories — the generic formatter is correct for unknown / legacy values too.
+
 ## House style
 
 - `MePing` is a deliberate debug widget rendering the `/me` JSON — leave it in during development, remove before demo.
@@ -131,7 +154,7 @@ The system scales up on large external monitors via three coupled mechanisms. To
 
 **Explicit exceptions** — these stay hard-coded in px on purpose, don't sweep them:
 
-- `text-[10px] uppercase tracking-eyebrow` micro-labels (FlashBanner notice tag, error eyebrows, SessionDetail stat headers, etc.) — intentional editorial chrome, meant to be tiny.
+- `text-[10px] uppercase tracking-eyebrow` micro-labels (FlashBanner notice tag, error eyebrows, etc.) — intentional editorial chrome, meant to be tiny. (The old SessionDetail compact-header stat tiles also fell in this bucket and were removed entirely in the folder-tab redesign; `text-eyebrow` from `--text-eyebrow: 11px` covers most remaining cases.)
 
 **Don't add content to fill empty space on wide monitors.** The brand position (`frontend/.impeccable.md`: "Empty space is content") is that the scaling pass exists to make existing content feel intentionally sized at 1920+, not to add density, sidebars, or marketing tiles.
 
