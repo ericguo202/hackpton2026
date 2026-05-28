@@ -39,13 +39,13 @@ export function QuitConfirmDialog({ open, onCancel, onConfirm }: Props) {
           Your progress won&apos;t be scored. This session won&apos;t count toward your daily limit.
         </p>
         <div className="mt-6 flex justify-end gap-3">
-          <FlowHoverButton variant="dark" type="button" onClick={onCancel}>
+          <FlowHoverButton variant="dark" type="button" onClick={onCancel} className="cursor-pointer">
             Keep going
           </FlowHoverButton>
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-lg bg-red-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+            className="rounded-lg cursor-pointer bg-red-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
           >
             Quit session
           </button>

@@ -182,6 +182,8 @@ export default function Home() {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        company: trimmed,
+        jobTitle: me?.target_role ?? 'Software Engineer',
       };
       navigate('/practice', { state });
     } catch (err) {

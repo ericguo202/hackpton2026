@@ -54,3 +54,16 @@ export function turnAverage(t: TurnDetail): number {
   if (vals.length === 0) return 0;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
+
+/**
+ * Convert backend snake_case issue types (off_track, missing_result, …)
+ * into title-cased English. Generic title-case — works for any value the
+ * backend returns, including legacy / unknown types.
+ */
+export function formatIssueType(raw: string): string {
+  return raw
+    .split('_')
+    .filter((w) => w.length > 0)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}

@@ -55,7 +55,7 @@ Backend exposes `/api/v1/health`, `/api/v1/me`, `/api/v1/onboarding`. Frontend c
 
 ### Practice Interview phase shell
 
-The Interview half of `Practice.tsx` is **chrome-free and full-viewport**: TopBar and ScoreDimensions are both wrapped in `{isDone && …}` so they only render during Results. The Interview branch is a `flex h-screen flex-col` container with two children:
+The Interview half of `Practice.tsx` is **chrome-free and full-viewport**: TopBar is wrapped in `{isDone && …}` so it only renders during Results. The Interview branch is a `flex h-screen flex-col` container with two children:
 
 1. **Body grid** — desktop renders `min-[900px]:grid` whose `grid-template-columns` flips between `[33%_67%]` (transcript closed) and `[25%_50%_25%]` (transcript open). Mobile collapses to a vertical `flex flex-col` stack. Three column components, all under `components/practice/`:
    - **`QuestionColumn.tsx`** — eyebrow + invisible-underlay question text + `<audio>`. Sole consumer of `replayKey` (the audio remounts to retrigger `autoPlay` whenever Re-record OR the footer's Restart-turn button bumps the key). `min-[900px]:border-r` divider.
@@ -65,7 +65,33 @@ The Interview half of `Practice.tsx` is **chrome-free and full-viewport**: TopBa
 
 **`QuitConfirmDialog.tsx`** is mounted as a sibling of the body+footer container; it owns its own ESC-key effect (registered only while `open`), backdrop click closes via `onCancel`, inner card stops propagation.
 
-The legacy framed-card layout (`rounded-2xl bg-surface-raised p-10` constrained to `max-w-[80rem]`) is **gone for Interview only** — Results still uses that container with TopBar + ScoreDimensions visible. The old `RecordingStatusPill` component (and its `getAnalyzerStatusLabel`/`Class` helpers) was removed entirely; recording state is now surfaced only by the footer's pill. `analyzer.diagnostics` is still consumed by `handleSubmitTurn` for `cv_summary` payloads and logging, just not by any UI element.
+Both Interview and Results phases are now chrome-light by design. The old `RecordingStatusPill` component (and its `getAnalyzerStatusLabel`/`Class` helpers) was removed entirely; recording state is now surfaced only by the footer's pill. `analyzer.diagnostics` is still consumed by `handleSubmitTurn` for `cv_summary` payloads and logging, just not by any UI element.
+
+### Practice Results phase shell
+
+When `isDone === true`, `Practice.tsx` renders a folder-tab "case file" shell that mirrors `SessionDetail.tsx` — same `FolderTabs` + circular `SideNavButton` chevrons in desktop gutters, same `sticky top-[50vh] -translate-y-1/2` + `items-start` choice for the chevrons (load-bearing — see the SessionDetail section below for why), same mobile collapse to swipe + Prev/Next FlowHoverButton row, same `anim-crossfade` panel transition. The previous pill-dot stepper + slide animation + bottom CTA row are gone; TopBar covers post-session navigation.
+
+The data flow has three pieces:
+
+- **`sessionDetail: SessionDetail | null`** — populated by the final-turn refetch in `handleSubmitTurn` (already happening; now stored on state instead of merged back into local turn results). Source of truth for the Overview averages, company brief, and the canonical per-turn `TurnDetail`s.
+- **`turnResults: ReplayTurnResult[]`** — local-only data the server never sees: object-URL replay blobs (`replayUrl`, `audioReplayUrl`), the analyzer's `cvSummary`, and the per-turn `analyzerDiagnostics`. Survives even when the refetch fails.
+- **`replayToTurnDetail(replay, idx)`** — fallback adapter at module scope. Synthesizes a `TurnDetail` from a `ReplayTurnResult` so the Results panels always have something to render if the server refetch fails. Used through the `effectiveTurns = sessionDetail?.turns ?? turnResults.map(replayToTurnDetail)` pattern inside the `isDone` branch. `localAverages(turnResults)` is the parallel fallback for `DimensionAverages`.
+
+`PracticeLocationState` now carries `company` and `jobTitle` (echoed by `Home.tsx`) so the Overview's left column can identify the session without waiting on the refetch.
+
+Two panel components under `components/practice/`:
+
+- **`PracticeOverviewPanel.tsx`** — two-column shape matching SessionDetail's `OverviewPanel`. Left column: "Let's look at how you did" heading, company name + target role, editorial body paragraph. Right column: `<ScoresOverviewColumn averages caption={...} />` reused from `components/session-detail/OverviewPanel.tsx` (extracted as a named export for this purpose); the `caption` slot carries the session-overall line ("Overall X/10 averaged across N of M turns"). SessionDetail's own usage omits the caption.
+- **`PracticeTurnPanel.tsx`** — six inner cards in three rows × two columns at ≥900px; single column stack below.
+  - **Row 1**: `<QuestionAnswerCard turn={turn} />` | `<VideoReplayCard replay={replay} />`. Row container has `min-[900px]:h-[clamp(22rem,30vw,28rem)]` so the video card never grows into a long empty rectangle when the transcript is short; long transcripts scroll inside the Q+A card's existing `flex-1 min-h-0 overflow-y-auto` region. **Don't drop this clamp** — without it, sibling-stretch + `aspect-video` interact badly and leave empty space below the video.
+  - **Row 2**: composed `<InnerCard>` with `<MainTakeawaySection />` + `<QuickWinsSection />` | `<WhatWorkedCard turn={turn} />`. Natural height, items-stretch.
+  - **Row 3**: `<ImprovementMomentsCard turn={turn} />` | `<ImproveNextCard replay={replay} />`. Natural height, items-stretch.
+
+The first three turn-card pieces (`QuestionAnswerCard`, `WhatWorkedCard`, `ImprovementMomentsCard`) plus three section renderers (`ScoresSection`, `MainTakeawaySection`, `QuickWinsSection`) live in `components/session-detail/_turnInnerCards.tsx` — shared with SessionDetail's `TurnPanel`. The Practice-only `VideoReplayCard.tsx` and `ImproveNextCard.tsx` sit under `components/practice/`.
+
+**`VideoReplayCard`** wraps the `<video>` element with a face-mesh toggle and download link. The `ReplayLandmarkOverlay` (face-landmark canvas) lives inside this file — Practice.tsx no longer owns any video-overlay code. The legacy "Show notes / coaching overlay" gradient on top of the video was deliberately removed: the main takeaway is already in Row 2's Takeaway card, so duplicating it on the video would just compete for attention.
+
+**`ImproveNextCard`** carries the `buildReplayInsights` logic relocated from Practice.tsx (weakest / strongest / filler-word warning / CV-summary signals / "Delivery score unavailable" fallback). The original "Main takeaway" insight bullet was dropped here because that line is already covered by Row 2's Takeaway card.
 
 ### SessionDetail folder-tab shell
 

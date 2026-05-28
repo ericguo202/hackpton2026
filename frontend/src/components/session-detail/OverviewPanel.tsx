@@ -12,7 +12,9 @@
  * Below 900px the two columns stack.
  */
 
-import type { SessionDetail } from '../../types/history';
+import type { ReactNode } from 'react';
+
+import type { DimensionAverages, SessionDetail } from '../../types/history';
 import { SCORE_COLOR_MAP, SCORE_KEYS, num, type ScoreKey } from './_helpers';
 
 type Props = {
@@ -23,7 +25,7 @@ export default function OverviewPanel({ session }: Props) {
   return (
     <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-6 min-[900px]:gap-8 p-6 min-[900px]:p-8">
       <CaseFileColumn session={session} />
-      <ScoresOverviewColumn session={session} />
+      <ScoresOverviewColumn averages={session.averages} />
     </div>
   );
 }
@@ -84,12 +86,27 @@ function CaseFileColumn({ session }: { session: SessionDetail }) {
   );
 }
 
-function ScoresOverviewColumn({ session }: { session: SessionDetail }) {
+/**
+ * Right-column scores grid. Exported so Practice's Results phase can reuse
+ * the same color-mapped tile language. `caption` is an optional slot
+ * rendered between the eyebrow and the tile grid — used by Practice to
+ * surface a session-overall line; SessionDetail omits it.
+ */
+export function ScoresOverviewColumn({
+  averages,
+  caption,
+}: {
+  averages: DimensionAverages;
+  caption?: ReactNode;
+}) {
   return (
     <section className="flex flex-col">
       <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted mb-3">
         Scores overview · session averages
       </p>
+      {caption != null && (
+        <p className="mb-4 text-sm text-text-muted">{caption}</p>
+      )}
 
       <div className="grid grid-cols-2 min-[900px]:grid-cols-3 gap-3">
         {SCORE_KEYS.map(([key, label]) => (
@@ -97,7 +114,7 @@ function ScoresOverviewColumn({ session }: { session: SessionDetail }) {
             key={key}
             scoreKey={key}
             label={label}
-            value={num(session.averages[key])}
+            value={num(averages[key])}
           />
         ))}
       </div>
