@@ -18,7 +18,8 @@
  *     without Scores (scores live in Practice's Overview tile grid).
  */
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import type { TurnDetail } from '../../types/history';
 import { tokenizeTranscript } from '../../lib/fillerWords';
@@ -76,6 +77,12 @@ export function ScoreRow({
 
 export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
   const fillerCount = turn.filler_word_count;
+  const hasTranscript = !!turn.transcript_text;
+  // Mobile-only collapse. Below 900px the transcript can dominate the page
+  // and push the audio/scores/feedback far down. Default collapsed; the
+  // `min-[900px]:block` override keeps desktop unaffected.
+  const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
+  const transcriptId = useId();
   return (
     <InnerCard>
       <Eyebrow>Question</Eyebrow>
@@ -85,13 +92,36 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
 
       <div className="mt-5 mb-2 flex items-baseline justify-between gap-3">
         <Eyebrow>Your answer</Eyebrow>
-        {fillerCount > 0 && (
-          <span className="text-xs text-text-subtle tabular-nums">
-            {fillerCount} filler word{fillerCount === 1 ? '' : 's'}
-          </span>
-        )}
+        <div className="flex items-baseline gap-3">
+          {fillerCount > 0 && (
+            <span className="text-xs text-text-subtle tabular-nums">
+              {fillerCount} filler word{fillerCount === 1 ? '' : 's'}
+            </span>
+          )}
+          {hasTranscript && (
+            <button
+              type="button"
+              onClick={() => setIsTranscriptOpen((v) => !v)}
+              className="min-[900px]:hidden inline-flex items-center gap-1 text-xs text-accent underline-offset-2 hover:underline"
+              aria-expanded={isTranscriptOpen}
+              aria-controls={transcriptId}
+            >
+              {isTranscriptOpen ? 'Hide transcript' : 'Show transcript'}
+              {isTranscriptOpen ? (
+                <ChevronUp size={14} aria-hidden />
+              ) : (
+                <ChevronDown size={14} aria-hidden />
+              )}
+            </button>
+          )}
+        </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div
+        id={transcriptId}
+        className={`flex-1 min-h-0 overflow-y-auto ${
+          hasTranscript && !isTranscriptOpen ? 'hidden min-[900px]:block' : ''
+        }`}
+      >
         {turn.transcript_text ? (
           <p className="text-sm leading-7 text-text-muted">
             {tokenizeTranscript(turn.transcript_text).map((tok, i) =>

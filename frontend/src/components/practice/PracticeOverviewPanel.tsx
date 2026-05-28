@@ -68,6 +68,7 @@ function IntroColumn({ company, jobTitle }: { company: string; jobTitle: string 
         Each replay keeps your actual recording, the model feedback, and the
         delivery analytics together so you can review what to tighten on the
         next run instead of guessing.
+        <span className="min-[900px]:hidden"> Swipe left or right to move between turns.</span>
       </p>
     </section>
   );
