@@ -70,6 +70,8 @@ KEY_METRICS: dict[str, list[str]] = {
         "head_alignment_score",
         "vertical_posture",
         "midpoint_offset",
+        "head_tilt_degrees",
+        "head_tilt_score",
         "posture_score",
         "eye_contact_raw_score",
     ],
@@ -137,6 +139,8 @@ def suggested_thresholds(grouped: dict[str, list[dict]]) -> dict[str, float | No
     bad_vertical = values("posture_drift", "vertical_posture")
     neutral_midpoint = values("neutral", "midpoint_offset") + values("engaged", "midpoint_offset")
     bad_midpoint = values("posture_drift", "midpoint_offset")
+    neutral_tilt = values("neutral", "head_tilt_degrees") + values("engaged", "head_tilt_degrees")
+    bad_tilt = values("posture_drift", "head_tilt_degrees")
     neutral_smile = values("neutral", "smile_score") + values("engaged", "smile_score")
     bad_smile = values("low_energy", "smile_score")
     neutral_mouth_open = values("neutral", "mouth_open_ratio") + values("engaged", "mouth_open_ratio")
@@ -152,6 +156,7 @@ def suggested_thresholds(grouped: dict[str, list[dict]]) -> dict[str, float | No
         "head_alignment_red_below": midpoint(percentile(neutral_align, 0.10), percentile(bad_align, 0.90)),
         "vertical_posture_red_above": midpoint(percentile(neutral_vertical, 0.90), percentile(bad_vertical, 0.10)),
         "midpoint_offset_red_above": midpoint(percentile(neutral_midpoint, 0.90), percentile(bad_midpoint, 0.10)),
+        "head_tilt_red_above": midpoint(percentile(neutral_tilt, 0.90), percentile(bad_tilt, 0.10)),
         "smile_score_red_below": midpoint(percentile(neutral_smile, 0.10), percentile(bad_smile, 0.90)),
         "mouth_open_ratio_low_energy_below": midpoint(
             percentile(neutral_mouth_open, 0.10),

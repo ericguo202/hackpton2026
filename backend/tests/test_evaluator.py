@@ -389,7 +389,101 @@ def test_compute_delivery_score_penalizes_sustained_issues():
         "longest_low_energy_streak_frames": 58,
     }
 
-    assert _compute_delivery_score(strong) > _compute_delivery_score(weak)
+    strong_score = _compute_delivery_score(strong)
+    weak_score = _compute_delivery_score(weak)
+
+    assert strong_score >= 8
+    assert weak_score <= 4
+    assert strong_score > weak_score
+
+
+def test_compute_delivery_score_penalizes_tilted_bad_posture():
+    baseline = {
+        "frames_processed": 180,
+        "face_visible_pct": 99.0,
+        "eye_contact_score": 76.0,
+        "expression_score": 70.0,
+        "posture_score": 86.0,
+        "overall_interview_score": 74.0,
+        "eye_contact_stability": 90.0,
+        "expression_stability": 88.0,
+        "posture_stability": 92.0,
+        "looked_away_pct": 4.0,
+        "posture_drift_pct": 4.0,
+        "bad_posture_pct": 4.0,
+        "tilted_pct": 2.0,
+        "low_energy_pct": 5.0,
+        "longest_looked_away_streak_frames": 4,
+        "longest_posture_drift_streak_frames": 4,
+        "longest_bad_posture_streak_frames": 4,
+        "longest_tilted_streak_frames": 2,
+        "longest_low_energy_streak_frames": 5,
+    }
+    tilted = {
+        **baseline,
+        "posture_score": 42.0,
+        "posture_stability": 45.0,
+        "posture_drift_pct": 42.0,
+        "bad_posture_pct": 42.0,
+        "tilted_pct": 38.0,
+        "longest_posture_drift_streak_frames": 76,
+        "longest_bad_posture_streak_frames": 76,
+        "longest_tilted_streak_frames": 64,
+        "head_tilt_degrees_avg": 13.5,
+        "head_tilt_degrees_max": 22.0,
+    }
+
+    assert _compute_delivery_score(tilted) < _compute_delivery_score(baseline)
+
+
+def test_compute_delivery_score_treats_zero_scores_as_real_signal():
+    missing_expression = {
+        "frames_processed": 120,
+        "face_visible_pct": 100.0,
+        "eye_contact_score": 70.0,
+        "overall_interview_score": 60.0,
+    }
+    zero_expression = {
+        **missing_expression,
+        "expression_score": 0.0,
+    }
+
+    assert _compute_delivery_score(zero_expression) < _compute_delivery_score(
+        missing_expression
+    )
+
+
+async def test_weak_delivery_adds_specific_quick_win(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(_DEFAULT_PAYLOAD),
+    )
+
+    result = await evaluate_turn(
+        question="Tell me about a technical challenge.",
+        transcript="I led the deadline discussion.",
+        cv_summary={
+            "frames_processed": 180,
+            "face_visible_pct": 94.0,
+            "eye_contact_score": 63.0,
+            "expression_score": 48.0,
+            "overall_interview_score": 57.0,
+            "eye_contact_stability": 58.0,
+            "expression_stability": 52.0,
+            "looked_away_pct": 28.0,
+            "posture_drift_pct": 22.0,
+            "low_energy_pct": 35.0,
+            "longest_looked_away_streak_frames": 42,
+            "longest_posture_drift_streak_frames": 31,
+            "longest_low_energy_streak_frames": 58,
+            "coaching_tip": "Add a slight smile and keep your eyes more open to look engaged.",
+        },
+    )
+
+    assert result.delivery is not None
+    assert result.delivery <= 4
+    assert result.feedback_detail.quick_wins[0].startswith("Delivery:")
+    assert "35%" in result.feedback_detail.quick_wins[0]
 
 
 async def test_category_threads_into_system_prompt(monkeypatch):

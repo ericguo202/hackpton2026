@@ -162,6 +162,16 @@ function buildInsights({
         detail: `Expression scored ${cvSummary.expression_score}/100. A small smile and slightly more open eyes will read as more engaged.`,
       });
     }
+    if (
+      cvSummary.posture_score < 68 ||
+      cvSummary.bad_posture_pct >= 12 ||
+      cvSummary.tilted_pct >= 12
+    ) {
+      insights.push({
+        title: 'Fix posture drift',
+        detail: `Posture scored ${cvSummary.posture_score}/100 with ${cvSummary.bad_posture_pct}% bad-posture frames and ${cvSummary.tilted_pct}% tilted frames. Sit upright and keep your head level with the camera.`,
+      });
+    }
   } else {
     insights.push({
       title: 'Delivery score unavailable',
