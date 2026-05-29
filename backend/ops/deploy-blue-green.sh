@@ -98,11 +98,8 @@ write_upstream() {
 }
 
 reload_or_start_caddy() {
-    if service_is_running caddy; then
-        compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
-    else
-        compose up -d caddy
-    fi
+    compose up -d --no-deps caddy
+    compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 }
 
 rollback_caddy() {
