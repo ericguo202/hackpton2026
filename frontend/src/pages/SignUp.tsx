@@ -84,10 +84,21 @@ export default function SignUp() {
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       setPendingVerification(true);
     } catch (err: unknown) {
-      const message =
-        (err as { errors?: Array<{ message?: string }> }).errors?.[0]?.message ??
-        'Could not create your account. Check your details and try again.';
-      setError(message);
+      const firstError = (
+        err as { errors?: Array<{ code?: string; message?: string }> }
+      ).errors?.[0];
+      if (firstError?.code === 'form_identifier_exists') {
+        // Email already registered (possibly via Google). Point them at
+        // sign-in rather than surfacing Clerk's raw "already exists" string.
+        setError(
+          'An account with this email already exists. Sign in instead — if you signed up with Google, use “Continue with Google.”',
+        );
+      } else {
+        setError(
+          firstError?.message ??
+            'Could not create your account. Check your details and try again.',
+        );
+      }
     } finally {
       setSubmitting(false);
     }

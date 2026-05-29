@@ -78,7 +78,29 @@ export default function SignIn() {
     setSubmitting(true);
     setError(null);
     try {
-      const result = await signIn.create({ identifier: email, password });
+      // Identifier-first: discover which first-factor strategies this account
+      // supports BEFORE attempting the password. If the account was created
+      // via Google (no password), `supportedFirstFactors` carries an oauth_*
+      // factor but no `password` factor — we surface a precise hint pointing
+      // at the Google button instead of an opaque "wrong password" error.
+      // The reverse direction (email/password account → Google sign-in) needs
+      // no handling here: Clerk auto-links it on its own (verified email).
+      const attempt = await signIn.create({ identifier: email });
+
+      const factors = attempt.supportedFirstFactors ?? [];
+      const hasPassword = factors.some((f) => f.strategy === 'password');
+      const hasOauth = factors.some((f) => f.strategy.startsWith('oauth_'));
+      if (!hasPassword && hasOauth) {
+        setError(
+          'This account uses Google sign-in. Use “Continue with Google” below.',
+        );
+        return;
+      }
+
+      const result = await attempt.attemptFirstFactor({
+        strategy: 'password',
+        password,
+      });
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
         navigate('/', { replace: true });
@@ -87,10 +109,17 @@ export default function SignIn() {
         clerk.redirectToSignIn();
       }
     } catch (err: unknown) {
-      const message =
-        (err as { errors?: Array<{ message?: string }> }).errors?.[0]?.message ??
-        'Sign-in failed. Check your email and password.';
-      setError(message);
+      const firstError = (
+        err as { errors?: Array<{ code?: string; message?: string }> }
+      ).errors?.[0];
+      if (firstError?.code === 'form_identifier_not_found') {
+        setError('No account found for that email. Create an account below.');
+      } else {
+        setError(
+          firstError?.message ??
+            'Sign-in failed. Check your email and password.',
+        );
+      }
     } finally {
       setSubmitting(false);
     }
