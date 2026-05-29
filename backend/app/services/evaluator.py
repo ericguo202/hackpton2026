@@ -12,7 +12,7 @@ covers the occasional preamble that slips through.
 camera-declined turns keep the legacy 5-score output shape.
 
 This module intentionally does NOT touch the DB or the filler-word regex —
-the route handler at T+10-12 composes them. It also does NOT generate
+the route handler composes them. It also does NOT generate
 `next_question` or decide `is_final`; session control is a separate concern.
 """
 
