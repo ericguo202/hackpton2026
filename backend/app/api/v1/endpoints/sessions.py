@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from app.core.auth import get_current_user_db
-from app.db.models.enums import SessionStatus, UserTier
+from app.db.models.enums import ExperienceLevel, SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
 from app.db.models.session_metrics import SessionMetrics
@@ -166,7 +166,9 @@ async def create_session(
         )
 
     try:
-        brief = await research_company(body.company, body.job_title)
+        brief = await research_company(
+            body.company, body.job_title, user.experience_level
+        )
     except CompanyNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -239,6 +241,7 @@ async def _followup_and_tts(
     category: FieldCategory | None = None,
     role_signals: list[str] | None = None,
     sample_question_themes: list[str] | None = None,
+    experience_level: ExperienceLevel | None = None,
 ) -> tuple[str, str]:
     """Generate follow-up via Flash then TTS — runs in parallel with Gemma 4 eval.
 
@@ -246,9 +249,10 @@ async def _followup_and_tts(
     — passed in (rather than recomputed here) to keep this helper a pure
     string-in / string-out function the caller can compose freely.
 
-    `category`, `role_signals`, and `sample_question_themes` are passed
-    through to `generate_followup` so the follow-up prompt sees the same
-    field / research context the opening question and evaluator already do.
+    `category`, `role_signals`, `sample_question_themes`, and
+    `experience_level` are passed through to `generate_followup` so the
+    follow-up prompt sees the same field / research / seniority context the
+    opening question and evaluator already do.
     """
     next_q = await generate_followup(
         question,
@@ -256,6 +260,7 @@ async def _followup_and_tts(
         category=category,
         role_signals=role_signals,
         sample_question_themes=sample_question_themes,
+        experience_level=experience_level,
     )
     audio_url = await synthesize_speech(next_q, voice_id=voice_id)
     return next_q, audio_url
@@ -305,6 +310,7 @@ async def _run_background_eval(
     history: list[dict],
     cv_summary: dict | None,
     category: FieldCategory | None,
+    experience_level: ExperienceLevel | None = None,
 ) -> None:
     """Evaluate a turn after the request has already returned, then persist.
 
@@ -316,7 +322,10 @@ async def _run_background_eval(
     `finally` block so a missed finalize doesn't leak the Task reference.
 
     `category` is the persisted `brief.category` for the session and selects
-    the field-tailored rubric appendix inside `evaluate_turn`.
+    the field-tailored rubric appendix inside `evaluate_turn`. `experience_level`
+    is the candidate's seniority and selects the experience-tailored rubric
+    appendix; both are passed explicitly because this task runs in a detached
+    AsyncSession with no access to the request-scoped `user` row.
     """
     try:
         async with AsyncSessionLocal() as db:
@@ -324,6 +333,7 @@ async def _run_background_eval(
                 eval_out = await evaluate_turn(
                     question, transcript, history,
                     cv_summary=cv_summary, category=category,
+                    experience_level=experience_level,
                 )
                 _log_eval_scores(session_id, turn_id, category, eval_out)
                 turn = await db.get(InterviewTurn, turn_id)
@@ -484,6 +494,10 @@ async def submit_turn(
     # evaluator handles by falling back to the default-category prompt.
     brief_out = _parse_company_summary(session.company_summary)
     category: FieldCategory | None = brief_out.category if brief_out else None
+    # The candidate's seniority tailors the evaluator rubric alongside the
+    # field category. None for users onboarded before the field existed; the
+    # evaluator omits the experience appendix in that case.
+    experience_level = user.experience_level
 
     # 2. Find the current unanswered turn (question exists, transcript is NULL).
     result = await db.execute(
@@ -587,6 +601,7 @@ async def submit_turn(
             sample_question_themes=(
                 brief_out.sample_question_themes if brief_out else None
             ),
+            experience_level=experience_level,
         )
         await _insert_followup_turn(db, session_id, current_turn.id, next_q)
         # Commit BEFORE registering the background task so the bg task's
@@ -604,6 +619,7 @@ async def submit_turn(
                 history=history,
                 cv_summary=parsed_cv_summary,
                 category=category,
+                experience_level=experience_level,
             ),
             name=f"eval-session-{session_id}-turn-{current_turn.turn_number}",
         )
@@ -629,6 +645,7 @@ async def submit_turn(
     eval_out = await evaluate_turn(
         current_turn.question_text, transcript, history,
         cv_summary=parsed_cv_summary, category=category,
+        experience_level=experience_level,
     )
     _log_eval_scores(session_id, current_turn.id, category, eval_out)
     _apply_eval_to_turn(current_turn, eval_out)
@@ -669,6 +686,7 @@ async def submit_turn(
             inline_eval = await evaluate_turn(
                 t.question_text, t.transcript_text, inline_history,
                 cv_summary=inline_cv, category=category,
+                experience_level=experience_level,
             )
             _log_eval_scores(session_id, t.id, category, inline_eval)
             _apply_eval_to_turn(t, inline_eval)

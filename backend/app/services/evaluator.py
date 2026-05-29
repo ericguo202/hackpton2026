@@ -12,7 +12,7 @@ covers the occasional preamble that slips through.
 camera-declined turns keep the legacy 5-score output shape.
 
 This module intentionally does NOT touch the DB or the filler-word regex —
-the route handler at T+10-12 composes them. It also does NOT generate
+the route handler composes them. It also does NOT generate
 `next_question` or decide `is_final`; session control is a separate concern.
 """
 
@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Annotated, Any, Callable, Literal
+from typing import Annotated, Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
 
+from app.db.models.enums import ExperienceLevel
 from app.services._field_rubrics import build_system_instruction
 from app.services._field_prompts import FieldCategory
 from app.services._openrouter import extract_json_object, get_client
@@ -76,9 +77,7 @@ _DOMAIN_DETAIL_RE = re.compile(
     r"stakeholder|budget|timeline|risk|compliance|design|architecture|"
     r"process|workflow|analysis|dashboard|prototype|launch|deployment)\b"
 )
-_ACRONYM_RE = re.compile(
-    r"\b[A-Z]{2,}\b",
-)
+_ACRONYM_RE = re.compile(r"\b[A-Z]{2,}\b")
 
 
 def _truncate_to(limit: int, *, ellipsis: bool) -> Callable[[Any], Any]:
@@ -679,11 +678,34 @@ def _feedback_text(feedback: FeedbackDetail) -> str:
     return " ".join(part.strip() for part in parts if part.strip())
 
 
-def _drop_unanchored_moments(result: EvaluatorOutput, transcript: str) -> EvaluatorOutput:
-    """Keep only feedback moments tied to exact transcript text.
+_MomentT = TypeVar("_MomentT", PositiveMoment, ImprovementMoment)
 
-    The model is prompted to quote exact snippets, but this keeps the
-    product promise enforceable at the backend boundary.
+
+def _dedupe_by_snippet(moments: list[_MomentT]) -> list[_MomentT]:
+    """Drop later moments that quote the same transcript_snippet as an earlier one.
+
+    Defense alongside the prompt's no-duplicates rule. Exact-string equality
+    only — substring/overlap dedup would be heuristic and could false-positive
+    on legitimate distinct quotes. First occurrence wins to preserve whatever
+    the model judged most important.
+    """
+    seen: set[str] = set()
+    out: list[_MomentT] = []
+    for moment in moments:
+        key = moment.transcript_snippet.strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(moment)
+    return out
+
+
+def _drop_unanchored_moments(result: EvaluatorOutput, transcript: str) -> EvaluatorOutput:
+    """Filter feedback moments: keep only those anchored in transcript, then dedupe by snippet.
+
+    The model is prompted to quote exact snippets AND to use distinct
+    snippets across improvement_moments; this keeps both product promises
+    enforceable at the backend boundary.
     """
     positive = [
         moment
@@ -697,8 +719,8 @@ def _drop_unanchored_moments(result: EvaluatorOutput, transcript: str) -> Evalua
         if moment.transcript_snippet.strip()
         and moment.transcript_snippet.strip() in transcript
     ]
-    result.feedback_detail.positive_moments = positive
-    result.feedback_detail.improvement_moments = improvements
+    result.feedback_detail.positive_moments = _dedupe_by_snippet(positive)
+    result.feedback_detail.improvement_moments = _dedupe_by_snippet(improvements)
     result.feedback_detail.quick_wins = result.feedback_detail.quick_wins[:3]
     if not result.notes.strip():
         result.notes = _feedback_text(result.feedback_detail)
@@ -711,6 +733,7 @@ async def evaluate_turn(
     history: list[dict] | None = None,
     cv_summary: dict | None = None,
     category: FieldCategory | None = None,
+    experience_level: ExperienceLevel | None = None,
 ) -> EvaluatorOutput:
     """Score one interview turn and return structured JSON.
 
@@ -721,12 +744,19 @@ async def evaluate_turn(
     `category` selects the field-tailored rubric appendix; None or an
     unknown category falls back to the DEFAULT_CATEGORY prompt — same
     fallback policy as the opening-question agent.
+
+    `experience_level` appends the matching seniority-tailored rubric
+    paragraph so scoring expectations scale with level; None (legacy
+    sessions / unknown) omits it, leaving the category-only rubric.
     """
     client = get_client()
     response = await client.chat.completions.create(
         model=EVAL_MODEL,
         messages=[
-            {"role": "system", "content": build_system_instruction(category)},
+            {
+                "role": "system",
+                "content": build_system_instruction(category, experience_level),
+            },
             {
                 "role": "user",
                 "content": _build_prompt(question, transcript, history, cv_summary),

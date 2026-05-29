@@ -9,6 +9,14 @@ Threads the session's field category plus `role_signals` /
 `sample_question_themes` from the persisted CompanyBrief into the prompt so
 follow-ups match the interview's industry context — mirrors the threading
 already done in `opening_question.py` and `evaluator.py`.
+
+Also threads the candidate's `experience_level`. There is no separate
+experience-tailored prompt here (unlike the opening question / evaluator):
+the CompanyBrief now bakes seniority into its `role_signals` /
+`sample_question_themes`, so the follow-up is already indirectly tailored.
+We still surface the level explicitly in the context block so the model can
+calibrate the follow-up's depth and scope (probe an intern on learning,
+an executive on strategic trade-offs).
 """
 
 from __future__ import annotations
@@ -16,6 +24,7 @@ from __future__ import annotations
 import logging
 import re
 
+from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import FieldCategory
 from app.services._openrouter import get_client
 
@@ -82,6 +91,7 @@ def _render_context_block(
     category: FieldCategory | None,
     role_signals: list[str] | None,
     sample_question_themes: list[str] | None,
+    experience_level: ExperienceLevel | None = None,
 ) -> str:
     """Render the optional context block, mirroring the empty-omission
     pattern in `opening_question._company_digest`.
@@ -94,6 +104,11 @@ def _render_context_block(
     lines: list[str] = []
     if category is not None:
         lines.append(f"Field: {category}")
+    if isinstance(experience_level, ExperienceLevel):
+        lines.append(
+            f"Candidate's experience level: {experience_level.value} — "
+            "calibrate the follow-up's depth and scope to this seniority."
+        )
     if role_signals:
         lines.append(
             "What this company values in applicants for this role: "
@@ -115,9 +130,10 @@ def _build_user_prompt(
     category: FieldCategory | None,
     role_signals: list[str] | None,
     sample_question_themes: list[str] | None,
+    experience_level: ExperienceLevel | None,
 ) -> str:
     return (
-        f"{_render_context_block(category, role_signals, sample_question_themes)}"
+        f"{_render_context_block(category, role_signals, sample_question_themes, experience_level)}"
         f"Interview question: {question}\n"
         f"Candidate's answer: {transcript}"
     )
@@ -155,11 +171,13 @@ async def generate_followup(
     category: FieldCategory | None = None,
     role_signals: list[str] | None = None,
     sample_question_themes: list[str] | None = None,
+    experience_level: ExperienceLevel | None = None,
 ) -> str:
     """Return a probing follow-up question via Gemini 2.5 Flash."""
     client = get_client()
     user_prompt = _build_user_prompt(
         question, transcript, category, role_signals, sample_question_themes,
+        experience_level,
     )
     logger.warning(
         "Followup prompt sent (question=%r, transcript_len=%d, category=%r)",

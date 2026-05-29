@@ -59,4 +59,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 )
 Button.displayName = 'Button'
 
+// `buttonVariants` is a non-component export, which trips the Fast Refresh
+// rule. Keeping it here preserves the standard shadcn single-file layout;
+// the cost is only that an HMR edit to this file does a full reload.
+// eslint-disable-next-line react-refresh/only-export-components
 export { Button, buttonVariants }

@@ -72,8 +72,8 @@ function AutoSubmitPill({
       aria-pressed={autoSubmit}
       className={
         autoSubmit
-          ? 'rounded-full border border-accent bg-accent px-3 py-1 text-[12px] font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-          : 'cursor-pointer rounded-full border border-border bg-transparent px-3 py-1 text-[12px] text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+          ? 'rounded-full border border-accent bg-accent px-3 py-1 text-xs font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+          : 'cursor-pointer rounded-full border border-border bg-transparent px-3 py-1 text-xs text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
       }
     >
       Auto-submit: {autoSubmit ? 'On' : 'Off'}
@@ -182,6 +182,8 @@ export default function Home() {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        company: trimmed,
+        jobTitle: me?.target_role ?? 'Software Engineer',
       };
       navigate('/practice', { state });
     } catch (err) {
@@ -207,7 +209,7 @@ export default function Home() {
   }
 
   const targetRoleBadge = me?.target_role ? (
-    <p className="text-[13px] text-text-subtle">
+    <p className="text-sm text-text-subtle">
       Target role: <span className="text-text-muted">{me.target_role}</span>
     </p>
   ) : null;
@@ -217,7 +219,7 @@ export default function Home() {
   // bar, no streak, no color. Refreshes automatically when the user
   // returns to Home after completing a session (useMe refetches on mount).
   const dailyLimitBadge = me?.tier === 'free' ? (
-    <p className="text-[13px] text-text-subtle">
+    <p className="text-sm text-text-subtle">
       <span className="text-text-muted">{me.daily_session_count}/5</span> sessions today
     </p>
   ) : null;
@@ -280,7 +282,7 @@ export default function Home() {
 
           <form
             onSubmit={handleStart}
-            className="relative z-10 mx-auto w-full max-w-[80rem] px-8 py-16 md:px-16 md:py-24"
+            className="relative z-10 mx-auto w-full max-w-[80rem] 2xl:max-w-[88rem] px-8 py-16 md:px-16 md:py-24"
           >
             <div className="max-w-[54rem]">
               <p
@@ -330,7 +332,7 @@ export default function Home() {
                     disabled={submitting}
                     aria-expanded={advancedOpen}
                     aria-haspopup="dialog"
-                    className="inline-flex items-center gap-1 text-[13px] text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center gap-1 text-sm text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <span>Advanced</span>
                     <ChevronRight

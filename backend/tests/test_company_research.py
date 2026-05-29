@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.db.models.enums import ExperienceLevel
 from app.services import company_research
 from app.services.company_research import CompanyBrief, research_company
 
@@ -124,6 +125,28 @@ async def test_research_company_fires_two_serper_calls(monkeypatch):
     assert set(queries) == {
         "Acme Robotics",
         "Acme Robotics Robotics Engineer behavioral interview culture",
+    }
+
+
+async def test_research_company_threads_experience_level_into_role_query(monkeypatch):
+    """When an experience level is given, its search label is woven into the
+    role-targeted query so the surfaced signal skews to seniority. The plain
+    {company} query is untouched."""
+    monkeypatch.setattr(company_research.settings, "SERPER_API_KEY", "test-key")
+    queries: list[str] = []
+    _mock_serper(monkeypatch, _fake_serp_payload(), queries=queries)
+    monkeypatch.setattr(
+        "app.services.company_research.get_client",
+        lambda: _make_fake_client(_WELL_FORMED_JSON),
+    )
+
+    await research_company(
+        "Acme Robotics", "Robotics Engineer", ExperienceLevel.senior
+    )
+
+    assert set(queries) == {
+        "Acme Robotics",
+        "Acme Robotics senior Robotics Engineer behavioral interview culture",
     }
 
 

@@ -10,7 +10,7 @@ per-turn evaluator is on `deepseek/deepseek-v3.2`.
 Two Serper calls fire in parallel so total latency stays ~one Serper
 round-trip:
   1. `{company}`                                       — description / headlines / general values / category
-  2. `{company} {job_title} behavioral interview culture` — role-specific BEHAVIORAL signal + culture/values leaks
+  2. `{company} [{experience_level}] {job_title} behavioral interview culture` — role-/level-specific BEHAVIORAL signal + culture/values leaks
 
 The second query intentionally drops the generic "interview questions"
 phrasing — that corpus is dominated by LeetCode / system-design content
@@ -32,6 +32,7 @@ import httpx
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import (
     DEFAULT_CATEGORY,
     FIELD_CATEGORIES,
@@ -44,6 +45,18 @@ logger = logging.getLogger(__name__)
 RESEARCH_MODEL = "google/gemini-2.5-flash"
 SERPER_URL = "https://google.serper.dev/search"
 SERPER_TIMEOUT_SECONDS = 10.0
+
+# Search-friendly phrasing for the role-targeted query. Distinct from the enum
+# value (e.g. "entry-level" reads better in a Google query than "entry") so the
+# corpus we surface skews toward the candidate's actual seniority.
+_EXPERIENCE_QUERY_LABEL: dict[ExperienceLevel, str] = {
+    ExperienceLevel.internship: "internship",
+    ExperienceLevel.entry: "entry-level",
+    ExperienceLevel.mid: "mid-level",
+    ExperienceLevel.senior: "senior",
+    ExperienceLevel.staff: "staff",
+    ExperienceLevel.executive: "executive",
+}
 
 
 class CompanyNotFoundError(Exception):
@@ -291,7 +304,11 @@ def _sanitize_string_list(raw: object, *, limit: int) -> list[str]:
     return out
 
 
-async def research_company(company: str, job_title: str) -> CompanyBrief:
+async def research_company(
+    company: str,
+    job_title: str,
+    experience_level: ExperienceLevel | None = None,
+) -> CompanyBrief:
     """Fetch a compact structured brief for `company` + a field category.
 
     Runs two Serper queries in parallel (one general, one role-targeted)
@@ -300,6 +317,14 @@ async def research_company(company: str, job_title: str) -> CompanyBrief:
     applicants for this role and any interview-question leaks; the
     Gemini prompt has explicit anti-hallucination rules requiring those
     fields to be empty when no signal is found.
+
+    When `experience_level` is known, its search-friendly label is woven
+    into the role-targeted query so the surfaced `role_signals` /
+    `sample_question_themes` skew to the candidate's seniority instead of
+    a level-agnostic blend. None (legacy callers) leaves the query string
+    unchanged. The summarizer also sees the level implicitly: the role
+    query (now carrying the label) is echoed back in the user prompt's
+    ROLE-SPECIFIC results header.
 
     The category is classified jointly from the company and the target
     job title so cross-functional roles (e.g. legal at a tech company)
@@ -320,7 +345,17 @@ async def research_company(company: str, job_title: str) -> CompanyBrief:
     # corpus that's dominated by LeetCode / system-design content; this
     # app coaches behavioral rounds, so technical results pollute the
     # downstream brief.
-    role_query = f"{company} {job_title} behavioral interview culture"
+    #
+    # The candidate's experience level (when known) is woven in so the
+    # surfaced signal skews to their seniority. `.get` returns None for an
+    # unknown/missing level, falling back to the level-agnostic query —
+    # which keeps the string byte-identical for legacy callers.
+    level_label = _EXPERIENCE_QUERY_LABEL.get(experience_level) if experience_level else None
+    role_query = (
+        f"{company} {level_label} {job_title} behavioral interview culture"
+        if level_label
+        else f"{company} {job_title} behavioral interview culture"
+    )
     serp_company, serp_role = await asyncio.gather(
         _serper_search(company),
         _serper_search(role_query),

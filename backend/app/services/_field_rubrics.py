@@ -16,6 +16,7 @@ against the same vocabulary.
 
 from __future__ import annotations
 
+from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import (
     DEFAULT_CATEGORY,
     FIELD_CATEGORIES,
@@ -120,10 +121,11 @@ feedback_detail.positive_moments:
 - Each transcript_snippet MUST be copied exactly from the candidate answer. Do not paraphrase it.
 - Each transcript_snippet must be at most 120 characters. If the relevant phrase is longer, copy only the shortest contiguous span that captures the moment.
 - Base positives only on the transcript. Do not invent praise or reward content that is not there.
+- If the candidate's answer is unintelligible (laughter, gibberish, microphone-test utterances like "test test"), clearly off-topic (does not attempt to address the question), or inappropriate for a professional interview (vulgar, profane, joking responses), return an EMPTY positive_moments array. Do not invent praise to soften the feedback in these cases. In this case, improvement_moments should use issue_type "does_not_answer_question" or "off_track", and main_takeaway should plainly state that the response did not address the question.
 - Look for honest strengths such as directness, relevance, concise wording, naming a customer concern, attempting a specific example, mentioning a result, acknowledging a challenge, showing confidence, or comparing alternatives.
 - why_this_helped should explain why that exact snippet made the answer stronger. It must be at most 330 characters.
 - keep_doing should be short and reinforce the behavior to repeat. It must be at most 240 characters.
-- If the answer is very weak, still include one honest positive moment if the transcript supports it.
+- If the answer is weak but represents a genuine attempt at the question, you may still include one honest positive moment if the transcript supports it. (This is distinct from the unintelligible/off-topic/inappropriate case above, which empties positive_moments.)
 
 feedback_detail.main_takeaway:
 
@@ -137,6 +139,7 @@ feedback_detail.improvement_moments:
 - Return 2-4 moments maximum. Use fewer if the answer is very short.
 - Each transcript_snippet MUST be copied exactly from the candidate answer. Do not paraphrase it.
 - Each transcript_snippet must be at most 120 characters. If the relevant phrase is longer, copy only the shortest contiguous span that captures the moment.
+- Each transcript_snippet MUST be distinct across improvement_moments. Do not quote the same sentence or phrase in two different moments. If one phrase has multiple weaknesses, combine them into a single moment with the most important issue_type and a how_to_strengthen that addresses both.
 - Choose only the highest-impact moments where the candidate was too vague, missed depth, skipped reasoning, skipped the result, went off-track, sounded unprofessional, failed to answer the question, used weak wording, or missed an obvious chance to strengthen the answer.
 - why_this_weakened should be one short, practical explanation. It must be at most 330 characters.
 - how_to_strengthen should be concrete, bite-sized, and easy to mentally copy. It should suggest one sentence or one detail the candidate could add, not a full answer. It must be at most 330 characters.
@@ -298,13 +301,38 @@ if _missing:
     )
 
 
-def build_system_instruction(category: FieldCategory | None) -> str:
+def build_system_instruction(
+    category: FieldCategory | None,
+    experience_level: ExperienceLevel | None = None,
+) -> str:
     """Assemble the full evaluator system prompt for a given field category.
 
     Falls back to DEFAULT_CATEGORY (Tech/Product/Design) when `category` is
     None or — defensively — when a stale category string slips through that
     isn't in INDUSTRY_GUIDANCE. The fallback mirrors what `opening_question.py`
     does for the opening-question prompt.
+
+    When `experience_level` is known, the matching experience-level rubric
+    paragraph (from `_experience_prompts`) is appended as an extra section so
+    scoring expectations scale with seniority (an intern is judged on
+    coachability, an executive on enterprise leadership). Omitted when the
+    level is None or the cell is missing — same empty-omission discipline as
+    the opening-question builder. The lookup keys on the resolved `key` so the
+    experience appendix stays consistent with the industry appendix even when
+    `category` falls back.
     """
+    # Lazy import to avoid a circular import (`_experience_prompts` imports
+    # from `_field_prompts`, which this module also imports).
+    from app.services._experience_prompts import experience_evaluator_block
+
     key = category if category in INDUSTRY_GUIDANCE else DEFAULT_CATEGORY
-    return BASE_SYSTEM_INSTRUCTION.format(industry_guidance=INDUSTRY_GUIDANCE[key])
+    instruction = BASE_SYSTEM_INSTRUCTION.format(industry_guidance=INDUSTRY_GUIDANCE[key])
+
+    experience_block = experience_evaluator_block(key, experience_level)
+    if experience_block:
+        instruction += (
+            "\nExperience-level guidance (calibrate scoring expectations to "
+            f"this candidate's level):\n\n{experience_block}\n"
+        )
+
+    return instruction

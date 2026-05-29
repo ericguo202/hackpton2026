@@ -26,6 +26,8 @@ from __future__ import annotations
 import random
 from typing import Literal
 
+from app.db.models.enums import ExperienceLevel
+
 
 FieldCategory = Literal[
     "Technology, Product, and Design",
@@ -299,6 +301,7 @@ FIELD_EXAMPLES: dict[FieldCategory, list[str]] = {
 
 def build_field_system_prompt(
     category: FieldCategory,
+    experience_level: ExperienceLevel | None = None,
     rng: random.Random | None = None,
 ) -> str:
     """Assemble the per-call system prompt for the opening-question generator.
@@ -311,10 +314,22 @@ def build_field_system_prompt(
       question repeatedly across sessions: the 5 fixed examples acted
       as strong attractors and the model converged on them; showing
       only 2 (a different 2 each call) breaks that.
+    - When `experience_level` is known, the matching experience-level
+      paragraph (from `_experience_prompts`) leads as the PRIMARY driver
+      and the broad field themes are demoted to background, so an intern
+      and an executive in the same field get differently-calibrated
+      questions instead of the model gravitating to a generic theme.
+      When it's None (legacy users) the section is omitted and output is
+      byte-identical to the category-only behavior — same empty-omission
+      discipline as `_company_digest`.
 
     `rng` is injectable so tests can pin the sample deterministically;
     production callers pass `None` to get fresh randomness per call.
     """
+    # Imported lazily to avoid a circular import: `_experience_prompts`
+    # imports FieldCategory / FIELD_CATEGORIES from this module.
+    from app.services._experience_prompts import experience_question_block
+
     themes = FIELD_THEMES.get(category) or FIELD_THEMES[DEFAULT_CATEGORY]
     examples = FIELD_EXAMPLES.get(category) or FIELD_EXAMPLES[DEFAULT_CATEGORY]
     sampler = rng if rng is not None else random
@@ -323,12 +338,34 @@ def build_field_system_prompt(
     intro = FIELD_PROMPT_INTRO_TEMPLATE.format(category=category)
     themes_block = "\n".join(f"  - {t}" for t in themes)
     examples_block = "\n".join(f"  - {e}" for e in sampled)
+    style_cues = (
+        "Style cues (concrete shapes — emulate the spirit, not the wording):\n"
+        f"{examples_block}"
+    )
 
+    experience_block = experience_question_block(category, experience_level)
+    if experience_block:
+        # Experience-level path: the seniority guidance is the PRIMARY driver
+        # and the field themes are demoted to background, so the model picks a
+        # level-appropriate scenario instead of gravitating to a generic
+        # (often senior-sounding) theme.
+        return (
+            f"{intro}\n\n"
+            "PRIMARY DRIVER — match the scenario, scope, and difficulty to this "
+            "candidate's experience level. Let this dominate the question you "
+            f"choose:\n{experience_block}\n\n"
+            "Field breadth (BACKGROUND only — behaviors this field can probe). "
+            "Stay on-domain, but do NOT choose a theme that ignores or "
+            f"contradicts the experience-level focus above:\n{themes_block}\n\n"
+            f"{style_cues}"
+        )
+
+    # Legacy path (no experience level): unchanged wording/order. Kept
+    # byte-identical so the regression and the existing builder tests hold.
     return (
         f"{intro}\n\n"
         f"This field tests behaviors across these themes (use this as the "
         f"breadth of what you can probe — do NOT limit yourself to the two "
         f"examples below):\n{themes_block}\n\n"
-        f"Style cues (concrete shapes — emulate the spirit, not the wording):\n"
-        f"{examples_block}"
+        f"{style_cues}"
     )
