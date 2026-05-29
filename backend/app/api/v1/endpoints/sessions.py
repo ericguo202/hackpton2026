@@ -166,7 +166,9 @@ async def create_session(
         )
 
     try:
-        brief = await research_company(body.company, body.job_title)
+        brief = await research_company(
+            body.company, body.job_title, user.experience_level
+        )
     except CompanyNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

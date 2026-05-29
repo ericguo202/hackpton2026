@@ -16,10 +16,11 @@ The system prompt is assembled per-call by
     load-bearing fix for "same opening question over and over" — the
     previous design showed all 5 examples every call and the model
     converged on them as attractors.
-  - Appends an experience-level paragraph (from `_experience_prompts`)
-    when `user.experience_level` is set, so the question's difficulty
-    and scope match an intern vs. an executive in the same field.
-    Omitted when the level is None.
+  - Leads with the experience-level paragraph (from `_experience_prompts`)
+    as the PRIMARY driver when `user.experience_level` is set, demoting the
+    broad field themes to background, so the question's difficulty and scope
+    match an intern vs. an executive in the same field. Omitted (and themes
+    stay primary) when the level is None.
 
 The user prompt additionally surfaces `brief.role_signals` (what the
 company is documented to value in applicants for this role) and
