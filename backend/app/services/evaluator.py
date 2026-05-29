@@ -19,6 +19,7 @@ the route handler at T+10-12 composes them. It also does NOT generate
 from __future__ import annotations
 
 import logging
+import re
 from typing import Annotated, Any, Callable, Literal
 
 from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
@@ -42,6 +43,42 @@ CALIBRATED_OVERALL_BAD = 50.0
 CALIBRATED_OVERALL_GOOD = 69.4
 CALIBRATED_POSTURE_BAD = 58.0
 CALIBRATED_POSTURE_GOOD = 82.0
+
+_WORD_RE = re.compile(r"[a-z0-9]+(?:'[a-z0-9]+)?", re.IGNORECASE)
+_NUMBER_RE = re.compile(r"\b\d+(?:[.,]\d+)?%?\b")
+_STRUCTURE_RE = re.compile(
+    r"\b(first|then|next|after|before|finally|eventually|situation|task|"
+    r"action|result|challenge|context|outcome)\b",
+    re.IGNORECASE,
+)
+_REASONING_RE = re.compile(
+    r"\b(because|so that|therefore|trade-?off|option|alternative|root cause|"
+    r"constraint|analy[sz]ed|data|hypothesis|decided|prioriti[sz]ed|"
+    r"diagnosed|investigated)\b",
+    re.IGNORECASE,
+)
+_RESULT_RE = re.compile(
+    r"\b(result|outcome|impact|improv(?:ed|ement)|increas(?:ed|e)|"
+    r"reduc(?:ed|e)|decreas(?:ed|e)|saved|grew|launched|shipped|delivered|"
+    r"completed|resolved|won|retained|learned|adopted|converted|"
+    r"deadline|revenue|cost|users?|customers?)\b",
+    re.IGNORECASE,
+)
+_OWNERSHIP_RE = re.compile(
+    r"\b(i|my)\s+(led|owned|built|created|designed|implemented|coordinated|"
+    r"managed|decided|drove|handled|resolved|took|initiated|proposed|"
+    r"organized|presented|negotiated|persuaded|aligned)\b|"
+    r"\b(my role|i was responsible|i took responsibility|i stepped in)\b",
+    re.IGNORECASE,
+)
+_DOMAIN_DETAIL_RE = re.compile(
+    r"\b(api|sql|python|react|model|metric|experiment|customer|client|"
+    r"stakeholder|budget|timeline|risk|compliance|design|architecture|"
+    r"process|workflow|analysis|dashboard|prototype|launch|deployment)\b"
+)
+_ACRONYM_RE = re.compile(
+    r"\b[A-Z]{2,}\b",
+)
 
 
 def _truncate_to(limit: int, *, ellipsis: bool) -> Callable[[Any], Any]:
@@ -99,11 +136,20 @@ class ImprovementMoment(BaseModel):
     how_to_strengthen: ProseStr390 = Field(min_length=1, max_length=390)
 
 
+class DeliveryFeedback(BaseModel):
+    summary: ProseStr270 = Field(min_length=1, max_length=270)
+    eye_contact: ProseStr270 | None = Field(default=None, max_length=270)
+    alignment: ProseStr270 | None = Field(default=None, max_length=270)
+    posture: ProseStr270 | None = Field(default=None, max_length=270)
+    expression: ProseStr270 | None = Field(default=None, max_length=270)
+
+
 class FeedbackDetail(BaseModel):
     main_takeaway: ProseStr270 = Field(min_length=1, max_length=270)
     positive_moments: list[PositiveMoment] = Field(default_factory=list, max_length=3)
     improvement_moments: list[ImprovementMoment] = Field(default_factory=list, max_length=4)
     quick_wins: list[str] = Field(default_factory=list, max_length=3)
+    delivery_feedback: DeliveryFeedback | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -130,6 +176,64 @@ def _summary_float(cv_summary: dict, key: str, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _cap(value: int, maximum: int) -> int:
+    return max(0, min(value, maximum))
+
+
+def _calibrate_content_scores(
+    result: "EvaluatorOutput",
+    transcript: str,
+) -> "EvaluatorOutput":
+    """Apply conservative evidence caps to prevent unsupported neutral 5s.
+
+    The model still does the semantic evaluation. These caps only fire when a
+    transcript lacks basic evidence for a dimension, which keeps "sounds
+    fluent, but gave no proof" answers from clustering around 5.
+    """
+    words = _WORD_RE.findall(transcript)
+    word_count = len(words)
+    if word_count == 0:
+        for field in ("structure", "problem_solving", "impact", "initiative", "depth"):
+            setattr(result, field, 0)
+        return result
+
+    if word_count < 10:
+        broad_cap = 2
+    elif word_count < 25:
+        broad_cap = 4
+    elif word_count < 45:
+        broad_cap = 6
+    else:
+        broad_cap = 10
+
+    for field in ("structure", "problem_solving", "impact", "initiative", "depth"):
+        setattr(result, field, _cap(getattr(result, field), broad_cap))
+
+    has_number = bool(_NUMBER_RE.search(transcript))
+    has_structure = bool(_STRUCTURE_RE.search(transcript))
+    has_reasoning = bool(_REASONING_RE.search(transcript))
+    has_result = bool(_RESULT_RE.search(transcript))
+    has_ownership = bool(_OWNERSHIP_RE.search(transcript))
+    has_domain_detail = bool(_DOMAIN_DETAIL_RE.search(transcript.lower())) or bool(
+        _ACRONYM_RE.search(transcript)
+    )
+
+    if not has_structure:
+        result.structure = _cap(result.structure, 5)
+    if not has_reasoning:
+        result.problem_solving = _cap(result.problem_solving, 5)
+    if not has_result and not has_number:
+        result.impact = _cap(result.impact, 4)
+    elif not has_number:
+        result.impact = _cap(result.impact, 6)
+    if not has_ownership:
+        result.initiative = _cap(result.initiative, 5)
+    if not has_domain_detail:
+        result.depth = _cap(result.depth, 5)
+
+    return result
 
 
 class EvaluatorOutput(BaseModel):
@@ -254,11 +358,13 @@ def _compute_delivery_score(cv_summary: dict) -> int:
     base_score = (calibrated_quality * 0.65) + (raw_quality * 0.35)
 
     # Coverage penalties: how much of the answer felt off, not just whether
-    # a weak frame happened to occur.
-    base_score -= looked_away_pct * 0.10
-    base_score -= bad_posture_pct * 0.08
-    base_score -= tilted_pct * 0.04
-    base_score -= low_energy_pct * 0.10
+    # a weak frame happened to occur. Eye contact is intentionally weighted
+    # hardest; looking away for most of an interview should never land near
+    # the neutral middle of the scale.
+    base_score -= looked_away_pct * 0.18
+    base_score -= bad_posture_pct * 0.12
+    base_score -= tilted_pct * 0.07
+    base_score -= low_energy_pct * 0.12
 
     # Streak penalties: sustained issues should matter more than scattered
     # blips. Normalize against total analyzed frames when possible.
@@ -267,17 +373,45 @@ def _compute_delivery_score(cv_summary: dict) -> int:
         posture_streak_pct = (posture_streak / frames) * 100
         tilted_streak_pct = (tilted_streak / frames) * 100
         low_energy_streak_pct = (low_energy_streak / frames) * 100
-        base_score -= min(8.0, looked_away_streak_pct * 0.12)
-        base_score -= min(7.0, posture_streak_pct * 0.09)
-        base_score -= min(5.0, tilted_streak_pct * 0.08)
-        base_score -= min(8.0, low_energy_streak_pct * 0.12)
+        base_score -= min(14.0, looked_away_streak_pct * 0.18)
+        base_score -= min(10.0, posture_streak_pct * 0.12)
+        base_score -= min(8.0, tilted_streak_pct * 0.10)
+        base_score -= min(10.0, low_energy_streak_pct * 0.14)
 
     # Face visibility matters disproportionately; below this threshold the
     # interviewer cannot reliably read the candidate at all.
     if face_visible < 96:
         base_score -= min(12.0, (96 - face_visible) * 0.55)
 
-    return max(0, min(10, round(base_score / 10)))
+    score = max(0, min(10, round(base_score / 10)))
+
+    # Hard caps keep severe, sustained delivery issues from averaging out to
+    # a passable score because expression/posture happened to look okay.
+    if looked_away_pct >= 85:
+        score = min(score, 2)
+    elif looked_away_pct >= 70:
+        score = min(score, 3)
+    elif looked_away_pct >= 55:
+        score = min(score, 4)
+    elif looked_away_pct >= 40:
+        score = min(score, 5)
+
+    if eye < CALIBRATED_EYE_BAD and looked_away_pct >= 25:
+        score = min(score, 4)
+    if face_visible < 50:
+        score = min(score, 2)
+    elif face_visible < 70:
+        score = min(score, 3)
+    elif face_visible < 85:
+        score = min(score, 5)
+    if max(bad_posture_pct, tilted_pct) >= 70:
+        score = min(score, 3)
+    elif max(bad_posture_pct, tilted_pct) >= 50:
+        score = min(score, 4)
+    if low_energy_pct >= 75:
+        score = min(score, 3)
+
+    return score
 
 
 def _delivery_quick_win(cv_summary: dict, delivery_score: int) -> str | None:
@@ -325,6 +459,102 @@ def _delivery_quick_win(cv_summary: dict, delivery_score: int) -> str | None:
     if expression < CALIBRATED_EXPRESSION_BAD:
         return "Delivery: add a little facial warmth so the answer reads as more engaged."
     return "Delivery: keep your gaze, expression, and posture steadier through the answer."
+
+
+def _pct(value: float) -> str:
+    return f"{value:.0f}%"
+
+
+def _build_delivery_feedback(cv_summary: dict, delivery_score: int) -> DeliveryFeedback:
+    face_visible = _summary_float(cv_summary, "face_visible_pct", 100.0)
+    eye = _summary_float(cv_summary, "eye_contact_score", 0.0)
+    expression = _summary_float(cv_summary, "expression_score", 0.0)
+    posture = _summary_float(cv_summary, "posture_score", 0.0)
+    looked_away_pct = _summary_float(cv_summary, "looked_away_pct", 0.0)
+    posture_drift_pct = _summary_float(cv_summary, "posture_drift_pct", 0.0)
+    bad_posture_pct = _summary_float(cv_summary, "bad_posture_pct", posture_drift_pct)
+    tilted_pct = _summary_float(cv_summary, "tilted_pct", 0.0)
+    low_energy_pct = _summary_float(cv_summary, "low_energy_pct", 0.0)
+    head_tilt_avg = _summary_float(cv_summary, "head_tilt_degrees_avg", 0.0)
+    head_tilt_max = _summary_float(cv_summary, "head_tilt_degrees_max", 0.0)
+
+    issue_candidates = [
+        (looked_away_pct, "eye contact drift"),
+        (100.0 - face_visible, "camera alignment / face visibility"),
+        (max(bad_posture_pct, tilted_pct), "posture or head alignment"),
+        (low_energy_pct, "facial energy"),
+    ]
+    top_pct, top_issue = max(issue_candidates, key=lambda item: item[0])
+    if delivery_score >= 8 and top_pct < 12:
+        summary = f"Delivery scored {delivery_score}/10 with steady camera presence."
+    else:
+        summary = (
+            f"Delivery scored {delivery_score}/10; the biggest visible issue was "
+            f"{top_issue} across about {_pct(top_pct)} of analyzed frames."
+        )
+
+    if looked_away_pct >= 12 or eye < 60:
+        eye_contact = (
+            f"Score {eye:.0f}/100, with looked-away coverage at "
+            f"{_pct(looked_away_pct)}. Return your gaze to the lens between phrases."
+        )
+    else:
+        eye_contact = (
+            f"Score {eye:.0f}/100 with limited drift. Keep using the "
+            "lens as your default resting point."
+        )
+
+    if face_visible < 95 or tilted_pct >= 10:
+        alignment = (
+            f"Your face was visible in {_pct(face_visible)} of frames; "
+            f"head tilt averaged {head_tilt_avg:.1f} degrees and peaked at "
+            f"{head_tilt_max:.1f}. Keep your face centered and level."
+        )
+    else:
+        alignment = (
+            f"Face visibility was {_pct(face_visible)} and head tilt stayed "
+            "controlled. Keep the camera at eye level."
+        )
+
+    if max(bad_posture_pct, posture_drift_pct, tilted_pct) >= 12 or posture < 68:
+        posture_text = (
+            f"Score {posture:.0f}/100, with bad-posture coverage at "
+            f"{_pct(max(bad_posture_pct, posture_drift_pct))} and tilted-head coverage "
+            f"at {_pct(tilted_pct)}. Sit upright before starting the answer."
+        )
+    else:
+        posture_text = (
+            f"Score {posture:.0f}/100 with little visible drift. Maintain the "
+            "same centered setup."
+        )
+
+    if low_energy_pct >= 12 or expression < CALIBRATED_EXPRESSION_BAD:
+        expression_text = (
+            f"Score {expression:.0f}/100, with low-energy coverage at "
+            f"{_pct(low_energy_pct)}. Add a little facial warmth on key points."
+        )
+    else:
+        expression_text = (
+            f"Score {expression:.0f}/100. Keep your face relaxed and engaged."
+        )
+
+    return DeliveryFeedback(
+        summary=summary,
+        eye_contact=eye_contact,
+        alignment=alignment,
+        posture=posture_text,
+        expression=expression_text,
+    )
+
+
+def _add_delivery_feedback(
+    feedback: FeedbackDetail,
+    cv_summary: dict,
+    delivery_score: int | None,
+) -> None:
+    if delivery_score is None:
+        return
+    feedback.delivery_feedback = _build_delivery_feedback(cv_summary, delivery_score)
 
 
 def _add_delivery_quick_win(
@@ -508,7 +738,9 @@ async def evaluate_turn(
     )
     text = response.choices[0].message.content or ""
     result = EvaluatorOutput.model_validate_json(extract_json_object(text))
+    result = _calibrate_content_scores(result, transcript)
     if cv_summary is not None:
         result.delivery = _compute_delivery_score(cv_summary)
+        _add_delivery_feedback(result.feedback_detail, cv_summary, result.delivery)
         _add_delivery_quick_win(result.feedback_detail, cv_summary, result.delivery)
     return _drop_unanchored_moments(result, transcript)

@@ -15,6 +15,20 @@ export default function StructuredFeedback({ feedback, fallback }: Props) {
   const positiveMoments = feedback.positive_moments ?? [];
   const improvementMoments = feedback.improvement_moments ?? feedback.coaching_moments ?? [];
   const quickWins = feedback.quick_wins ?? [];
+  const deliveryFeedback = feedback.delivery_feedback;
+  const deliveryRows: Array<[string, string]> = [];
+  if (deliveryFeedback?.eye_contact) {
+    deliveryRows.push(['Eye contact', deliveryFeedback.eye_contact]);
+  }
+  if (deliveryFeedback?.alignment) {
+    deliveryRows.push(['Alignment', deliveryFeedback.alignment]);
+  }
+  if (deliveryFeedback?.posture) {
+    deliveryRows.push(['Posture', deliveryFeedback.posture]);
+  }
+  if (deliveryFeedback?.expression) {
+    deliveryRows.push(['Expression', deliveryFeedback.expression]);
+  }
 
   return (
     <div className="space-y-7">
@@ -73,6 +87,29 @@ export default function StructuredFeedback({ feedback, fallback }: Props) {
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {deliveryFeedback && (
+        <div>
+          <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+            Delivery cues
+          </p>
+          <div className="space-y-4 border-l-2 border-chart-6/50 pl-4">
+            <p className="text-[15px] leading-7 text-text">
+              {deliveryFeedback.summary}
+            </p>
+            {deliveryRows.length > 0 && (
+              <div className="space-y-3">
+                {deliveryRows.map(([label, detail]) => (
+                  <p key={label} className="text-sm leading-6 text-text-muted">
+                    <span className="font-medium text-text">{label}: </span>
+                    {detail}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

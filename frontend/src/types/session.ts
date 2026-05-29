@@ -25,6 +25,14 @@ export type ImprovementMoment = {
   how_to_strengthen: string;
 };
 
+export type DeliveryFeedback = {
+  summary: string;
+  eye_contact?: string | null;
+  alignment?: string | null;
+  posture?: string | null;
+  expression?: string | null;
+};
+
 export type FeedbackDetail = {
   main_takeaway: string;
   positive_moments?: PositiveMoment[];
@@ -32,6 +40,7 @@ export type FeedbackDetail = {
   // Legacy saved turns from the first structured-feedback iteration.
   coaching_moments?: ImprovementMoment[];
   quick_wins: string[];
+  delivery_feedback?: DeliveryFeedback | null;
 };
 
 export type TurnResult = {

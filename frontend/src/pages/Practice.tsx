@@ -200,14 +200,17 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
   if (result.cvSummary) {
     if (result.cvSummary.face_visible_pct < 85) {
       insights.push({
-        title: 'Stay inside the frame',
+        title: 'Fix camera alignment',
         detail: `Face visibility was ${result.cvSummary.face_visible_pct}%. Keep your head centered so delivery scoring has a stable read.`,
       });
     }
-    if (result.cvSummary.eye_contact_score < 55) {
+    if (
+      result.cvSummary.eye_contact_score < 60 ||
+      result.cvSummary.looked_away_pct >= 20
+    ) {
       insights.push({
         title: 'Hold eye contact longer',
-        detail: `Eye contact landed at ${result.cvSummary.eye_contact_score}/100. Pick one spot near the camera and return to it between phrases.`,
+        detail: `Eye contact landed at ${result.cvSummary.eye_contact_score}/100, with ${result.cvSummary.looked_away_pct}% looked-away frames. Pick one spot near the camera and return to it between phrases.`,
       });
     }
     if (result.cvSummary.expression_score < 50) {
@@ -222,7 +225,7 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
       result.cvSummary.tilted_pct >= 12
     ) {
       insights.push({
-        title: 'Fix posture drift',
+        title: 'Fix posture and head alignment',
         detail: `Posture scored ${result.cvSummary.posture_score}/100 with ${result.cvSummary.bad_posture_pct}% bad-posture frames and ${result.cvSummary.tilted_pct}% tilted frames. Sit upright and keep your head level with the camera.`,
       });
     }
@@ -242,7 +245,7 @@ function buildReplayInsights(result: ReplayTurnResult): Insight[] {
     });
   }
 
-  return insights.slice(0, 4);
+  return insights.slice(0, 7);
 }
 
 function turnAverage(result: TurnResult): number | null {

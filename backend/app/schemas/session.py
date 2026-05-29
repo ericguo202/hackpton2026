@@ -96,11 +96,20 @@ class ImprovementMomentOut(BaseModel):
     how_to_strengthen: str
 
 
+class DeliveryFeedbackOut(BaseModel):
+    summary: str
+    eye_contact: str | None = None
+    alignment: str | None = None
+    posture: str | None = None
+    expression: str | None = None
+
+
 class FeedbackDetailOut(BaseModel):
     main_takeaway: str
     positive_moments: list[PositiveMomentOut] = Field(default_factory=list)
     improvement_moments: list[ImprovementMomentOut] = Field(default_factory=list)
     quick_wins: list[str] = Field(default_factory=list)
+    delivery_feedback: DeliveryFeedbackOut | None = None
 
     @model_validator(mode="before")
     @classmethod

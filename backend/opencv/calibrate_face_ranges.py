@@ -1,10 +1,15 @@
 import json
 import statistics
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import cv2
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 from opencv import InterviewAnalyzer
 

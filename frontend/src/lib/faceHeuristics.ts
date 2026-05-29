@@ -70,7 +70,7 @@ const EMA_SEED = 50.0;
 // a brief drop-out doesn't crater the rolling average (opencv.py L508-510).
 const NO_FACE_TARGET = 15.0;
 
-const LOOKED_AWAY_EYE_THRESHOLD = 55;
+const LOOKED_AWAY_EYE_THRESHOLD = 60;
 const POSTURE_HEAD_ALIGNMENT_MIN = 62;
 const POSTURE_VERTICAL_MAX = 0.22;
 const POSTURE_MIDPOINT_MAX = 0.20;
@@ -476,7 +476,7 @@ export class FrameSummary {
     this.postureSamples.push(this.postureEma);
     this.headTiltSamples.push(eye.headTiltDegrees);
 
-    const lookedAway = this.eyeEma < LOOKED_AWAY_EYE_THRESHOLD;
+    const lookedAway = eye.score < LOOKED_AWAY_EYE_THRESHOLD;
     const tilted = eye.headTiltDegrees > POSTURE_TILT_FLAG_DEGREES;
     const badPosture =
       this.postureEma < POSTURE_SCORE_MIN ||
