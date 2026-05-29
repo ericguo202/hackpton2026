@@ -30,7 +30,12 @@ export function useMe() {
     }
   }, [apiFetch]);
 
+  // Fetch-on-mount once Clerk is ready. `fetchMe` flips loading/error state
+  // synchronously before its first await, which the set-state-in-effect rule
+  // flags — but this is the canonical "load data on mount" effect, not a
+  // prop-derived state sync, so the synchronous writes are intentional.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isReady) void fetchMe();
   }, [isReady, fetchMe]);
 

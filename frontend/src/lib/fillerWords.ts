@@ -101,10 +101,9 @@ export function tokenizeTranscript(
  */
 export function countFillerWords(transcript: string | null | undefined): number {
   if (!transcript) return 0;
-  FILLER_RE.lastIndex = 0;
-  let count = 0;
-  for (const _ of transcript.matchAll(FILLER_RE)) count += 1;
-  return count;
+  // `matchAll` clones the regex internally, so the shared global FILLER_RE's
+  // lastIndex is untouched — no manual reset needed.
+  return [...transcript.matchAll(FILLER_RE)].length;
 }
 
 export type FillerBreakdownEntry = { word: string; count: number };

@@ -517,6 +517,7 @@ function PracticeSession({
                 audioUrl={recorder.audioUrl}
                 showPreview={showPreview}
                 submitting={submitting}
+                isFinalTurn={currentQ.num >= 2}
                 onSubmitPreview={handleSubmitTurn}
                 onReRecordPreview={handleReRecord}
               />

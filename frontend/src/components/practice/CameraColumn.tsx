@@ -11,6 +11,9 @@ interface Props {
   /** Submission in flight — the preview Submit/Re-record must lock so a
       double-click or stray Re-record can't race the in-flight POST. */
   submitting: boolean;
+  /** Final turn (no follow-up to come) — drives the placeholder copy shown
+      while the recording is submitting: scoring vs. follow-up-incoming. */
+  isFinalTurn: boolean;
   onSubmitPreview: () => void;
   onReRecordPreview: () => void;
   className?: string;
@@ -23,6 +26,7 @@ export function CameraColumn({
   audioUrl,
   showPreview,
   submitting,
+  isFinalTurn,
   onSubmitPreview,
   onReRecordPreview,
   className,
@@ -52,9 +56,13 @@ export function CameraColumn({
         ) : (
           <div className="flex h-full w-full items-center justify-center p-6">
             <p className="text-center text-sm text-accent-fg">
-              {recorderState === 'idle'
-                ? 'Camera will start once the question audio ends.'
-                : 'Webcam not enabled — audio recorded only.'}
+              {submitting
+                ? isFinalTurn
+                  ? 'Evaluating your recording…'
+                  : 'Audio/video recording will restart when the follow-up question finishes playing.'
+                : recorderState === 'idle'
+                  ? 'Camera will start once the question audio ends.'
+                  : 'Webcam not enabled — audio recorded only.'}
             </p>
           </div>
         )}
