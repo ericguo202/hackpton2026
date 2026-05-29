@@ -12,8 +12,16 @@
  * all preserves the existing value (handled in `onboarding.py`).
  */
 
-import { useState, type SubmitEvent } from 'react';
+import {
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+  type SubmitEvent,
+} from 'react';
 import { UserButton, useUser } from '@clerk/react';
+import { FileText, Upload } from 'lucide-react';
+import { useNavigate } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
@@ -37,6 +45,15 @@ const inputClass =
   'focus-visible:outline-none focus-visible:ring-2 ' +
   'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
   'focus-visible:ring-offset-surface';
+
+const cardClass =
+  'rounded-lg bg-surface-raised p-5 min-[900px]:min-h-[21rem]';
+
+function formatExperienceLevel(level: ExperienceLevel): string {
+  return level === 'staff'
+    ? 'Staff+'
+    : level.charAt(0).toUpperCase() + level.slice(1);
+}
 
 export default function Personalize() {
   const { me, isReady, isLoading, refetch } = useMe();
@@ -83,6 +100,8 @@ type FormProps = {
 function PersonalizeForm({ me, refetch }: FormProps) {
   const { user } = useUser();
   const { apiFetch } = useApi();
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const email = user?.primaryEmailAddress?.emailAddress ?? me.email ?? '';
   const name = user?.fullName ?? me.name ?? '';
@@ -99,17 +118,41 @@ function PersonalizeForm({ me, refetch }: FormProps) {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
   const canSubmit =
     industry.trim().length > 0 &&
     targetRole.trim().length > 0 &&
     shortBio.trim().length > 0;
 
+  function chooseResumeFile(file: File | null) {
+    setError(null);
+
+    if (!file) {
+      setResumeFile(null);
+      return;
+    }
+
+    const isPdf =
+      file.type === 'application/pdf' ||
+      file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      setResumeFile(null);
+      setError('Choose a PDF résumé file.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setResumeFile(file);
+  }
+
+  function handleResumeDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    chooseResumeFile(event.dataTransfer.files?.[0] ?? null);
+  }
+
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setSaved(false);
 
     if (!email) {
       setError("Couldn't read your email from Clerk. Try reloading.");
@@ -140,8 +183,7 @@ function PersonalizeForm({ me, refetch }: FormProps) {
         body,
       });
       await refetch();
-      setSaved(true);
-      setResumeFile(null);
+      navigate('/');
     } catch (err) {
       if (err instanceof ApiError) {
         setError(`${err.status}: ${err.body}`);
@@ -154,79 +196,171 @@ function PersonalizeForm({ me, refetch }: FormProps) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg px-4 py-12 space-y-10">
-      <div className="space-y-2">
-        <h2>Personalize</h2>
-        <p className="text-text-subtle text-sm">
-          Update the details we use to tailor your interview practice.
-        </p>
+    <form
+      onSubmit={handleSubmit}
+      className="mx-auto w-full max-w-[80rem] 2xl:max-w-[88rem] px-8 py-8 min-[900px]:px-16 min-[900px]:py-10"
+    >
+      <div className="mb-6 flex flex-col gap-5 min-[900px]:flex-row min-[900px]:items-end min-[900px]:justify-between">
+        <div>
+          <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+            Profile settings
+          </p>
+          <h1
+            className="mb-2 font-display font-medium leading-[1.05] tracking-[-0.02em] text-text"
+            style={{ fontSize: 'clamp(1.8rem, 3vw, 2.75rem)' }}
+          >
+            Personalize your practice.
+          </h1>
+          <p className="max-w-2xl text-sm leading-6 text-text-subtle">
+            These details shape interview questions, follow-ups, and scoring in future sessions.
+          </p>
+        </div>
+
+        <FlowHoverButton
+          type="submit"
+          disabled={submitting || !canSubmit}
+          className="hidden min-[900px]:inline-flex"
+        >
+          {submitting ? 'Saving...' : 'Save changes'}
+        </FlowHoverButton>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-8">
-        <Field
-          label="Industry"
-          hint="For example, software, finance, biotech."
-        >
-          <input
-            type="text"
-            maxLength={200}
-            value={industry}
-            onChange={(e) => setIndustry(e.target.value)}
-            className={inputClass}
+      {error && (
+        <p role="alert" className="mb-4 rounded border border-border bg-surface-raised px-3 py-2 text-sm text-text-muted">
+          <span className="mr-2 text-[10px] uppercase tracking-eyebrow text-text">
+            Error
+          </span>
+          {error}
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 gap-5 min-[900px]:grid-cols-3">
+        <section className={cardClass}>
+          <SectionHeader
+            label="Role details"
+            hint="Configure the role your coach should simulate."
           />
-        </Field>
+          <div className="mt-4 space-y-4">
+            <Field
+              id="personalize-industry"
+              label="Industry"
+              hint="e.g. software, finance, biotech"
+            >
+              <input
+                id="personalize-industry"
+                type="text"
+                maxLength={200}
+                value={industry}
+                onChange={(e) => setIndustry(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
 
-        <Field
-          label="Target role"
-          hint="For example, backend engineer, product manager."
-        >
-          <input
-            type="text"
-            maxLength={200}
-            value={targetRole}
-            onChange={(e) => setTargetRole(e.target.value)}
-            className={inputClass}
+            <Field
+              id="personalize-target-role"
+              label="Target role"
+              hint="e.g. backend engineer, product manager"
+            >
+              <input
+                id="personalize-target-role"
+                type="text"
+                maxLength={200}
+                value={targetRole}
+                onChange={(e) => setTargetRole(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+
+            <div>
+              <p className="mb-2 text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm">
+                Experience level
+              </p>
+              <div
+                role="radiogroup"
+                aria-label="Experience level"
+                className="flex flex-wrap gap-2"
+              >
+                {EXPERIENCE_LEVELS.map((lvl) => {
+                  const active = experienceLevel === lvl;
+                  return (
+                    <button
+                      key={lvl}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setExperienceLevel(lvl)}
+                      className={
+                        'cursor-pointer rounded-full border px-3 py-1.5 text-xs transition-colors ' +
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ' +
+                        'focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
+                        (active
+                          ? 'border-accent bg-accent font-medium text-accent-fg'
+                          : 'border-border bg-transparent text-text-muted hover:border-border-strong hover:text-text')
+                      }
+                    >
+                      {formatExperienceLevel(lvl)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className={cardClass}>
+          <SectionHeader
+            label="About you"
+            hint="Your background and goals."
           />
-        </Field>
+          <div className="mt-4 space-y-4">
+            <Field id="personalize-short-bio" label="Bio">
+              <textarea
+                id="personalize-short-bio"
+                maxLength={2000}
+                rows={5}
+                value={shortBio}
+                onChange={(e) => setShortBio(e.target.value)}
+                placeholder="A few sentences about your background and what you are looking for."
+                className={`${inputClass} min-h-[8.75rem] resize-none`}
+              />
+              <p className="mt-1 text-right text-xs text-text-subtle">
+                {shortBio.length} / 2000
+              </p>
+            </Field>
 
-        <Field label="Experience level">
-          <select
-            value={experienceLevel}
-            onChange={(e) =>
-              setExperienceLevel(e.target.value as ExperienceLevel)
-            }
-            className={inputClass}
-          >
-            {EXPERIENCE_LEVELS.map((lvl) => (
-              <option key={lvl} value={lvl}>
-                {lvl}
-              </option>
-            ))}
-          </select>
-        </Field>
+            <div className="grid grid-cols-1 gap-4 min-[500px]:grid-cols-2 min-[900px]:grid-cols-1 min-[1180px]:grid-cols-2">
+              <Field id="personalize-name" label="Name">
+                <input
+                  id="personalize-name"
+                  type="text"
+                  value={name}
+                  readOnly
+                  className={`${inputClass} text-center text-sm text-text-muted`}
+                />
+              </Field>
+              <Field id="personalize-email" label="Email">
+                <input
+                  id="personalize-email"
+                  type="email"
+                  value={email}
+                  readOnly
+                  className={`${inputClass} text-center text-sm text-text-muted`}
+                />
+              </Field>
+            </div>
+          </div>
+        </section>
 
-        <Field
-          label="About you"
-          hint="Two or three sentences. Background and what you’re looking for."
-        >
-          <textarea
-            maxLength={2000}
-            rows={5}
-            value={shortBio}
-            onChange={(e) => setShortBio(e.target.value)}
-            className={`${inputClass} resize-none`}
-          />
-        </Field>
-
-        <Field
-          label="Résumé"
-          hint="We only store the extracted text, not the PDF itself. Edit directly, replace with a new PDF, or clear the box to remove it."
-        >
-          <div className="space-y-4">
+        <section className={cardClass}>
+          <div className="flex items-start justify-between gap-4">
+            <SectionHeader
+              label="Résumé"
+              hint="We store extracted text only."
+            />
             <div
               role="tablist"
               aria-label="Résumé input mode"
-              className="inline-flex rounded border border-border bg-surface-raised p-0.5"
+              className="inline-flex shrink-0 rounded border border-border bg-surface p-0.5"
             >
               {(['text', 'pdf'] as const).map((mode) => {
                 const active = resumeMode === mode;
@@ -236,9 +370,12 @@ function PersonalizeForm({ me, refetch }: FormProps) {
                     type="button"
                     role="tab"
                     aria-selected={active}
-                    onClick={() => setResumeMode(mode)}
+                    onClick={() => {
+                      setResumeMode(mode);
+                      setError(null);
+                    }}
                     className={
-                      'rounded px-3 py-1.5 text-sm transition-colors ' +
+                      'rounded px-3 py-1.5 text-xs transition-colors ' +
                       'focus-visible:outline-none focus-visible:ring-2 ' +
                       'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
                       'focus-visible:ring-offset-surface ' +
@@ -252,83 +389,112 @@ function PersonalizeForm({ me, refetch }: FormProps) {
                 );
               })}
             </div>
+          </div>
 
+          <div className="mt-4">
             {resumeMode === 'text' ? (
-              <div className="space-y-1">
+              <div>
                 <textarea
                   maxLength={5000}
-                  rows={8}
+                  rows={7}
                   value={resumeText}
                   onChange={(e) => setResumeText(e.target.value)}
                   placeholder="Paste your résumé text here."
-                  className={`${inputClass} resize-none`}
+                  className={`${inputClass} min-h-[11.5rem] resize-none`}
                 />
-                <p className="text-right text-xs text-text-subtle">
-                  {resumeText.length} / 5000
-                </p>
+                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-text-subtle">
+                  <span className="tabular-nums">{resumeText.length} / 5000</span>
+                  <button
+                    type="button"
+                    onClick={() => setResumeText('')}
+                    className="cursor-pointer rounded border border-border bg-surface px-2.5 py-1 text-text-muted transition-colors hover:border-border-strong hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="space-y-2">
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) =>
-                    setResumeFile(e.target.files?.[0] ?? null)
+              <div className="space-y-3">
+                <label
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleResumeDrop}
+                  className={
+                    'flex min-h-[11.5rem] cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed p-5 text-center transition-colors ' +
+                    'border-border-strong bg-surface-sunken hover:bg-surface ' +
+                    'focus-within:outline-none focus-within:ring-2 focus-within:ring-focus-ring focus-within:ring-offset-2 focus-within:ring-offset-surface'
                   }
-                  className="block text-sm text-text-muted file:mr-3 file:rounded file:border file:border-border file:bg-surface-raised file:px-3 file:py-1.5 file:text-text hover:file:bg-surface-sunken"
-                />
-                {resumeFile ? (
-                  <p className="text-text-subtle text-sm">
-                    Selected: {resumeFile.name}
-                  </p>
-                ) : (
-                  <p className="text-text-subtle text-sm">
-                    No new file chosen — your current résumé will be kept.
-                  </p>
-                )}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(e) =>
+                      chooseResumeFile(e.target.files?.[0] ?? null)
+                    }
+                    className="sr-only"
+                  />
+                  <Upload className="h-5 w-5 text-text-muted" aria-hidden />
+                  <span className="font-medium text-text">
+                    {resumeFile ? resumeFile.name : 'Drop a PDF or choose a file'}
+                  </span>
+                  <span className="max-w-xs text-xs leading-5 text-text-subtle">
+                    {resumeFile
+                      ? 'This file replaces the current résumé text on save.'
+                      : 'No file selected keeps your current résumé.'}
+                  </span>
+                </label>
+                <p className="flex items-center gap-2 text-sm text-text-muted">
+                  <FileText className="h-4 w-4" aria-hidden />
+                  {resumeFile
+                    ? 'Ready to upload'
+                    : me.resume_text
+                      ? 'Current résumé text is on file'
+                      : 'No résumé is currently stored'}
+                </p>
               </div>
             )}
           </div>
-        </Field>
+        </section>
+      </div>
 
-        {error && (
-          <p className="text-sm text-text-muted border border-border bg-surface-raised rounded px-3 py-2">
-            {error}
-          </p>
-        )}
+      <div className="mt-6 flex justify-end min-[900px]:hidden">
+        <FlowHoverButton type="submit" disabled={submitting || !canSubmit}>
+          {submitting ? 'Saving...' : 'Save changes'}
+        </FlowHoverButton>
+      </div>
+    </form>
+  );
+}
 
-        <div className="flex items-center justify-between">
-          {saved && !submitting && (
-            <p className="text-sm text-text-muted">Saved.</p>
-          )}
-          <div className="ml-auto">
-            <FlowHoverButton
-              type="submit"
-              disabled={submitting || !canSubmit}
-            >
-              {submitting ? 'Saving…' : 'Save'}
-            </FlowHoverButton>
-          </div>
-        </div>
-      </form>
+function SectionHeader({ label, hint }: { label: string; hint?: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm">
+        {label}
+      </p>
+      {hint && <p className="text-xs leading-5 text-text-subtle">{hint}</p>}
     </div>
   );
 }
 
 type FieldProps = {
+  id: string;
   label: string;
   hint?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
-function Field({ label, hint, children }: FieldProps) {
+function Field({ id, label, hint, children }: FieldProps) {
   return (
-    <label className="block space-y-2">
-      <span className="block text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm">
+    <div className="block space-y-2">
+      <label
+        htmlFor={id}
+        className="block text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm"
+      >
         {label}
-      </span>
-      {hint && <span className="block text-text-subtle text-sm">{hint}</span>}
+      </label>
+      {hint && <span className="block text-xs text-text-subtle">{hint}</span>}
       {children}
-    </label>
+    </div>
   );
 }
