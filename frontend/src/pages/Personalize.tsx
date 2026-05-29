@@ -234,7 +234,7 @@ function PersonalizeForm({ me, refetch }: FormProps) {
         </p>
       )}
 
-      <div className="grid grid-cols-1 gap-5 min-[900px]:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 min-[900px]:grid-cols-[minmax(18rem,0.85fr)_minmax(0,1.35fr)]">
         <section className={cardClass}>
           <SectionHeader
             label="Role details"
@@ -310,100 +310,72 @@ function PersonalizeForm({ me, refetch }: FormProps) {
         <section className={cardClass}>
           <SectionHeader
             label="About you"
-            hint="Your background and goals."
+            hint="Your background, goals, and résumé context."
           />
-          <div className="mt-4 space-y-4">
-            <Field id="personalize-short-bio" label="Bio">
+          <div className="mt-4 grid grid-cols-1 gap-5 min-[1180px]:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <EditorPanel
+              label="Bio"
+              footerLeft={`${shortBio.length} / 2000`}
+              footerRight="Required"
+            >
               <textarea
                 id="personalize-short-bio"
                 maxLength={2000}
-                rows={5}
                 value={shortBio}
                 onChange={(e) => setShortBio(e.target.value)}
                 placeholder="A few sentences about your background and what you are looking for."
-                className={`${inputClass} min-h-[8.75rem] resize-none`}
+                className={`${inputClass} min-h-[12.5rem] resize-none`}
               />
-              <p className="mt-1 text-right text-xs text-text-subtle">
-                {shortBio.length} / 2000
-              </p>
-            </Field>
+            </EditorPanel>
 
-            <div className="grid grid-cols-1 gap-4 min-[500px]:grid-cols-2 min-[900px]:grid-cols-1 min-[1180px]:grid-cols-2">
-              <Field id="personalize-name" label="Name">
-                <input
-                  id="personalize-name"
-                  type="text"
-                  value={name}
-                  readOnly
-                  className={`${inputClass} text-center text-sm text-text-muted`}
-                />
-              </Field>
-              <Field id="personalize-email" label="Email">
-                <input
-                  id="personalize-email"
-                  type="email"
-                  value={email}
-                  readOnly
-                  className={`${inputClass} text-center text-sm text-text-muted`}
-                />
-              </Field>
-            </div>
-          </div>
-        </section>
-
-        <section className={cardClass}>
-          <div className="flex items-start justify-between gap-4">
-            <SectionHeader
+            <EditorPanel
               label="Résumé"
               hint="We store extracted text only."
-            />
-            <div
-              role="tablist"
-              aria-label="Résumé input mode"
-              className="inline-flex shrink-0 rounded border border-border bg-surface p-0.5"
-            >
-              {(['text', 'pdf'] as const).map((mode) => {
-                const active = resumeMode === mode;
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => {
-                      setResumeMode(mode);
-                      setError(null);
-                    }}
-                    className={
-                      'rounded px-3 py-1.5 text-xs transition-colors ' +
-                      'focus-visible:outline-none focus-visible:ring-2 ' +
-                      'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
-                      'focus-visible:ring-offset-surface ' +
-                      (active
-                        ? 'bg-accent text-accent-fg'
-                        : 'text-text-muted hover:text-text')
-                    }
-                  >
-                    {mode === 'text' ? 'Paste text' : 'Upload PDF'}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="mt-4">
-            {resumeMode === 'text' ? (
-              <div>
-                <textarea
-                  maxLength={5000}
-                  rows={7}
-                  value={resumeText}
-                  onChange={(e) => setResumeText(e.target.value)}
-                  placeholder="Paste your résumé text here."
-                  className={`${inputClass} min-h-[11.5rem] resize-none`}
-                />
-                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-text-subtle">
-                  <span className="tabular-nums">{resumeText.length} / 5000</span>
+              action={
+                <div
+                  role="tablist"
+                  aria-label="Résumé input mode"
+                  className="inline-flex shrink-0 rounded border border-border bg-surface p-0.5"
+                >
+                  {(['text', 'pdf'] as const).map((mode) => {
+                    const active = resumeMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => {
+                          setResumeMode(mode);
+                          setError(null);
+                        }}
+                        className={
+                          'rounded px-3 py-1.5 text-xs transition-colors ' +
+                          'focus-visible:outline-none focus-visible:ring-2 ' +
+                          'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
+                          'focus-visible:ring-offset-surface ' +
+                          (active
+                            ? 'bg-accent text-accent-fg'
+                            : 'text-text-muted hover:text-text')
+                        }
+                      >
+                        {mode === 'text' ? 'Paste text' : 'Upload PDF'}
+                      </button>
+                    );
+                  })}
+                </div>
+              }
+              footerLeft={
+                resumeMode === 'text'
+                  ? `${resumeText.length} / 5000`
+                  : resumeFile
+                    ? 'Ready to upload'
+                    : me.resume_text
+                      ? 'Current résumé text is on file'
+                      : 'No résumé is currently stored'
+              }
+              footerRight={
+                resumeMode === 'text' ? (
                   <button
                     type="button"
                     onClick={() => setResumeText('')}
@@ -411,15 +383,28 @@ function PersonalizeForm({ me, refetch }: FormProps) {
                   >
                     Clear
                   </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
+                ) : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5" aria-hidden />
+                    PDF
+                  </span>
+                )
+              }
+            >
+              {resumeMode === 'text' ? (
+                <textarea
+                  maxLength={5000}
+                  value={resumeText}
+                  onChange={(e) => setResumeText(e.target.value)}
+                  placeholder="Paste your résumé text here."
+                  className={`${inputClass} min-h-[12.5rem] resize-none`}
+                />
+              ) : (
                 <label
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleResumeDrop}
                   className={
-                    'flex min-h-[11.5rem] cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed p-5 text-center transition-colors ' +
+                    'flex min-h-[12.5rem] cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed p-5 text-center transition-colors ' +
                     'border-border-strong bg-surface-sunken hover:bg-surface ' +
                     'focus-within:outline-none focus-within:ring-2 focus-within:ring-focus-ring focus-within:ring-offset-2 focus-within:ring-offset-surface'
                   }
@@ -443,16 +428,8 @@ function PersonalizeForm({ me, refetch }: FormProps) {
                       : 'No file selected keeps your current résumé.'}
                   </span>
                 </label>
-                <p className="flex items-center gap-2 text-sm text-text-muted">
-                  <FileText className="h-4 w-4" aria-hidden />
-                  {resumeFile
-                    ? 'Ready to upload'
-                    : me.resume_text
-                      ? 'Current résumé text is on file'
-                      : 'No résumé is currently stored'}
-                </p>
-              </div>
-            )}
+              )}
+            </EditorPanel>
           </div>
         </section>
       </div>
@@ -473,6 +450,38 @@ function SectionHeader({ label, hint }: { label: string; hint?: string }) {
         {label}
       </p>
       {hint && <p className="text-xs leading-5 text-text-subtle">{hint}</p>}
+    </div>
+  );
+}
+
+type EditorPanelProps = {
+  label: string;
+  hint?: string;
+  action?: ReactNode;
+  footerLeft: ReactNode;
+  footerRight: ReactNode;
+  children: ReactNode;
+};
+
+function EditorPanel({
+  label,
+  hint,
+  action,
+  footerLeft,
+  footerRight,
+  children,
+}: EditorPanelProps) {
+  return (
+    <div className="flex min-w-0 flex-col">
+      <div className="mb-3 flex min-h-9 items-start justify-between gap-4">
+        <SectionHeader label={label} hint={hint} />
+        {action}
+      </div>
+      <div className="min-w-0">{children}</div>
+      <div className="mt-2 flex min-h-7 items-center justify-between gap-3 text-xs text-text-subtle">
+        <span className="min-w-0 tabular-nums">{footerLeft}</span>
+        <span className="shrink-0">{footerRight}</span>
+      </div>
     </div>
   );
 }
