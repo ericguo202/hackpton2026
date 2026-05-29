@@ -106,6 +106,12 @@ captures industry, target role, and experience level. Every downstream prompt
 that profile, so the interviewer references your actual projects, internships,
 and seniority instead of asking a stock question about teamwork.
 
+Experience level is a first-class second axis on top of the 15 field buckets:
+the company research, opening question, and evaluator rubric are all re-tuned
+to your seniority, so an intern is probed on learning-in-ambiguity and scored
+on coachability while an executive is probed on portfolio bets and scored on
+enterprise leadership — same company, very different interview.
+
 ### Voice-native session loop
 
 The whole session runs through voice: question audio plays, the mic engages
