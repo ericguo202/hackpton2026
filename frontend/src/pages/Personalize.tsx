@@ -226,7 +226,10 @@ function PersonalizeForm({ me, refetch }: FormProps) {
       </div>
 
       {error && (
-        <p role="alert" className="mb-4 rounded border border-border bg-surface-raised px-3 py-2 text-sm text-text-muted">
+        <p
+          role="alert"
+          className="mb-4 rounded border border-border bg-surface-raised px-3 py-2 text-sm text-text-muted"
+        >
           <span className="mr-2 text-[10px] uppercase tracking-eyebrow text-text">
             Error
           </span>
@@ -312,12 +315,22 @@ function PersonalizeForm({ me, refetch }: FormProps) {
             label="About you"
             hint="Your background, goals, and résumé context."
           />
-          <div className="mt-4 grid grid-cols-1 gap-5 min-[1180px]:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <EditorPanel
-              label="Bio"
-              footerLeft={`${shortBio.length} / 2000`}
-              footerRight="Required"
-            >
+          {/*
+            Bio + Résumé share a 3-row grid (header / textarea / footer) so the
+            two columns stay aligned. The split is gated at 1180px, NOT the
+            project-standard 900px: below 1180 the columns get too narrow and the
+            shrink-0 "Paste text / Upload PDF" pill in the Résumé header overflows
+            the card. Don't "fix" this back to 900px — it reintroduces that bug.
+          */}
+          <div className="mt-4 grid grid-cols-1 gap-5 min-[1180px]:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] min-[1180px]:grid-rows-[auto_auto_auto] min-[1180px]:gap-y-2">
+            <div className="min-w-0 min-[1180px]:col-start-1 min-[1180px]:row-start-1">
+              <SectionHeader
+                label="Bio"
+                hint="Write a 2-3 sentence elevator pitch."
+              />
+            </div>
+
+            <div className="min-w-0 min-[1180px]:col-start-1 min-[1180px]:row-start-2">
               <textarea
                 id="personalize-short-bio"
                 maxLength={2000}
@@ -326,71 +339,55 @@ function PersonalizeForm({ me, refetch }: FormProps) {
                 placeholder="A few sentences about your background and what you are looking for."
                 className={`${inputClass} min-h-[12.5rem] resize-none`}
               />
-            </EditorPanel>
+            </div>
 
-            <EditorPanel
-              label="Résumé"
-              hint="We store extracted text only."
-              action={
-                <div
-                  role="tablist"
-                  aria-label="Résumé input mode"
-                  className="inline-flex shrink-0 rounded border border-border bg-surface p-0.5"
-                >
-                  {(['text', 'pdf'] as const).map((mode) => {
-                    const active = resumeMode === mode;
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="tab"
-                        aria-selected={active}
-                        onClick={() => {
-                          setResumeMode(mode);
-                          setError(null);
-                        }}
-                        className={
-                          'rounded px-3 py-1.5 text-xs transition-colors ' +
-                          'focus-visible:outline-none focus-visible:ring-2 ' +
-                          'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
-                          'focus-visible:ring-offset-surface ' +
-                          (active
-                            ? 'bg-accent text-accent-fg'
-                            : 'text-text-muted hover:text-text')
-                        }
-                      >
-                        {mode === 'text' ? 'Paste text' : 'Upload PDF'}
-                      </button>
-                    );
-                  })}
-                </div>
-              }
-              footerLeft={
-                resumeMode === 'text'
-                  ? `${resumeText.length} / 5000`
-                  : resumeFile
-                    ? 'Ready to upload'
-                    : me.resume_text
-                      ? 'Current résumé text is on file'
-                      : 'No résumé is currently stored'
-              }
-              footerRight={
-                resumeMode === 'text' ? (
-                  <button
-                    type="button"
-                    onClick={() => setResumeText('')}
-                    className="cursor-pointer rounded border border-border bg-surface px-2.5 py-1 text-text-muted transition-colors hover:border-border-strong hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-                  >
-                    Clear
-                  </button>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5" aria-hidden />
-                    PDF
-                  </span>
-                )
-              }
-            >
+            <div className="flex min-h-7 items-center justify-between gap-3 text-xs text-text-subtle min-[1180px]:col-start-1 min-[1180px]:row-start-3">
+              <span className="min-w-0 tabular-nums">
+                {shortBio.length} / 2000
+              </span>
+              <span className="shrink-0">Required</span>
+            </div>
+
+            <div className="flex min-w-0 items-start justify-between gap-4 min-[1180px]:col-start-2 min-[1180px]:row-start-1">
+              <SectionHeader
+                label="Résumé"
+                hint="We store extracted text only."
+              />
+              <div
+                role="tablist"
+                aria-label="Résumé input mode"
+                className="inline-flex shrink-0 rounded border border-border bg-surface p-0.5"
+              >
+                {(['text', 'pdf'] as const).map((mode) => {
+                  const active = resumeMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => {
+                        setResumeMode(mode);
+                        setError(null);
+                      }}
+                      className={
+                        'rounded px-3 py-1.5 text-xs transition-colors ' +
+                        'focus-visible:outline-none focus-visible:ring-2 ' +
+                        'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
+                        'focus-visible:ring-offset-surface ' +
+                        (active
+                          ? 'bg-accent text-accent-fg'
+                          : 'text-text-muted hover:text-text')
+                      }
+                    >
+                      {mode === 'text' ? 'Paste text' : 'Upload PDF'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="min-w-0 min-[1180px]:col-start-2 min-[1180px]:row-start-2">
               {resumeMode === 'text' ? (
                 <textarea
                   maxLength={5000}
@@ -429,7 +426,35 @@ function PersonalizeForm({ me, refetch }: FormProps) {
                   </span>
                 </label>
               )}
-            </EditorPanel>
+            </div>
+
+            <div className="flex min-h-7 items-center justify-between gap-3 text-xs text-text-subtle min-[1180px]:col-start-2 min-[1180px]:row-start-3">
+              <span className="min-w-0 tabular-nums">
+                {resumeMode === 'text'
+                  ? `${resumeText.length} / 5000`
+                  : resumeFile
+                    ? 'Ready to upload'
+                    : me.resume_text
+                      ? 'Current résumé text is on file'
+                      : 'No résumé is currently stored'}
+              </span>
+              <span className="shrink-0">
+                {resumeMode === 'text' ? (
+                  <button
+                    type="button"
+                    onClick={() => setResumeText('')}
+                    className="cursor-pointer rounded border border-border bg-surface px-2.5 py-1 text-text-muted transition-colors hover:border-border-strong hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  >
+                    Clear
+                  </button>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5" aria-hidden />
+                    PDF
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
         </section>
       </div>
@@ -450,38 +475,6 @@ function SectionHeader({ label, hint }: { label: string; hint?: string }) {
         {label}
       </p>
       {hint && <p className="text-xs leading-5 text-text-subtle">{hint}</p>}
-    </div>
-  );
-}
-
-type EditorPanelProps = {
-  label: string;
-  hint?: string;
-  action?: ReactNode;
-  footerLeft: ReactNode;
-  footerRight: ReactNode;
-  children: ReactNode;
-};
-
-function EditorPanel({
-  label,
-  hint,
-  action,
-  footerLeft,
-  footerRight,
-  children,
-}: EditorPanelProps) {
-  return (
-    <div className="flex min-w-0 flex-col">
-      <div className="mb-3 flex min-h-[3.25rem] items-start justify-between gap-4">
-        <SectionHeader label={label} hint={hint} />
-        {action}
-      </div>
-      <div className="min-w-0">{children}</div>
-      <div className="mt-2 flex min-h-7 items-center justify-between gap-3 text-xs text-text-subtle">
-        <span className="min-w-0 tabular-nums">{footerLeft}</span>
-        <span className="shrink-0">{footerRight}</span>
-      </div>
     </div>
   );
 }
