@@ -16,6 +16,7 @@ against the same vocabulary.
 
 from __future__ import annotations
 
+from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import (
     DEFAULT_CATEGORY,
     FIELD_CATEGORIES,
@@ -291,13 +292,38 @@ if _missing:
     )
 
 
-def build_system_instruction(category: FieldCategory | None) -> str:
+def build_system_instruction(
+    category: FieldCategory | None,
+    experience_level: ExperienceLevel | None = None,
+) -> str:
     """Assemble the full evaluator system prompt for a given field category.
 
     Falls back to DEFAULT_CATEGORY (Tech/Product/Design) when `category` is
     None or — defensively — when a stale category string slips through that
     isn't in INDUSTRY_GUIDANCE. The fallback mirrors what `opening_question.py`
     does for the opening-question prompt.
+
+    When `experience_level` is known, the matching experience-level rubric
+    paragraph (from `_experience_prompts`) is appended as an extra section so
+    scoring expectations scale with seniority (an intern is judged on
+    coachability, an executive on enterprise leadership). Omitted when the
+    level is None or the cell is missing — same empty-omission discipline as
+    the opening-question builder. The lookup keys on the resolved `key` so the
+    experience appendix stays consistent with the industry appendix even when
+    `category` falls back.
     """
+    # Lazy import to avoid a circular import (`_experience_prompts` imports
+    # from `_field_prompts`, which this module also imports).
+    from app.services._experience_prompts import experience_evaluator_block
+
     key = category if category in INDUSTRY_GUIDANCE else DEFAULT_CATEGORY
-    return BASE_SYSTEM_INSTRUCTION.format(industry_guidance=INDUSTRY_GUIDANCE[key])
+    instruction = BASE_SYSTEM_INSTRUCTION.format(industry_guidance=INDUSTRY_GUIDANCE[key])
+
+    experience_block = experience_evaluator_block(key, experience_level)
+    if experience_block:
+        instruction += (
+            "\nExperience-level guidance (calibrate scoring expectations to "
+            f"this candidate's level):\n\n{experience_block}\n"
+        )
+
+    return instruction

@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from app.core.auth import get_current_user_db
-from app.db.models.enums import SessionStatus, UserTier
+from app.db.models.enums import ExperienceLevel, SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
 from app.db.models.session_metrics import SessionMetrics
@@ -305,6 +305,7 @@ async def _run_background_eval(
     history: list[dict],
     cv_summary: dict | None,
     category: FieldCategory | None,
+    experience_level: ExperienceLevel | None = None,
 ) -> None:
     """Evaluate a turn after the request has already returned, then persist.
 
@@ -316,7 +317,10 @@ async def _run_background_eval(
     `finally` block so a missed finalize doesn't leak the Task reference.
 
     `category` is the persisted `brief.category` for the session and selects
-    the field-tailored rubric appendix inside `evaluate_turn`.
+    the field-tailored rubric appendix inside `evaluate_turn`. `experience_level`
+    is the candidate's seniority and selects the experience-tailored rubric
+    appendix; both are passed explicitly because this task runs in a detached
+    AsyncSession with no access to the request-scoped `user` row.
     """
     try:
         async with AsyncSessionLocal() as db:
@@ -324,6 +328,7 @@ async def _run_background_eval(
                 eval_out = await evaluate_turn(
                     question, transcript, history,
                     cv_summary=cv_summary, category=category,
+                    experience_level=experience_level,
                 )
                 _log_eval_scores(session_id, turn_id, category, eval_out)
                 turn = await db.get(InterviewTurn, turn_id)
@@ -484,6 +489,10 @@ async def submit_turn(
     # evaluator handles by falling back to the default-category prompt.
     brief_out = _parse_company_summary(session.company_summary)
     category: FieldCategory | None = brief_out.category if brief_out else None
+    # The candidate's seniority tailors the evaluator rubric alongside the
+    # field category. None for users onboarded before the field existed; the
+    # evaluator omits the experience appendix in that case.
+    experience_level = user.experience_level
 
     # 2. Find the current unanswered turn (question exists, transcript is NULL).
     result = await db.execute(
@@ -604,6 +613,7 @@ async def submit_turn(
                 history=history,
                 cv_summary=parsed_cv_summary,
                 category=category,
+                experience_level=experience_level,
             ),
             name=f"eval-session-{session_id}-turn-{current_turn.turn_number}",
         )
@@ -629,6 +639,7 @@ async def submit_turn(
     eval_out = await evaluate_turn(
         current_turn.question_text, transcript, history,
         cv_summary=parsed_cv_summary, category=category,
+        experience_level=experience_level,
     )
     _log_eval_scores(session_id, current_turn.id, category, eval_out)
     _apply_eval_to_turn(current_turn, eval_out)
@@ -669,6 +680,7 @@ async def submit_turn(
             inline_eval = await evaluate_turn(
                 t.question_text, t.transcript_text, inline_history,
                 cv_summary=inline_cv, category=category,
+                experience_level=experience_level,
             )
             _log_eval_scores(session_id, t.id, category, inline_eval)
             _apply_eval_to_turn(t, inline_eval)

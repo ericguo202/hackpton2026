@@ -26,6 +26,8 @@ from __future__ import annotations
 import random
 from typing import Literal
 
+from app.db.models.enums import ExperienceLevel
+
 
 FieldCategory = Literal[
     "Technology, Product, and Design",
@@ -299,6 +301,7 @@ FIELD_EXAMPLES: dict[FieldCategory, list[str]] = {
 
 def build_field_system_prompt(
     category: FieldCategory,
+    experience_level: ExperienceLevel | None = None,
     rng: random.Random | None = None,
 ) -> str:
     """Assemble the per-call system prompt for the opening-question generator.
@@ -311,10 +314,21 @@ def build_field_system_prompt(
       question repeatedly across sessions: the 5 fixed examples acted
       as strong attractors and the model converged on them; showing
       only 2 (a different 2 each call) breaks that.
+    - When `experience_level` is known, the matching experience-level
+      paragraph (from `_experience_prompts`) is appended as an extra
+      section so an intern and an executive in the same field get
+      differently-calibrated questions. When it's None (legacy users)
+      the section is omitted and output is identical to the
+      category-only behavior — same empty-omission discipline as
+      `_company_digest`.
 
     `rng` is injectable so tests can pin the sample deterministically;
     production callers pass `None` to get fresh randomness per call.
     """
+    # Imported lazily to avoid a circular import: `_experience_prompts`
+    # imports FieldCategory / FIELD_CATEGORIES from this module.
+    from app.services._experience_prompts import experience_question_block
+
     themes = FIELD_THEMES.get(category) or FIELD_THEMES[DEFAULT_CATEGORY]
     examples = FIELD_EXAMPLES.get(category) or FIELD_EXAMPLES[DEFAULT_CATEGORY]
     sampler = rng if rng is not None else random
@@ -324,7 +338,7 @@ def build_field_system_prompt(
     themes_block = "\n".join(f"  - {t}" for t in themes)
     examples_block = "\n".join(f"  - {e}" for e in sampled)
 
-    return (
+    prompt = (
         f"{intro}\n\n"
         f"This field tests behaviors across these themes (use this as the "
         f"breadth of what you can probe — do NOT limit yourself to the two "
@@ -332,3 +346,12 @@ def build_field_system_prompt(
         f"Style cues (concrete shapes — emulate the spirit, not the wording):\n"
         f"{examples_block}"
     )
+
+    experience_block = experience_question_block(category, experience_level)
+    if experience_block:
+        prompt += (
+            "\n\nExperience-level focus (tailor difficulty and scope to "
+            f"this candidate's level):\n{experience_block}"
+        )
+
+    return prompt

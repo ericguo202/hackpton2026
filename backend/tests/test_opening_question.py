@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import (
     DEFAULT_CATEGORY,
     FIELD_EXAMPLES,
@@ -41,7 +42,7 @@ def _fake_user():
         name="Eric",
         target_role="Backend Engineer",
         industry="AI Infrastructure",
-        experience_level=SimpleNamespace(value="mid"),
+        experience_level=ExperienceLevel.mid,
         short_bio="4 years on data platforms.",
         resume_text="Led a team that shipped an LLM eval harness processing 10k reqs/s.",
     )

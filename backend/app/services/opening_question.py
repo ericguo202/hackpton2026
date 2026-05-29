@@ -16,6 +16,10 @@ The system prompt is assembled per-call by
     load-bearing fix for "same opening question over and over" — the
     previous design showed all 5 examples every call and the model
     converged on them as attractors.
+  - Appends an experience-level paragraph (from `_experience_prompts`)
+    when `user.experience_level` is set, so the question's difficulty
+    and scope match an intern vs. an executive in the same field.
+    Omitted when the level is None.
 
 The user prompt additionally surfaces `brief.role_signals` (what the
 company is documented to value in applicants for this role) and
@@ -145,7 +149,10 @@ async def generate_opening_question(
     """Return a single opening interview question — standard or company-flavored."""
     client = get_client()
 
-    system_prompt = build_field_system_prompt(brief.category or DEFAULT_CATEGORY)
+    system_prompt = build_field_system_prompt(
+        brief.category or DEFAULT_CATEGORY,
+        experience_level=user.experience_level,
+    )
 
     style = random.choice([_STYLE_STANDARD, _STYLE_COMPANY])
     prompt = (

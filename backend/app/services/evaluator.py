@@ -23,6 +23,7 @@ from typing import Annotated, Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
 
+from app.db.models.enums import ExperienceLevel
 from app.services._field_rubrics import build_system_instruction
 from app.services._field_prompts import FieldCategory
 from app.services._openrouter import extract_json_object, get_client
@@ -504,6 +505,7 @@ async def evaluate_turn(
     history: list[dict] | None = None,
     cv_summary: dict | None = None,
     category: FieldCategory | None = None,
+    experience_level: ExperienceLevel | None = None,
 ) -> EvaluatorOutput:
     """Score one interview turn and return structured JSON.
 
@@ -514,12 +516,19 @@ async def evaluate_turn(
     `category` selects the field-tailored rubric appendix; None or an
     unknown category falls back to the DEFAULT_CATEGORY prompt — same
     fallback policy as the opening-question agent.
+
+    `experience_level` appends the matching seniority-tailored rubric
+    paragraph so scoring expectations scale with level; None (legacy
+    sessions / unknown) omits it, leaving the category-only rubric.
     """
     client = get_client()
     response = await client.chat.completions.create(
         model=EVAL_MODEL,
         messages=[
-            {"role": "system", "content": build_system_instruction(category)},
+            {
+                "role": "system",
+                "content": build_system_instruction(category, experience_level),
+            },
             {
                 "role": "user",
                 "content": _build_prompt(question, transcript, history, cv_summary),
