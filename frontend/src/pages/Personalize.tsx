@@ -473,7 +473,7 @@ function EditorPanel({
 }: EditorPanelProps) {
   return (
     <div className="flex min-w-0 flex-col">
-      <div className="mb-3 flex min-h-9 items-start justify-between gap-4">
+      <div className="mb-3 flex min-h-[3.25rem] items-start justify-between gap-4">
         <SectionHeader label={label} hint={hint} />
         {action}
       </div>
