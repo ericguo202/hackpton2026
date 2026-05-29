@@ -28,6 +28,7 @@ services:
     environment:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      RUN_MIGRATIONS_ON_STARTUP: "1"
     depends_on:
       db:
         condition: service_healthy

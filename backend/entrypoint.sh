@@ -1,8 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "[entrypoint] Running Alembic migrations..."
-alembic upgrade head
+if [ "${RUN_MIGRATIONS_ON_STARTUP:-0}" = "1" ]; then
+    echo "[entrypoint] Running Alembic migrations..."
+    alembic upgrade head
+fi
+
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
 
 echo "[entrypoint] Starting Uvicorn..."
 exec uvicorn main:app \
