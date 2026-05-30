@@ -189,7 +189,10 @@ async def onboarding(
         logger.warning("Onboarding email collision for %s", email)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An account with this email address already exists.",
+            detail=(
+                "An account with this email address already exists. "
+                "Sign in with your original method (email & password, or Google)."
+            ),
         )
     await db.refresh(user)
     return user
