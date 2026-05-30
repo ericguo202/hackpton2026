@@ -69,6 +69,21 @@ export default function SignUp() {
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const shaderSpeed = prefersReducedMotion ? 0 : isHovered ? 0.6 : 0.2;
 
+  // A Google OAuth sign-up rejection (e.g. blocked by the Clerk Allowlist beta
+  // gate) doesn't throw on a button click — Clerk records it on the SignUp
+  // resource's external-account verification and routes the user back to this
+  // page (because ClerkProvider's signUpUrl points here). Derive a message from
+  // it during render (not via a setState-in-effect, which the
+  // react-hooks/set-state-in-effect lint rule forbids). A user-action `error`
+  // takes precedence over this resource-derived one.
+  const oauthError = signUp?.verifications?.externalAccount?.error;
+  const oauthErrorMessage = oauthError
+    ? oauthError.code === 'not_allowed_access'
+      ? "Access currently restricted to beta testers."
+      : (oauthError.message ?? 'Google sign-up could not be completed. Try again.')
+    : null;
+  const displayError = error ?? oauthErrorMessage;
+
   async function handleCreate(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!isLoaded) return;
@@ -92,6 +107,13 @@ export default function SignUp() {
         // sign-in rather than surfacing Clerk's raw "already exists" string.
         setError(
           'An account with this email already exists. Sign in instead — if you signed up with Google, use “Continue with Google.”',
+        );
+      } else if (firstError?.code === 'not_allowed_access') {
+        // Blocked by Clerk's Allowlist restriction (beta gate). Clerk rejects
+        // the sign-up before any account is created, so there's nothing to
+        // recover — just explain why and how to get in.
+        setError(
+          "Access currently restricted to beta testers.",
         );
       } else {
         setError(
@@ -273,12 +295,12 @@ export default function SignUp() {
 
                 <div id="clerk-captcha" />
 
-                {error && (
+                {displayError && (
                   <p
                     role="alert"
                     className="text-sm text-text bg-surface-sunken border border-border rounded px-3 py-2"
                   >
-                    {error}
+                    {displayError}
                   </p>
                 )}
 

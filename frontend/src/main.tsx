@@ -44,6 +44,14 @@ createRoot(document.getElementById('root')!).render(
     <ClerkProvider
       publishableKey={PUBLISHABLE_KEY}
       afterSignOutUrl="/"
+      // Point Clerk at our OWN custom auth pages. Without these, Clerk falls
+      // back to its hosted Account Portal (accounts.dev) whenever a flow can't
+      // complete on the current page — e.g. a Google OAuth sign-up blocked by
+      // the Allowlist beta gate, which otherwise transports the user off our
+      // UI entirely. With these set, that fallback stays on our domain and the
+      // error surfaces on our /sign-up.
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
       appearance={clerkAppearance}
     >
       <BrowserRouter>
