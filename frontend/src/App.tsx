@@ -1,6 +1,7 @@
 import { Show } from '@clerk/react';
 import { Navigate, Route, Routes } from 'react-router';
 
+import EmailConflictNotice from './components/EmailConflictNotice';
 import OnboardingForm from './components/OnboardingForm';
 import {
   RedirectIfOnboarded,
@@ -48,6 +49,9 @@ function SignedInHome() {
       </div>
     );
   }
+  // Email already claimed by another account — block before onboarding so the
+  // user never fills out the form only to hit a 409 at submit.
+  if (me.email_conflict) return <EmailConflictNotice />;
   if (!me.completed_registration) return <Navigate to="/onboarding" replace />;
   return <Home />;
 }

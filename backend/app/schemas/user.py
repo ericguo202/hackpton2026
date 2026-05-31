@@ -21,6 +21,12 @@ class UserOut(BaseModel):
     short_bio: str | None
     resume_text: str | None
     completed_registration: bool
+    # Transient (not a DB column): True when this pre-onboarding caller's email
+    # is already claimed by a DIFFERENT users row. Stamped onto the ORM instance
+    # by `GET /me`; defaults False so the normal path and older callers are
+    # unaffected. Lets the frontend block onboarding before the form (instead of
+    # surfacing the late 409 from the onboarding UNIQUE(email) commit).
+    email_conflict: bool = False
     tier: UserTier
     daily_session_count: int
     created_at: datetime

@@ -25,6 +25,31 @@ A common mistake when deploying to production is **forgetting to change your API
 
 > Be sure to update these values in your hosting provider's environment variables, and also to redeploy your app.
 
+## Session token customization (required by this app)
+
+This app reads the caller's email **off the session JWT** to detect a
+duplicate-email account before onboarding (see `backend/app/api/v1/endpoints/me.py`
+and `ClerkClaims.email` in `backend/app/core/auth.py`). Clerk's default session
+token does **not** include email, so you must add it as a custom claim:
+
+1. In the Clerk Dashboard, go to **Sessions → Customize session token → Claims**.
+2. Add (alongside any existing custom claims):
+
+   ```json
+   { "email": "{{user.primary_email_address}}" }
+   ```
+
+3. Save. The claim now appears in the decoded JWT payload on every request.
+
+Do this for **both** the development and production instances (custom claims are
+per-instance and don't copy over). If the claim is missing the app **fails open**:
+the pre-onboarding duplicate-email check is skipped and the collision instead
+surfaces as a late 409 at onboarding submit — so the claim is what makes the
+early, friendly block work.
+
+> Custom claims share a ~1.2 KB budget (4 KB cookie cap minus Clerk's default
+> claims). An email is tiny, but keep this in mind if you add more claims later.
+
 ## OAuth credentials
 
 In development, for most social providers, Clerk provides you with a set of shared OAuth credentials.

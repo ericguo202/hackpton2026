@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user_db
+from app.core.auth import ClerkClaims, current_user, get_current_user_db
 from app.db.models.enums import SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.session_metrics import SessionMetrics
@@ -36,6 +36,7 @@ router = APIRouter()
 
 @router.get("", response_model=UserOut)
 async def get_me(
+    claims: ClerkClaims = Depends(current_user),
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -47,6 +48,26 @@ async def get_me(
     # refreshes the attached ORM instance, so the value below is current.
     if user.tier == UserTier.free:
         await daily_check_and_reset(db, user)
+
+    # Duplicate-email detection BEFORE onboarding. A users row's `email` is
+    # written (and its UNIQUE constraint checked) only at the onboarding
+    # commit, so a collision with an orphaned row — e.g. a deleted Clerk
+    # account whose `user.deleted` webhook never landed — otherwise surfaces
+    # as a 409 only after the user fills out the whole form. We detect it up
+    # front using the caller's email from the session-token custom claim
+    # (`claims.email`). Only meaningful pre-onboarding (own row has email NULL,
+    # so no self-match); skip once onboarded. Fails open when the claim isn't
+    # configured (`claims.email is None`) — behavior reverts to the late 409.
+    if not user.completed_registration and claims.email:
+        conflicting_id = await db.scalar(
+            select(User.id).where(
+                User.email == claims.email,
+                User.clerk_user_id != claims.sub,
+            )
+        )
+        # Transient attribute read back by UserOut's from_attributes.
+        user.email_conflict = conflicting_id is not None
+
     return user
 
 

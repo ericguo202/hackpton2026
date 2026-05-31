@@ -61,6 +61,12 @@ class ClerkClaims(BaseModel):
     - `sid`: Clerk session id (optional; useful for logging/revocation)
     - `azp`: authorized party / frontend origin (optional; Clerk sets it when
       the token was minted for a specific origin)
+    - `email`: caller's primary email. NOT in Clerk's default session token —
+      it arrives only when a custom claim is configured in the Clerk Dashboard
+      (Sessions → Customize session token → `{"email": "{{user.primary_email_address}}"}`).
+      Stays `None` when that claim isn't set, so every consumer must treat it as
+      optional and fail open. Used by `GET /me` to detect a duplicate-email
+      collision before onboarding (see `endpoints/me.py`).
     """
 
     sub: str
@@ -69,6 +75,7 @@ class ClerkClaims(BaseModel):
     iat: int
     sid: Optional[str] = None
     azp: Optional[str] = None
+    email: Optional[str] = None
 
 
 async def current_user(authorization: str = Header(None)) -> ClerkClaims:
