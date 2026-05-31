@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     # OPENROUTER_API_KEY: tests monkeypatch the httpx call, no key required.
     SERPER_API_KEY: str | None = None
 
+    # Brandfetch client ID — used by profile validation for company lookup.
+    # Optional so validation can degrade to the existing confirmation flow.
+    BRANDFETCH_CLIENT_ID: str | None = None
+
     # ElevenLabs TTS (T+8-10). `VOICE_ID` picks which voice speaks the
     # question — grab one from the Voice Library (e.g. `JBFqnCBsd6RMkjVDRZzb`
     # for "George"). Both are optional at boot so tests that mock the HTTP
