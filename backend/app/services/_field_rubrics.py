@@ -96,7 +96,8 @@ Score calibration rules:
 - If a dimension has no concrete evidence, score it 0–3 even when the answer sounds confident.
 - If a dimension has partial evidence but missing specifics, score it 4–6. Reserve 6 for answers with a real example but clear gaps.
 - Use the full 0–10 range. Do not cluster every dimension around 5 unless the transcript truly gives equal, partial evidence for every dimension.
-- Apply evidence caps: no result or metric usually means impact <= 4; no candidate-owned action usually means initiative <= 5; no reasoning or trade-off usually means problem_solving <= 5; no role-specific detail usually means depth <= 5; no sequence or answer shape usually means structure <= 5.
+- Apply evidence ceilings as soft guidance, not rigid cutoffs: no result or metric usually keeps impact at 4 or below (a clear result without a number usually keeps it at 8 or below); no candidate-owned action usually keeps initiative at 3 or below, clear "I" statements like "I led" or "I delivered" boost the initiative score; no reasoning or trade-off usually keeps problem_solving at 5 or below; no sequence or answer shape usually keeps structure at 8 or below.
+- For depth, lean lower when the answer lacks role-specific detail, but do not force a fixed cutoff—reward genuine substance even when it is phrased plainly. The goal is to avoid penalizing strong answers or making candidates sound robotic.
 
 Priorities when assigning scores:
 

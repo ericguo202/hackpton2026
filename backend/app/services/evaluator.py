@@ -72,12 +72,6 @@ _OWNERSHIP_RE = re.compile(
     r"\b(my role|i was responsible|i took responsibility|i stepped in)\b",
     re.IGNORECASE,
 )
-_DOMAIN_DETAIL_RE = re.compile(
-    r"\b(api|sql|python|react|model|metric|experiment|customer|client|"
-    r"stakeholder|budget|timeline|risk|compliance|design|architecture|"
-    r"process|workflow|analysis|dashboard|prototype|launch|deployment)\b"
-)
-_ACRONYM_RE = re.compile(r"\b[A-Z]{2,}\b")
 
 
 def _truncate_to(limit: int, *, ellipsis: bool) -> Callable[[Any], Any]:
@@ -202,8 +196,6 @@ def _calibrate_content_scores(
         broad_cap = 2
     elif word_count < 25:
         broad_cap = 4
-    elif word_count < 45:
-        broad_cap = 6
     else:
         broad_cap = 10
 
@@ -215,22 +207,17 @@ def _calibrate_content_scores(
     has_reasoning = bool(_REASONING_RE.search(transcript))
     has_result = bool(_RESULT_RE.search(transcript))
     has_ownership = bool(_OWNERSHIP_RE.search(transcript))
-    has_domain_detail = bool(_DOMAIN_DETAIL_RE.search(transcript.lower())) or bool(
-        _ACRONYM_RE.search(transcript)
-    )
 
     if not has_structure:
-        result.structure = _cap(result.structure, 5)
+        result.structure = _cap(result.structure, 8)
     if not has_reasoning:
-        result.problem_solving = _cap(result.problem_solving, 5)
+        result.problem_solving = _cap(result.problem_solving, 8)
     if not has_result and not has_number:
-        result.impact = _cap(result.impact, 4)
-    elif not has_number:
         result.impact = _cap(result.impact, 6)
+    elif not has_number:
+        result.impact = _cap(result.impact, 8)
     if not has_ownership:
-        result.initiative = _cap(result.initiative, 5)
-    if not has_domain_detail:
-        result.depth = _cap(result.depth, 5)
+        result.initiative = _cap(result.initiative, 8)
 
     return result
 
