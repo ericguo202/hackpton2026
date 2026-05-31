@@ -24,6 +24,11 @@ export type MeResponse = {
   short_bio: string | null;
   resume_text: string | null;
   completed_registration: boolean;
+  // True when this not-yet-onboarded account's email is already claimed by a
+  // different user row. The frontend blocks onboarding and shows a notice
+  // instead, so the duplicate-email case is caught before the form (not as a
+  // 409 at submit). Always false once onboarded.
+  email_conflict: boolean;
   // Free users are capped at 5 completed sessions per local calendar day.
   // The counter increments only when a session FINALIZES (not when it
   // starts), so abandoning a session doesn't burn a slot.

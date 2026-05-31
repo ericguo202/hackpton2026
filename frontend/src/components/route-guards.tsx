@@ -73,7 +73,10 @@ export function RedirectIfOnboarded() {
       <Show when="signed-in">
         {isLoading || !me ? (
           <LoadingScreen />
-        ) : me.completed_registration ? (
+        ) : me.completed_registration || me.email_conflict ? (
+          // Onboarded users go home; email-conflict users go home too, where
+          // SignedInHome renders the EmailConflictNotice (single source of that
+          // UI). Either way they don't reach the onboarding form.
           <Navigate to="/" replace />
         ) : (
           <Outlet />
