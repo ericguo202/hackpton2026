@@ -148,7 +148,14 @@ async def test_scores_clamped_to_range(monkeypatch):
         lambda: _make_fake_client(oob_payload),
     )
 
-    result = await evaluate_turn(question="q", transcript="a")
+    transcript = (
+        "First I led an API migration because latency data showed a customer "
+        "workflow was blocked. I compared options, implemented the change, "
+        "and the result improved response time by 30% before launch. Then I "
+        "documented the rollout plan, aligned support, monitored the dashboard, "
+        "and shared what we learned with the team."
+    )
+    result = await evaluate_turn(question="q", transcript=transcript)
     assert result.structure == 10
     assert result.problem_solving == 0
     assert result.impact == 10
@@ -436,6 +443,32 @@ def test_compute_delivery_score_penalizes_tilted_bad_posture():
     assert _compute_delivery_score(tilted) < _compute_delivery_score(baseline)
 
 
+def test_compute_delivery_score_caps_severe_eye_contact_drift():
+    looked_away = {
+        "frames_processed": 180,
+        "face_visible_pct": 100.0,
+        "eye_contact_score": 50.0,
+        "expression_score": 70.0,
+        "posture_score": 82.0,
+        "overall_interview_score": 58.0,
+        "eye_contact_stability": 65.0,
+        "expression_stability": 88.0,
+        "posture_stability": 90.0,
+        "looked_away_pct": 90.0,
+        "posture_drift_pct": 4.0,
+        "bad_posture_pct": 4.0,
+        "tilted_pct": 2.0,
+        "low_energy_pct": 4.0,
+        "longest_looked_away_streak_frames": 162,
+        "longest_posture_drift_streak_frames": 4,
+        "longest_bad_posture_streak_frames": 4,
+        "longest_tilted_streak_frames": 2,
+        "longest_low_energy_streak_frames": 4,
+    }
+
+    assert _compute_delivery_score(looked_away) <= 2
+
+
 def test_compute_delivery_score_treats_zero_scores_as_real_signal():
     missing_expression = {
         "frames_processed": 120,
@@ -484,6 +517,74 @@ async def test_weak_delivery_adds_specific_quick_win(monkeypatch):
     assert result.delivery <= 4
     assert result.feedback_detail.quick_wins[0].startswith("Delivery:")
     assert "35%" in result.feedback_detail.quick_wins[0]
+
+
+async def test_weak_delivery_adds_detailed_delivery_feedback(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(_DEFAULT_PAYLOAD),
+    )
+
+    result = await evaluate_turn(
+        question="Tell me about a technical challenge.",
+        transcript="I led the deadline discussion.",
+        cv_summary={
+            "frames_processed": 180,
+            "face_visible_pct": 91.0,
+            "eye_contact_score": 50.0,
+            "expression_score": 48.0,
+            "posture_score": 62.0,
+            "overall_interview_score": 54.0,
+            "eye_contact_stability": 58.0,
+            "expression_stability": 52.0,
+            "posture_stability": 55.0,
+            "looked_away_pct": 90.0,
+            "posture_drift_pct": 24.0,
+            "bad_posture_pct": 24.0,
+            "tilted_pct": 18.0,
+            "low_energy_pct": 35.0,
+            "longest_looked_away_streak_frames": 162,
+            "longest_posture_drift_streak_frames": 40,
+            "longest_bad_posture_streak_frames": 40,
+            "longest_tilted_streak_frames": 30,
+            "longest_low_energy_streak_frames": 58,
+            "head_tilt_degrees_avg": 8.5,
+            "head_tilt_degrees_max": 18.0,
+            "coaching_tip": "Hold your gaze closer to the camera lens.",
+        },
+    )
+
+    delivery = result.feedback_detail.delivery_feedback
+    assert delivery is not None
+    assert result.delivery is not None
+    assert result.delivery <= 2
+    assert "90%" in (delivery.eye_contact or "")
+    assert "centered" in (delivery.alignment or "")
+    assert "Posture" not in (delivery.posture or "")
+
+
+async def test_content_calibration_prevents_unsupported_neutral_fives(monkeypatch):
+    neutral_payload = {
+        "structure": 5,
+        "problem_solving": 5,
+        "impact": 5,
+        "initiative": 5,
+        "depth": 5,
+        "feedback_detail": _DEFAULT_PAYLOAD["feedback_detail"],
+        "notes": "The answer needs more evidence.",
+    }
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(neutral_payload),
+    )
+
+    result = await evaluate_turn(
+        question="Tell me about a time you solved a problem.",
+        transcript="Stuff happened and it was fine.",
+    )
+
+    assert result.impact < 5
+    assert result.depth < 5
 
 
 async def test_category_threads_into_system_prompt(monkeypatch):

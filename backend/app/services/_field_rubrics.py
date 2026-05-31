@@ -89,6 +89,16 @@ Scoring scale guidance (apply consistently):
 - 1–3: Weak; little evidence, vague, incorrect, or mostly irrelevant to the asked competency.
 - 0: No relevant evidence provided.
 
+Score calibration rules:
+
+- Do not use 5 as a neutral default. Score only from evidence in the candidate answer.
+- A score above 5 requires explicit evidence for that exact dimension; fluent wording alone is not enough.
+- If a dimension has no concrete evidence, score it 0–3 even when the answer sounds confident.
+- If a dimension has partial evidence but missing specifics, score it 4–6. Reserve 6 for answers with a real example but clear gaps.
+- Use the full 0–10 range. Do not cluster every dimension around 5 unless the transcript truly gives equal, partial evidence for every dimension.
+- Apply evidence ceilings as soft guidance, not rigid cutoffs: no result or metric usually keeps impact at 4 or below (a clear result without a number usually keeps it at 8 or below); no candidate-owned action usually keeps initiative at 3 or below, clear "I" statements like "I led" or "I delivered" boost the initiative score; no reasoning or trade-off usually keeps problem_solving at 5 or below; no sequence or answer shape usually keeps structure at 8 or below.
+- For depth, lean lower when the answer lacks role-specific detail, but do not force a fixed cutoff—reward genuine substance even when it is phrased plainly. The goal is to avoid penalizing strong answers or making candidates sound robotic.
+
 Priorities when assigning scores:
 
 1. Structure and clarity first—if the story cannot be followed, downstream scores should be reduced.

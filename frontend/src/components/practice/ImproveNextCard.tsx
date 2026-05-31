@@ -146,14 +146,14 @@ function buildInsights({
   if (cvSummary) {
     if (cvSummary.face_visible_pct < 85) {
       insights.push({
-        title: 'Stay inside the frame',
+        title: 'Fix camera alignment',
         detail: `Face visibility was ${cvSummary.face_visible_pct}%. Keep your head centered so delivery scoring has a stable read.`,
       });
     }
-    if (cvSummary.eye_contact_score < 55) {
+    if (cvSummary.eye_contact_score < 60 || cvSummary.looked_away_pct >= 20) {
       insights.push({
         title: 'Hold eye contact longer',
-        detail: `Eye contact landed at ${cvSummary.eye_contact_score}/100. Pick one spot near the camera and return to it between phrases.`,
+        detail: `Eye contact landed at ${cvSummary.eye_contact_score}/100, with ${cvSummary.looked_away_pct}% looked-away frames. Pick one spot near the camera and return to it between phrases.`,
       });
     }
     if (cvSummary.expression_score < 50) {
@@ -168,7 +168,7 @@ function buildInsights({
       cvSummary.tilted_pct >= 12
     ) {
       insights.push({
-        title: 'Fix posture drift',
+        title: 'Fix posture and head alignment',
         detail: `Posture scored ${cvSummary.posture_score}/100 with ${cvSummary.bad_posture_pct}% bad-posture frames and ${cvSummary.tilted_pct}% tilted frames. Sit upright and keep your head level with the camera.`,
       });
     }
@@ -182,7 +182,7 @@ function buildInsights({
     });
   }
 
-  return insights.slice(0, 4);
+  return insights.slice(0, 7);
 }
 
 type FillerEntry = { word: string; count: number };

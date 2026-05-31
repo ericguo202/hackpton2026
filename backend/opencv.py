@@ -504,6 +504,8 @@ class InterviewAnalyzer:
             [
                 backend_dir / "models" / "face_landmarker.task",
                 backend_dir / "models" / "face_landmarker_v2.task",
+                backend_dir / "opencv" / "models" / "face_landmarker.task",
+                backend_dir / "opencv" / "models" / "face_landmarker_v2.task",
                 backend_dir / "face_landmarker.task",
                 backend_dir / "face_landmarker_v2.task",
             ]

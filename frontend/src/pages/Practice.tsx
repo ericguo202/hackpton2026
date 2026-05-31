@@ -69,6 +69,12 @@ type ReplayTurnResult = TurnResult & {
   analyzerDiagnostics: AnalyzerDiagnostics;
 };
 
+function isTextInputTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+}
+
 const SCORE_DIM_KEYS: ReadonlyArray<keyof Scores> = [
   'structure',
   'problem_solving',
@@ -149,6 +155,52 @@ function replayFor(r: ReplayTurnResult | undefined): PracticeTurnReplay {
   };
 }
 
+function SessionInfoPanel({
+  turnNum,
+  recorderState,
+  diagnostics,
+}: {
+  turnNum: number;
+  recorderState: 'idle' | 'recording' | 'stopped';
+  diagnostics: AnalyzerDiagnostics;
+}) {
+  const summary = diagnostics.lastSummary;
+
+  return (
+    <div className="pointer-events-none absolute right-4 top-4 z-20 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-border-strong bg-surface-raised/95 p-4 shadow-xl backdrop-blur">
+      <p className="mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+        Session info
+      </p>
+      <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs text-text-muted">
+        <dt>Turn</dt>
+        <dd className="text-text">{turnNum}</dd>
+        <dt>Recorder</dt>
+        <dd className="text-text">{recorderState}</dd>
+        <dt>Analyzer</dt>
+        <dd className="text-text">{diagnostics.status}</dd>
+        <dt>Frames</dt>
+        <dd className="text-text">{diagnostics.framesProcessed}</dd>
+        <dt>Face frames</dt>
+        <dd className="text-text">{diagnostics.faceFrames}</dd>
+        {summary && (
+          <>
+            <dt>Eye contact</dt>
+            <dd className="text-text">{summary.eye_contact_score}/100</dd>
+            <dt>Looked away</dt>
+            <dd className="text-text">{summary.looked_away_pct}%</dd>
+            <dt>Expression</dt>
+            <dd className="text-text">{summary.expression_score}/100</dd>
+            <dt>Posture</dt>
+            <dd className="text-text">{summary.posture_score}/100</dd>
+            <dt>Head tilt</dt>
+            <dd className="text-text">{summary.head_tilt_degrees_avg} deg avg</dd>
+          </>
+        )}
+      </dl>
+    </div>
+  );
+}
+
 function revokeReplayUrls(turns: ReplayTurnResult[]) {
   for (const turn of turns) {
     if (turn.replayUrl) URL.revokeObjectURL(turn.replayUrl);
@@ -190,6 +242,7 @@ function PracticeSession({
   const turnResultsRef = useRef<ReplayTurnResult[]>([]);
 
   const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
+  const [showSessionInfo, setShowSessionInfo] = useState(false);
   // Off by default. When on, tapping "End answer" while recording fires the
   // auto-submit effect below and skips the preview/Re-record block entirely.
   const [autoSubmit] = useLocalStoragePref('auto_submit_enabled', false);
@@ -224,6 +277,18 @@ function PracticeSession({
       revokeReplayUrls(turnResultsRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== 'p' || isTextInputTarget(event.target)) return;
+      if (isDone) return;
+      event.preventDefault();
+      setShowSessionInfo((visible) => !visible);
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDone]);
 
   // Auto-submit on Stop: as soon as MediaRecorder finishes flushing its
   // final chunk and populates `recorder.audioBlob`, fire the turn
@@ -469,6 +534,8 @@ function PracticeSession({
   const showPreview =
     !autoSubmit && recorder.state === 'stopped' && recorder.audioUrl != null;
   const previousTurn = turnResults.length > 0 ? turnResults[0] : null;
+  const showTranscriptPanel = showSessionInfo && showTranscript && previousTurn;
+  const showQuestionDuringSession = showSessionInfo && showQuestionText;
 
   return (
     <div className="flex min-h-screen flex-col bg-surface text-text">
@@ -493,12 +560,19 @@ function PracticeSession({
 
       <main className="flex-1">
         {!isDone && currentQ && (
-          <div className="flex h-screen w-full flex-col bg-surface">
+          <div className="relative flex h-screen w-full flex-col bg-surface">
+            {showSessionInfo && (
+              <SessionInfoPanel
+                turnNum={currentQ.num}
+                recorderState={recorder.state}
+                diagnostics={analyzer.diagnostics}
+              />
+            )}
             <div
               className={cn(
                 'flex-1 overflow-y-auto min-[900px]:overflow-hidden',
                 'flex flex-col min-[900px]:grid min-[900px]:h-full',
-                showTranscript && previousTurn
+                showTranscriptPanel
                   ? 'min-[900px]:grid-cols-[25%_50%_25%]'
                   : 'min-[900px]:grid-cols-[33%_67%]',
               )}
@@ -506,7 +580,7 @@ function PracticeSession({
               <QuestionColumn
                 questionText={currentQ.text}
                 audioUrl={currentQ.audioUrl}
-                showQuestionText={showQuestionText}
+                showQuestionText={showQuestionDuringSession}
                 replayKey={replayKey}
                 onAudioEnded={handleAudioEnded}
               />
@@ -521,7 +595,7 @@ function PracticeSession({
                 onSubmitPreview={handleSubmitTurn}
                 onReRecordPreview={handleReRecord}
               />
-              {showTranscript && previousTurn && (
+              {showTranscriptPanel && (
                 <TranscriptColumn
                   question={previousTurn.question}
                   transcript={previousTurn.transcript}
@@ -549,9 +623,9 @@ function PracticeSession({
             <PracticeFooter
               turnNum={currentQ.num}
               recorderState={recorder.state}
-              showQuestionText={showQuestionText}
-              showTranscript={showTranscript}
-              canShowTranscript={previousTurn != null}
+              showQuestionText={showQuestionDuringSession}
+              showTranscript={Boolean(showTranscriptPanel)}
+              canShowTranscript={showSessionInfo && previousTurn != null}
               submitting={submitting}
               spinnerMessage={spinnerMessage}
               canEnd={recorder.state === 'recording'}

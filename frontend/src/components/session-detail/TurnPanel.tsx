@@ -21,6 +21,7 @@
 
 import type { TurnDetail } from '../../types/history';
 import {
+  DeliveryFeedbackSection,
   InnerCard,
   ImprovementMomentsCard,
   MainTakeawaySection,
@@ -45,6 +46,7 @@ export default function TurnPanel({ turn }: Props) {
           <div className="flex flex-col gap-5 flex-1 min-h-0 overflow-y-auto">
             <ScoresSection turn={turn} evaluationFailed={evaluationFailed} />
             <MainTakeawaySection turn={turn} />
+            <DeliveryFeedbackSection turn={turn} />
             <QuickWinsSection turn={turn} />
           </div>
         </InnerCard>

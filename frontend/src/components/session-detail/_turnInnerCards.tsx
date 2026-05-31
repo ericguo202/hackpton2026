@@ -284,6 +284,44 @@ export function MainTakeawaySection({ turn }: { turn: TurnDetail }) {
   );
 }
 
+export function DeliveryFeedbackSection({ turn }: { turn: TurnDetail }) {
+  const deliveryFeedback = turn.feedback_detail?.delivery_feedback;
+  if (!deliveryFeedback) return null;
+
+  const rows: Array<[string, string]> = [];
+  if (deliveryFeedback.eye_contact) {
+    rows.push(['Eye contact', deliveryFeedback.eye_contact]);
+  }
+  if (deliveryFeedback.alignment) {
+    rows.push(['Alignment', deliveryFeedback.alignment]);
+  }
+  if (deliveryFeedback.posture) {
+    rows.push(['Posture', deliveryFeedback.posture]);
+  }
+  if (deliveryFeedback.expression) {
+    rows.push(['Expression', deliveryFeedback.expression]);
+  }
+
+  return (
+    <div>
+      <Eyebrow>Delivery cues</Eyebrow>
+      <p className="mt-2 text-sm leading-6 text-text">
+        {deliveryFeedback.summary}
+      </p>
+      {rows.length > 0 && (
+        <dl className="mt-3 flex flex-col gap-2">
+          {rows.map(([label, detail]) => (
+            <div key={label} className="border-l-2 pl-3" style={{ borderColor: 'var(--color-chart-6)' }}>
+              <dt className="text-xs text-text-subtle">{label}</dt>
+              <dd className="text-sm leading-6 text-text-muted">{detail}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 export function QuickWinsSection({ turn }: { turn: TurnDetail }) {
   const quickWins = turn.feedback_detail?.quick_wins ?? [];
   if (quickWins.length === 0) return null;
