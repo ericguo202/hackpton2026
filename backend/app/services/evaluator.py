@@ -394,8 +394,6 @@ def _compute_delivery_score(cv_summary: dict) -> int:
         score = min(score, 3)
     elif max(bad_posture_pct, tilted_pct) >= 50:
         score = min(score, 4)
-    if low_energy_pct >= 75:
-        score = min(score, 3)
 
     return score
 
