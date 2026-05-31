@@ -39,6 +39,12 @@ export function useRecorder() {
   const chunksRef   = useRef<Blob[]>([]);
   const replayChunksRef = useRef<Blob[]>([]);
   const pendingStopsRef = useRef(0);
+  // Bumped on every `start()` and `reset()`. Each recorder's `onstop`
+  // captures the generation it was created under and refuses to commit a
+  // blob if it no longer matches — so a recording discarded mid-flight
+  // (e.g. "Restart turn" mid-recording) can't clobber the retake's audio
+  // when its async `stop`/`dataavailable` events fire late.
+  const generationRef = useRef(0);
   // Retain the raw tracks so `stop()` + `reset()` can fully release the
   // camera/mic — `MediaRecorder.stop()` only releases the recorder's
   // own stream, not the video siblings.
@@ -62,6 +68,10 @@ export function useRecorder() {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     }
 
+    // Mark this as the current recording generation. Both `onstop`
+    // closures below capture `myGen` and bail if it's been superseded.
+    const myGen = ++generationRef.current;
+
     const audioTracks = stream.getAudioTracks();
     const videoTracks = stream.getVideoTracks();
     tracksRef.current = [...audioTracks, ...videoTracks];
@@ -84,6 +94,7 @@ export function useRecorder() {
       if (e.data.size > 0) chunksRef.current.push(e.data);
     };
     recorder.onstop = () => {
+      if (myGen !== generationRef.current) return;
       const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
       setAudioBlob(blob);
       setAudioUrl(URL.createObjectURL(blob));
@@ -105,6 +116,7 @@ export function useRecorder() {
         if (e.data.size > 0) replayChunksRef.current.push(e.data);
       };
       replayRecorder.onstop = () => {
+        if (myGen !== generationRef.current) return;
         const blob = new Blob(replayChunksRef.current, { type: replayRecorder.mimeType });
         setReplayBlob(blob);
         setReplayUrl(URL.createObjectURL(blob));
@@ -128,6 +140,19 @@ export function useRecorder() {
   }, []);
 
   const reset = useCallback(() => {
+    // Invalidate any in-flight recorder so a late `onstop` (e.g. from a
+    // recording abandoned via "Restart turn") can't commit its blob, and
+    // detach the handlers so a pending final `dataavailable` can't push a
+    // stale tail chunk into the freshly-cleared `chunksRef`.
+    generationRef.current += 1;
+    if (recorderRef.current) {
+      recorderRef.current.ondataavailable = null;
+      recorderRef.current.onstop = null;
+    }
+    if (replayRecorderRef.current) {
+      replayRecorderRef.current.ondataavailable = null;
+      replayRecorderRef.current.onstop = null;
+    }
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     if (replayUrl) URL.revokeObjectURL(replayUrl);
     setAudioBlob(null);
