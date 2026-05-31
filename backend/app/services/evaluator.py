@@ -40,8 +40,6 @@ CALIBRATED_EYE_BAD = 47.4
 CALIBRATED_EYE_GOOD = 71.0
 CALIBRATED_EXPRESSION_BAD = 54.7
 CALIBRATED_EXPRESSION_GOOD = 66.4
-CALIBRATED_OVERALL_BAD = 50.0
-CALIBRATED_OVERALL_GOOD = 69.4
 CALIBRATED_POSTURE_BAD = 58.0
 CALIBRATED_POSTURE_GOOD = 82.0
 
@@ -268,9 +266,10 @@ def _compute_delivery_score(cv_summary: dict) -> int:
     """Derive a more stable 0-10 delivery score from webcam analytics.
 
     The browser now sends not just averaged eye/expression scores, but also
-    issue coverage, streak length, and stability metrics. We use those
-    directly so delivery scoring is deterministic and less sensitive to LLM
-    variance or a single unusually strong frame.
+    issue coverage, streak length, and stability metrics. Eye contact,
+    visibility, and posture use sustained-issue deductions. Expression stays
+    a single soft quality input: calm facial energy must not compound through
+    raw-score, coverage, streak, and cap channels.
     """
     overall = _summary_float(cv_summary, "overall_interview_score", 0.0)
     eye = _summary_float(cv_summary, "eye_contact_score", overall)
@@ -278,13 +277,11 @@ def _compute_delivery_score(cv_summary: dict) -> int:
     posture = _summary_float(cv_summary, "posture_score", overall)
     face_visible = _summary_float(cv_summary, "face_visible_pct", 100.0)
     eye_stability = _summary_float(cv_summary, "eye_contact_stability", 100.0)
-    expression_stability = _summary_float(cv_summary, "expression_stability", 100.0)
     posture_stability = _summary_float(cv_summary, "posture_stability", 100.0)
     looked_away_pct = _summary_float(cv_summary, "looked_away_pct", 0.0)
     posture_drift_pct = _summary_float(cv_summary, "posture_drift_pct", 0.0)
     bad_posture_pct = _summary_float(cv_summary, "bad_posture_pct", posture_drift_pct)
     tilted_pct = _summary_float(cv_summary, "tilted_pct", 0.0)
-    low_energy_pct = _summary_float(cv_summary, "low_energy_pct", 0.0)
     looked_away_streak = _summary_float(
         cv_summary, "longest_looked_away_streak_frames", 0.0
     )
@@ -295,9 +292,6 @@ def _compute_delivery_score(cv_summary: dict) -> int:
     tilted_streak = _summary_float(
         cv_summary, "longest_tilted_streak_frames", 0.0
     )
-    low_energy_streak = _summary_float(
-        cv_summary, "longest_low_energy_streak_frames", 0.0
-    )
     frames = _summary_float(cv_summary, "frames_processed", 0.0)
 
     eye_quality = _normalize_band(eye, CALIBRATED_EYE_BAD, CALIBRATED_EYE_GOOD)
@@ -305,11 +299,6 @@ def _compute_delivery_score(cv_summary: dict) -> int:
         expression,
         CALIBRATED_EXPRESSION_BAD,
         CALIBRATED_EXPRESSION_GOOD,
-    )
-    overall_quality = _normalize_band(
-        overall,
-        CALIBRATED_OVERALL_BAD,
-        CALIBRATED_OVERALL_GOOD,
     )
     posture_quality = _normalize_band(
         posture,
@@ -320,37 +309,33 @@ def _compute_delivery_score(cv_summary: dict) -> int:
         0.0,
         min(
             100.0,
-            (face_visible * 0.30)
-            + (eye_stability * 0.30)
-            + (expression_stability * 0.25)
-            + (posture_stability * 0.15),
+            (face_visible * 0.40)
+            + (eye_stability * 0.35)
+            + (posture_stability * 0.25),
         ),
     )
 
     calibrated_quality = (
-        (eye_quality * 0.30)
-        + (expression_quality * 0.22)
-        + (overall_quality * 0.18)
-        + (posture_quality * 0.14)
-        + (visual_stability * 0.16)
+        (eye_quality * 0.38)
+        + (expression_quality * 0.20)
+        + (posture_quality * 0.22)
+        + (visual_stability * 0.20)
     )
     raw_quality = (
-        (eye * 0.26)
-        + (expression * 0.22)
-        + (overall * 0.22)
-        + (posture * 0.14)
-        + (visual_stability * 0.16)
+        (eye * 0.50)
+        + (posture * 0.30)
+        + (visual_stability * 0.20)
     )
     base_score = (calibrated_quality * 0.65) + (raw_quality * 0.35)
 
     # Coverage penalties: how much of the answer felt off, not just whether
     # a weak frame happened to occur. Eye contact is intentionally weighted
     # hardest; looking away for most of an interview should never land near
-    # the neutral middle of the scale.
+    # the neutral middle of the scale. Facial energy is deliberately absent:
+    # its calibrated quality weight above is the one scoring channel.
     base_score -= looked_away_pct * 0.18
     base_score -= bad_posture_pct * 0.12
     base_score -= tilted_pct * 0.07
-    base_score -= low_energy_pct * 0.12
 
     # Streak penalties: sustained issues should matter more than scattered
     # blips. Normalize against total analyzed frames when possible.
@@ -358,11 +343,9 @@ def _compute_delivery_score(cv_summary: dict) -> int:
         looked_away_streak_pct = (looked_away_streak / frames) * 100
         posture_streak_pct = (posture_streak / frames) * 100
         tilted_streak_pct = (tilted_streak / frames) * 100
-        low_energy_streak_pct = (low_energy_streak / frames) * 100
         base_score -= min(14.0, looked_away_streak_pct * 0.18)
         base_score -= min(10.0, posture_streak_pct * 0.12)
         base_score -= min(8.0, tilted_streak_pct * 0.10)
-        base_score -= min(10.0, low_energy_streak_pct * 0.14)
 
     # Face visibility matters disproportionately; below this threshold the
     # interviewer cannot reliably read the candidate at all.
