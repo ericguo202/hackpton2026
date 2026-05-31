@@ -94,9 +94,16 @@ you're answering, tracking eye contact, gaze stability, head pose, expression,
 and face visibility. Those signals roll into the **Delivery** score and into
 the structured feedback — so you'll get pointed feedback like _"Eye contact landed
 at 47/100; pick a spot near the camera and return to it between phrases."_
-On the replay screen, the face-mask overlay redraws the landmarks on your
-recording so you can _see_ what the model saw. Decline the camera and
-everything else still works.
+This is the part of Logos we lean on hardest: rather than a single averaged
+number, the Delivery score is computed deterministically from those signals,
+weighting the cues recruiters actually react to — eye contact and staying
+on-camera — far above softer ones, so you're never docked for a calm, even
+expression the way you are for staring at the floor or dropping out of frame.
+The feedback then breaks out into separate plain-English cues for eye contact,
+framing, posture, and expression, each with its own score and fix, so you know
+exactly which one is costing you and what to do about it. On the replay screen,
+the face-mask overlay redraws the landmarks on your recording so you can _see_
+what the model saw. Decline the camera and everything else still works.
 
 ### Personalization from your resume
 
