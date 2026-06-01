@@ -18,6 +18,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { Link, matchPath, useLocation } from 'react-router';
+import ThemeToggle from './ThemeToggle';
 
 type Props = {
   rightSlot?: ReactNode;
@@ -37,7 +38,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
 
       <div className="flex items-center gap-4">
         {nav && (
-          <nav className="hidden min-[900px]:flex items-baseline gap-6 text-eyebrow text-sm uppercase tracking-eyebrow text-text-muted">
+          <nav className="hidden min-[900px]:flex items-baseline gap-6 text-xs uppercase tracking-eyebrow text-text-muted">
             {nav}
           </nav>
         )}
@@ -74,6 +75,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
             </svg>
           </button>
         )}
+        <ThemeToggle />
         {rightSlot}
       </div>
 
@@ -89,7 +91,7 @@ export default function TopBar({ rightSlot, nav }: Props) {
           className="min-[900px]:hidden absolute left-0 right-0 top-full z-40 border-b border-border bg-surface px-8 py-4 shadow-sm"
           onClick={() => setMobileNavOpen(false)}
         >
-          <nav className="flex flex-col items-start gap-4 text-eyebrow text-sm uppercase tracking-eyebrow text-text-muted">
+          <nav className="flex flex-col items-start gap-4 text-xs uppercase tracking-eyebrow text-text-muted">
             {nav}
           </nav>
         </div>

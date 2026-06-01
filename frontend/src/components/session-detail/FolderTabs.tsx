@@ -83,8 +83,18 @@ export function FolderTabs({ tabs, activeIndex, onChange }: FolderTabsProps) {
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ' +
               'focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
               (active
-                ? 'border-accent bg-accent text-accent-fg'
-                : 'border-border-strong bg-tertiary-200 text-text-muted hover:bg-tertiary-300 hover:text-text')
+                // Light: black ink tab on the dark-beige card (high contrast,
+                // by design). Dark: match the card's fill + border so the tab
+                // merges seamlessly instead of jutting out as a lighter block;
+                // the near-black text-accent-fg still sets it apart from the
+                // muted inactive tabs.
+                ? 'border-accent bg-accent text-accent-fg dark:border-border-strong dark:bg-tertiary-200'
+                // Dark: recess the inactive tabs to a grayer manila (300) so
+                // they read as unselected vs the active tab / card (200), then
+                // lift back to the card color on hover. Keeps the literal
+                // `bg-tertiary-200` class so the index.css text re-scope still
+                // resolves the label to dark ink on the light manila.
+                : 'border-border-strong bg-tertiary-200 text-text-muted hover:bg-tertiary-300 hover:text-text dark:bg-tertiary-300 dark:hover:bg-tertiary-200')
             }
           >
             {tab.label}
