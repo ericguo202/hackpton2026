@@ -13,6 +13,7 @@ from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import Date, Enum, Integer, Text, Boolean, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -77,6 +78,20 @@ class User(Base):
     # UTC for any parse error so a missing/malformed TZ never blocks a
     # legitimate session.
     timezone: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # The candidate's 3 most recent opening questions (newest-first), used
+    # as an avoid-list when generating the next one so the model stops
+    # converging on the same attractor question across sessions. Global
+    # scope (across all companies) since opening questions are
+    # role/experience-driven, not company-driven. Reset to [] whenever
+    # target_role / industry / experience_level change (in the onboarding
+    # endpoint) because those fields define the shape of the questions, so
+    # old questions stop being relevant once the profile shifts. Always
+    # REASSIGNED (never mutated in place) so SQLAlchemy dirty-tracking fires
+    # without a MutableList wrapper.
+    recent_opening_questions: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False

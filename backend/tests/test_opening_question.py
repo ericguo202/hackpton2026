@@ -17,6 +17,7 @@ from app.services._field_prompts import (
 from app.services.company_research import CompanyBrief
 from app.services.opening_question import (
     _company_digest,
+    _recent_questions_block,
     _strip_wrapping_quotes,
     generate_opening_question,
 )
@@ -35,6 +36,21 @@ def _make_fake_client(text: str):
     return SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
     )
+
+
+def _make_capturing_client(text: str, sink: dict):
+    """Fake client that records the kwargs (incl. messages) of the call."""
+    async def _create(**kwargs):
+        sink.update(kwargs)
+        return _fake_response(text)
+
+    return SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+
+
+def _user_prompt(sink: dict) -> str:
+    return next(m["content"] for m in sink["messages"] if m["role"] == "user")
 
 
 def _fake_user():
@@ -97,6 +113,58 @@ def test_strip_wrapping_quotes_unit():
     assert _strip_wrapping_quotes('  "hello"  ') == "hello"
     # Mismatched quotes left alone.
     assert _strip_wrapping_quotes("\"hello'") == "\"hello'"
+
+
+# ── _recent_questions_block (avoid-list) ─────────────────────────────────────
+
+
+def test_recent_questions_block_empty_omitted():
+    """No avoid-list section for first session (None / empty) — keeps the
+    legacy prompt byte-identical, same empty-omission discipline as
+    _company_digest."""
+    assert _recent_questions_block(None) == ""
+    assert _recent_questions_block([]) == ""
+
+
+def test_recent_questions_block_lists_each_question():
+    block = _recent_questions_block(
+        ["Tell me about a conflict you resolved.", "Walk me through a failure."]
+    )
+    assert "AVOID REPETITION" in block
+    assert "Tell me about a conflict you resolved." in block
+    assert "Walk me through a failure." in block
+
+
+async def test_generate_opening_question_injects_avoid_list(monkeypatch):
+    sink: dict = {}
+    monkeypatch.setattr(
+        "app.services.opening_question.get_client",
+        lambda: _make_capturing_client("A fresh, distinct question?", sink),
+    )
+
+    await generate_opening_question(
+        _fake_user(), _fake_brief(), "Backend Engineer",
+        recent_questions=["Tell me about a time you led under ambiguity."],
+    )
+
+    prompt = _user_prompt(sink)
+    assert "AVOID REPETITION" in prompt
+    assert "Tell me about a time you led under ambiguity." in prompt
+
+
+async def test_generate_opening_question_no_avoid_list_when_empty(monkeypatch):
+    """First-session path: no recent questions → no avoid-list section."""
+    sink: dict = {}
+    monkeypatch.setattr(
+        "app.services.opening_question.get_client",
+        lambda: _make_capturing_client("A question?", sink),
+    )
+
+    await generate_opening_question(
+        _fake_user(), _fake_brief(), "Backend Engineer", recent_questions=[],
+    )
+
+    assert "AVOID REPETITION" not in _user_prompt(sink)
 
 
 # ── _field_prompts.build_field_system_prompt ──────────────────────────────────

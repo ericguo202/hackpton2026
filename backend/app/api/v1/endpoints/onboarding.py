@@ -164,6 +164,17 @@ async def onboarding(
                 ),
             )
 
+    # The opening-question avoid-list is keyed on the candidate's
+    # role/industry/experience-level "shape" — once any of those change, the
+    # cached recent questions stop being relevant context, so we reset them.
+    # Captured BEFORE the assignments below. First-time onboarding has these
+    # at None, so this evaluates True and harmlessly clears an empty list.
+    profile_drivers_changed = (
+        user.industry != industry
+        or user.target_role != target_role
+        or user.experience_level != experience_level
+    )
+
     # Mutate the already-attached ORM row. commit() fires the
     # `set_updated_at()` trigger defined in migration 0001_init.
     user.email = email
@@ -174,6 +185,8 @@ async def onboarding(
     user.short_bio = short_bio
     user.resume_text = final_resume_text
     user.completed_registration = True
+    if profile_drivers_changed:
+        user.recent_opening_questions = []
 
     try:
         await db.commit()
