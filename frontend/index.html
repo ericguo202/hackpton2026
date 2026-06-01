@@ -11,6 +11,20 @@
          fetched with CORS, so without it the preconnect is wasted. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Set the theme class before first paint to avoid a light→dark flash.
+         First visit follows the OS setting; once the user toggles, their
+         explicit choice in localStorage wins. Kept blocking + inline so it
+         runs before any CSS applies. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <title>Logos</title>
   </head>
   <body>

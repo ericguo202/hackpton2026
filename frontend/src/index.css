@@ -4,6 +4,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..700&display=swap');
 @import "tailwindcss";
 
+/* Dark mode is a class strategy on <html>. The token swap below (html.dark)
+   does the real work; this variant only exists so one-off `dark:` utilities
+   stay available if a component ever needs to diverge from the token flip. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* ---------- Scale tokens ---------- */
 
@@ -160,6 +165,72 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ---------- Dark mode (warm espresso) ----------
+   Token-swap strategy: we override ONLY the semantic aliases + chart series
+   (never the 9 raw scales) so this is a curated dark palette, not an inversion
+   of the cream light theme. Because every utility and `:root { background:
+   var(--color-surface) }` reads `var(...)`, redefining these here re-resolves
+   the whole app. Specificity: `html.dark` (0,1,1) beats `@theme`'s `:root`
+   (0,1,0), so these win. Contrast targets WCAG AA on #16140F (text ~15:1,
+   muted ~8:1, subtle ~4.6:1; chart hues brightened to clear 4.5:1). */
+html.dark {
+  color-scheme: dark;
+
+  /* Private dark-text palette, referenced below so the manila-card exception
+     (further down) can restore these exact values on its dark inner panels
+     without re-stating the hexes. */
+  --dk-text:        #ECE3CD;
+  --dk-text-muted:  #B3A988;
+  --dk-text-subtle: #9A9072;
+
+  --color-surface:        #16140F;  /* page bg — warm near-black   */
+  --color-surface-raised: #211E17;  /* cards: lifted above surface */
+  --color-surface-sunken: #100E0A;  /* wells/inputs: below surface */
+
+  --color-border:         #3A352A;
+  --color-border-strong:  #4D4636;
+
+  --color-text:           var(--dk-text);
+  --color-text-muted:     var(--dk-text-muted);
+  --color-text-subtle:    var(--dk-text-subtle);
+
+  /* Primary CTA flips: light tan button + dark text (light mode is the inverse). */
+  --color-accent:         #E3D6B0;
+  --color-accent-fg:      #16140F;
+  --color-accent-hover:   #D2C49C;
+
+  --color-focus-ring:     #E3D6B0;  /* visible against the dark ring offset */
+
+  /* Chart series brightened so each clears ~4.5:1 on the dark surface and the
+     six hues stay categorically distinct (~60° apart). */
+  --color-chart-1: #4FB3C4;  /* teal       — structure       */
+  --color-chart-2: #E08A5F;  /* terracotta — problem solving */
+  --color-chart-3: #79B56F;  /* forest     — impact          */
+  --color-chart-4: #C87FA3;  /* plum       — initiative      */
+  --color-chart-5: #E0B552;  /* amber      — depth           */
+  --color-chart-6: #8D97D6;  /* indigo     — delivery        */
+}
+
+/* Manila "case file" exception. The folder card + inactive folder tabs use the
+   fixed raw scale `bg-tertiary-200` (light manila), kept light in dark mode by
+   design — so text placed directly on it must read DARK. Re-scope the text
+   tokens for that subtree back to the light-theme values (the manila surface is
+   the same hue in both themes, so the light contrast still holds). */
+html.dark .bg-tertiary-200 {
+  --color-text:        var(--color-primary-700);
+  --color-text-muted:  var(--color-primary-500);
+  --color-text-subtle: #706853;  /* matches the light-theme --color-text-subtle */
+}
+
+/* …but the dark inset panels inside the card (company brief, score tiles, turn
+   InnerCards — all `bg-surface-raised`) are dark surfaces, so restore the dark
+   palette's light text there. Nested `bg-surface-sunken` inherits this. */
+html.dark .bg-tertiary-200 .bg-surface-raised {
+  --color-text:        var(--dk-text);
+  --color-text-muted:  var(--dk-text-muted);
+  --color-text-subtle: var(--dk-text-subtle);
+}
+
 /* Root-font scaling on large monitors. The whole design system is rem-based
    (max-widths, padding, clamp upper bounds, gaps), so bumping the root size
    proportionally scales typography, container widths, and breathing room
@@ -284,15 +355,18 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
   display: none !important;
 }
 
+/* Accent tokens (not raw primary scale) so the avatar flips with the theme:
+   identical in light (accent = primary-700, accent-fg = primary-100), and a
+   cream circle with dark initials in dark mode — visible on the dark TopBar. */
 .cl-userButtonAvatarBox,
 .cl-userPreviewAvatarBox,
 .cl-avatarBox {
-  background-color: var(--color-primary-700) !important;
-  color: var(--color-primary-100) !important;
+  background-color: var(--color-accent) !important;
+  color: var(--color-accent-fg) !important;
 }
 
 .cl-userButtonAvatarBox .cl-avatarImageActions,
 .cl-userButtonAvatarBox > div,
 .cl-userPreviewAvatarBox > div {
-  color: var(--color-primary-100) !important;
+  color: var(--color-accent-fg) !important;
 }
