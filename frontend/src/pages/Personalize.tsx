@@ -26,10 +26,12 @@ import { useNavigate } from 'react-router';
 import IndustryAutocompleteField from '../components/IndustryAutocompleteField';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import RoleAutocompleteField from '../components/RoleAutocompleteField';
+import SpeechToTextButton from '../components/SpeechToTextButton';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
+import { joinSpoken } from '../lib/joinSpoken';
 import type { ExperienceLevel, MeResponse } from '../types/user';
 
 const EXPERIENCE_LEVELS: ExperienceLevel[] = [
@@ -343,7 +345,7 @@ function PersonalizeForm({ me, refetch }: FormProps) {
               />
             </div>
 
-            <div className="min-w-0 min-[1180px]:col-start-1 min-[1180px]:row-start-2">
+            <div className="min-w-0 space-y-2 min-[1180px]:col-start-1 min-[1180px]:row-start-2">
               <textarea
                 id="personalize-short-bio"
                 maxLength={2000}
@@ -351,6 +353,12 @@ function PersonalizeForm({ me, refetch }: FormProps) {
                 onChange={(e) => setShortBio(e.target.value)}
                 placeholder="A few sentences about your background and what you are looking for."
                 className={`${inputClass} min-h-[12.5rem] resize-none`}
+              />
+              <SpeechToTextButton
+                ariaLabel="Dictate your bio"
+                onAppend={(chunk) =>
+                  setShortBio((prev) => joinSpoken(prev, chunk))
+                }
               />
             </div>
 

@@ -19,9 +19,11 @@ import { useNavigate } from 'react-router';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
+import { joinSpoken } from '../lib/joinSpoken';
 import type { ExperienceLevel, MeResponse } from '../types/user';
 import IndustryAutocompleteField from './IndustryAutocompleteField';
 import RoleAutocompleteField from './RoleAutocompleteField';
+import SpeechToTextButton from './SpeechToTextButton';
 import { FlowHoverButton } from './ui/flow-hover-button';
 import { Progress } from './ui/progress';
 import TopBar from './TopBar';
@@ -245,15 +247,23 @@ export default function OnboardingForm() {
           )}
 
           {step === 3 && (
-            <textarea
-              autoFocus
-              maxLength={2000}
-              rows={5}
-              value={shortBio}
-              onChange={(e) => setShortBio(e.target.value)}
-              placeholder="A sentence or two about your background and what you’re looking for."
-              className={inputClass}
-            />
+            <div className="space-y-3">
+              <textarea
+                autoFocus
+                maxLength={2000}
+                rows={5}
+                value={shortBio}
+                onChange={(e) => setShortBio(e.target.value)}
+                placeholder="A sentence or two about your background and what you’re looking for."
+                className={inputClass}
+              />
+              <SpeechToTextButton
+                ariaLabel="Dictate your bio"
+                onAppend={(chunk) =>
+                  setShortBio((prev) => joinSpoken(prev, chunk))
+                }
+              />
+            </div>
           )}
 
           {step === 4 && (

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { UserButton } from '@clerk/react';
 import {
   Check,
+  ChevronDown,
   Eye,
   LockKeyhole,
   RefreshCw,
@@ -176,6 +177,7 @@ export default function Calibration() {
   const [captureAverages, setCaptureAverages] = useState<CaptureAverages>(
     EMPTY_CAPTURE_AVERAGES,
   );
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const releaseCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -459,13 +461,13 @@ export default function Calibration() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-xl border border-primary-600 bg-primary-700 text-primary-100 shadow-[0_28px_70px_-42px_rgba(23,21,15,0.9)]">
-            <div className="flex items-center justify-between border-b border-primary-500 px-5 py-4 md:px-6">
+          <section className="overflow-hidden rounded-xl border border-border bg-surface-raised text-text shadow-[0_28px_70px_-42px_rgba(23,21,15,0.3)]">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4 md:px-6">
               <div>
-                <p className="text-eyebrow uppercase tracking-eyebrow text-primary-300">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle">
                   Calibration studio
                 </p>
-                <p className="mt-1 text-sm text-primary-100">
+                <p className="mt-1 text-sm text-text">
                   Delivery baseline / local camera
                 </p>
               </div>
@@ -560,74 +562,90 @@ export default function Calibration() {
                 />
               </div>
 
-              <div className="mt-4 overflow-hidden rounded border border-primary-600 bg-primary-600/35">
-                <div className="flex items-center justify-between gap-3 border-b border-primary-600 px-3 py-2 text-[10px] uppercase tracking-eyebrow text-primary-300">
+              <div className="mt-4 overflow-hidden rounded border border-border bg-surface-sunken">
+                <button
+                  type="button"
+                  onClick={() => setDetailOpen((open) => !open)}
+                  aria-expanded={detailOpen}
+                  aria-controls="calibration-detailed-read"
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-[10px] uppercase tracking-eyebrow text-text-subtle transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                >
                   <span>Detailed read</span>
-                  <span className="text-right">Current / capture avg</span>
-                </div>
-                <div className="grid gap-x-6 px-3 py-1 sm:grid-cols-2">
-                  <div>
-                    <DiagnosticRow
-                      label="Delivery proxy"
-                      current={formatPercent(liveRead.deliveryProxy, hasLiveRead)}
-                      average={formatPercent(captureAverages.deliveryProxy, hasCaptureAverage)}
-                    />
-                    <DiagnosticRow
-                      label="Head alignment"
-                      current={formatPercent(liveRead.headAlignment, hasLiveRead)}
-                      average={formatPercent(captureAverages.headAlignment, hasCaptureAverage)}
-                    />
-                    <DiagnosticRow
-                      label="Head tilt"
-                      current={formatDegrees(liveRead.headTiltDegrees, hasLiveRead)}
-                      average={formatDegrees(captureAverages.headTiltDegrees, hasCaptureAverage)}
-                    />
+                  <ChevronDown
+                    aria-hidden
+                    className={`h-3.5 w-3.5 transition-transform ${detailOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {detailOpen && (
+                  <div id="calibration-detailed-read" className="border-t border-border">
+                    <div className="flex justify-end px-3 pt-2 text-[10px] uppercase tracking-eyebrow text-text-subtle">
+                      <span>Current / capture avg</span>
+                    </div>
+                    <div className="grid gap-x-6 px-3 py-1 sm:grid-cols-2">
+                      <div>
+                        <DiagnosticRow
+                          label="Delivery proxy"
+                          current={formatPercent(liveRead.deliveryProxy, hasLiveRead)}
+                          average={formatPercent(captureAverages.deliveryProxy, hasCaptureAverage)}
+                        />
+                        <DiagnosticRow
+                          label="Head alignment"
+                          current={formatPercent(liveRead.headAlignment, hasLiveRead)}
+                          average={formatPercent(captureAverages.headAlignment, hasCaptureAverage)}
+                        />
+                        <DiagnosticRow
+                          label="Head tilt"
+                          current={formatDegrees(liveRead.headTiltDegrees, hasLiveRead)}
+                          average={formatDegrees(captureAverages.headTiltDegrees, hasCaptureAverage)}
+                        />
+                      </div>
+                      <div>
+                        <DiagnosticRow
+                          label="Horizontal offset"
+                          current={formatPrecisePercent(liveRead.midpointOffsetPct, hasLiveRead)}
+                          average={formatPrecisePercent(captureAverages.midpointOffsetPct, hasCaptureAverage)}
+                        />
+                        <DiagnosticRow
+                          label="Vertical offset"
+                          current={formatPrecisePercent(liveRead.verticalOffsetPct, hasLiveRead)}
+                          average={formatPrecisePercent(captureAverages.verticalOffsetPct, hasCaptureAverage)}
+                        />
+                        <DiagnosticRow
+                          label="Smile energy"
+                          current={formatPercent(liveRead.smileEnergy, hasLiveRead)}
+                          average={formatPercent(captureAverages.smileEnergy, hasCaptureAverage)}
+                        />
+                        <DiagnosticRow
+                          label="Mouth openness"
+                          current={formatPrecisePercent(liveRead.mouthOpenPct, hasLiveRead)}
+                          average={formatPrecisePercent(captureAverages.mouthOpenPct, hasCaptureAverage)}
+                        />
+                        <DiagnosticRow
+                          label="Low-energy flag"
+                          current={formatFlag(liveRead.lowEnergyFlagPct, hasLiveRead)}
+                          average={formatCoverage(captureAverages.lowEnergyFlagPct, hasCaptureAverage)}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <DiagnosticRow
-                      label="Horizontal offset"
-                      current={formatPrecisePercent(liveRead.midpointOffsetPct, hasLiveRead)}
-                      average={formatPrecisePercent(captureAverages.midpointOffsetPct, hasCaptureAverage)}
-                    />
-                    <DiagnosticRow
-                      label="Vertical offset"
-                      current={formatPrecisePercent(liveRead.verticalOffsetPct, hasLiveRead)}
-                      average={formatPrecisePercent(captureAverages.verticalOffsetPct, hasCaptureAverage)}
-                    />
-                    <DiagnosticRow
-                      label="Smile energy"
-                      current={formatPercent(liveRead.smileEnergy, hasLiveRead)}
-                      average={formatPercent(captureAverages.smileEnergy, hasCaptureAverage)}
-                    />
-                    <DiagnosticRow
-                      label="Mouth openness"
-                      current={formatPrecisePercent(liveRead.mouthOpenPct, hasLiveRead)}
-                      average={formatPrecisePercent(captureAverages.mouthOpenPct, hasCaptureAverage)}
-                    />
-                    <DiagnosticRow
-                      label="Low-energy flag"
-                      current={formatFlag(liveRead.lowEnergyFlagPct, hasLiveRead)}
-                      average={formatCoverage(captureAverages.lowEnergyFlagPct, hasCaptureAverage)}
-                    />
-                  </div>
-                </div>
+                )}
               </div>
 
               <div className="mt-5">
-                <div className="mb-2 flex items-center justify-between text-xs text-primary-300">
+                <div className="mb-2 flex items-center justify-between text-xs text-text-subtle">
                   <span>{captureActive ? 'Reading baseline' : 'Capture progress'}</span>
                   <span className="tabular-nums">
                     {captureActive ? `${Math.round(progress * 100)}%` : phase === 'complete' ? '100%' : '0%'}
                   </span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-primary-600">
+                <div className="h-1.5 overflow-hidden rounded-full bg-surface-sunken">
                   <div
-                    className="h-full rounded-full bg-primary-100 transition-[width] duration-150"
+                    className="h-full rounded-full bg-accent transition-[width] duration-150"
                     style={{ width: `${progress * 100}%` }}
                   />
                 </div>
                 {hasCaptureAverage && (
-                  <p className="mt-2 text-xs text-primary-300">
+                  <p className="mt-2 text-xs text-text-subtle">
                     {visibleSamples} visible-face samples / {captureAverages.analyzedFrames} analyzed frames
                   </p>
                 )}
@@ -636,7 +654,7 @@ export default function Calibration() {
               {error && (
                 <p
                   role="alert"
-                  className="mt-5 rounded border border-primary-500 bg-primary-600 px-3 py-2 text-xs leading-5 text-primary-100"
+                  className="mt-5 rounded border border-border bg-surface-sunken px-3 py-2 text-xs leading-5 text-text"
                 >
                   {error}
                 </p>
@@ -647,14 +665,14 @@ export default function Calibration() {
                   <FlowHoverButton
                     type="button"
                     onClick={enableCamera}
-                    variant="light"
+                    variant="dark"
                     icon={<Eye className="h-4 w-4" aria-hidden />}
                   >
                     Enable camera
                   </FlowHoverButton>
                 )}
                 {phase === 'requesting' && (
-                  <FlowHoverButton type="button" disabled variant="light">
+                  <FlowHoverButton type="button" disabled variant="dark">
                     Preparing camera...
                   </FlowHoverButton>
                 )}
@@ -663,7 +681,7 @@ export default function Calibration() {
                     <FlowHoverButton
                       type="button"
                       onClick={beginCapture}
-                      variant="light"
+                      variant="dark"
                       icon={<ScanFace className="h-4 w-4" aria-hidden />}
                     >
                       Begin six-second read
@@ -674,14 +692,14 @@ export default function Calibration() {
                         releaseCamera();
                         setPhase('idle');
                       }}
-                      className="cursor-pointer text-xs text-primary-300 underline-offset-4 transition-colors hover:text-primary-100 hover:underline"
+                      className="cursor-pointer text-xs text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
                     >
                       Turn camera off
                     </button>
                   </>
                 )}
                 {phase === 'capturing' && (
-                  <FlowHoverButton type="button" disabled variant="light">
+                  <FlowHoverButton type="button" disabled variant="dark">
                     Reading baseline...
                   </FlowHoverButton>
                 )}
@@ -690,7 +708,7 @@ export default function Calibration() {
                     <FlowHoverButton
                       type="button"
                       onClick={() => navigate('/')}
-                      variant="light"
+                      variant="dark"
                       icon={<Check className="h-4 w-4" aria-hidden />}
                     >
                       {fromOnboarding ? 'Start practicing' : 'Back to practice'}
@@ -698,7 +716,7 @@ export default function Calibration() {
                     <button
                       type="button"
                       onClick={enableCamera}
-                      className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-primary-300 underline-offset-4 transition-colors hover:text-primary-100 hover:underline"
+                      className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
                     >
                       <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                       Recalibrate
@@ -708,7 +726,7 @@ export default function Calibration() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-primary-500 px-5 py-4 text-xs text-primary-300 md:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4 text-xs text-text-muted md:px-6">
               <span>
                 {savedLabel
                   ? `${savedLabel} / ${profile?.sampleCount ?? 0} samples`
@@ -718,7 +736,7 @@ export default function Calibration() {
                 <button
                   type="button"
                   onClick={removeCalibration}
-                  className="cursor-pointer underline-offset-4 transition-colors hover:text-primary-100 hover:underline"
+                  className="cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline"
                 >
                   Remove calibration
                 </button>
@@ -782,7 +800,7 @@ function StatusPill({
           : 'Not calibrated';
 
   return (
-    <span className="rounded-full border border-primary-500 px-3 py-1 text-[10px] uppercase tracking-eyebrow text-primary-200">
+    <span className="rounded-full border border-border px-3 py-1 text-[10px] uppercase tracking-eyebrow text-text-muted">
       {label}
     </span>
   );
@@ -800,14 +818,14 @@ function Readout({
   active: boolean;
 }) {
   return (
-    <div className="rounded border border-primary-600 bg-primary-600/55 px-3 py-3">
-      <p className="text-[10px] uppercase tracking-eyebrow text-primary-300">
+    <div className="rounded border border-border bg-surface-sunken px-3 py-3">
+      <p className="text-[10px] uppercase tracking-eyebrow text-text-subtle">
         {label}
       </p>
-      <p className={`mt-1 text-sm ${active ? 'text-primary-100' : 'text-primary-300'}`}>
+      <p className={`mt-1 text-sm ${active ? 'text-text' : 'text-text-muted'}`}>
         {value}
       </p>
-      <p className="mt-1 text-[10px] text-primary-300">{detail}</p>
+      <p className="mt-1 text-[10px] text-text-subtle">{detail}</p>
     </div>
   );
 }
@@ -822,10 +840,10 @@ function DiagnosticRow({
   average: string;
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_4.75rem_5.75rem] gap-3 border-b border-primary-600/75 py-2 text-xs last:border-b-0">
-      <span className="text-primary-200">{label}</span>
-      <span className="text-right tabular-nums text-primary-100">{current}</span>
-      <span className="text-right tabular-nums text-primary-200">{average}</span>
+    <div className="grid grid-cols-[minmax(0,1fr)_4.75rem_5.75rem] gap-3 border-b border-border py-2 text-xs last:border-b-0">
+      <span className="text-text-muted">{label}</span>
+      <span className="text-right tabular-nums text-text">{current}</span>
+      <span className="text-right tabular-nums text-text-subtle">{average}</span>
     </div>
   );
 }
