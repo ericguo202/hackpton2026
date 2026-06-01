@@ -535,7 +535,7 @@ function PracticeSession({
     !autoSubmit && recorder.state === 'stopped' && recorder.audioUrl != null;
   const previousTurn = turnResults.length > 0 ? turnResults[0] : null;
   const showTranscriptPanel = showTranscript && previousTurn;
-  const showQuestionDuringSession = showSessionInfo && showQuestionText;
+  const showQuestionDuringSession = showQuestionText;
 
   return (
     <div className="flex min-h-screen flex-col bg-surface text-text">
