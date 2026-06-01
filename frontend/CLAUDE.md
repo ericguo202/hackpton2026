@@ -108,7 +108,7 @@ Three extracted components plus a helper module, all under `src/components/sessi
 
 **The leftmost-tab / card-corner alignment** is load-bearing. The `FolderTabs` strip lives **inside** the same flex column as the card body (NOT in the outer flex row containing the side-button gutters) so its left edge aligns with the card's left edge. The leftmost tab's `rounded-t-lg` provides the rounded top-left corner of the combined shape; the card itself carries `min-[900px]:rounded-tl-none` so its underlying squared corner is hidden beneath the tab. Move the strip outside the column and the active tab floats into the prev-side-button gutter; remove `rounded-tl-none` and the card's curve emerges from under the tab as a visual artifact. Both bugs were caught and fixed during iteration — don't re-introduce them.
 
-**Sticky chevron buttons** use `items-start` on the gutter column + `position: sticky; top: 50vh; -translate-y-1/2` on the inner wrapper. `items-start` is the load-bearing choice: with `items-center` the button's natural layout position is the column's vertical middle, which on a long card sits hundreds of pixels BELOW the viewport. Sticky's `top: 50vh` constraint says "the element's top must be ≥ 50vh from viewport top" — a position below the constraint *satisfies* it, so sticky never engages on first paint and the chevrons are invisible until the user scrolls down. With `items-start`, the natural position is at the column top (above the threshold = closer to viewport top, smaller y), which **violates** the constraint, so sticky engages immediately and pins the button at viewport middle from first render.
+**Sticky chevron buttons** use `items-start` on the gutter column + `position: sticky; top: 50vh; -translate-y-1/2` on the inner wrapper. `items-start` is the load-bearing choice: with `items-center` the button's natural layout position is the column's vertical middle, which on a long card sits hundreds of pixels BELOW the viewport. Sticky's `top: 50vh` constraint says "the element's top must be ≥ 50vh from viewport top" — a position below the constraint _satisfies_ it, so sticky never engages on first paint and the chevrons are invisible until the user scrolls down. With `items-start`, the natural position is at the column top (above the threshold = closer to viewport top, smaller y), which **violates** the constraint, so sticky engages immediately and pins the button at viewport middle from first render.
 
 **Native `title` for the chevron hover hint** (not a custom tooltip pill). An earlier `<span role="tooltip">` inside the button with `group-hover:opacity-100` was tried and removed: the sticky wrapper applies `transform: translateY(-50%)`, which creates a new containing block for absolute descendants, and the tooltip's absolute positioning resolved against it in unexpected ways. Native `title` works regardless — paired with `aria-label` (canonical screen-reader text), it covers both audiences. Mobile drops the chevrons entirely.
 
@@ -139,19 +139,19 @@ Base page background is `primary/100` (`#F1E9D2`), set globally on `:root`. Most
 
 **Prefer semantic tokens in component code.** Reach for the raw scale only when no semantic alias fits, and when that happens consider whether a new semantic alias should be added instead.
 
-| Use case              | Semantic utility                      | Resolves to       |
-| --------------------- | ------------------------------------- | ----------------- |
-| Page background       | `bg-surface`                          | primary/100       |
-| Card / elevated panel | `bg-surface-raised`                   | tertiary/100      |
-| Subtle well / input   | `bg-surface-sunken`                   | quaternary/100    |
-| Default border        | `border-border`                       | primary/200       |
-| Stronger border       | `border-border-strong`                | primary/300       |
-| Body text             | `text-text`                           | primary/700       |
-| Muted text            | `text-text-muted`                     | primary/500       |
-| Subtle / helper text  | `text-text-subtle`                    | primary/400       |
-| Primary button bg     | `bg-accent` + `text-accent-fg`        | primary/700 + 100 |
-| Primary button hover  | `hover:bg-accent-hover`               | primary/600       |
-| Focus ring            | `ring-focus-ring`                     | primary/700       |
+| Use case              | Semantic utility               | Resolves to       |
+| --------------------- | ------------------------------ | ----------------- |
+| Page background       | `bg-surface`                   | primary/100       |
+| Card / elevated panel | `bg-surface-raised`            | tertiary/100      |
+| Subtle well / input   | `bg-surface-sunken`            | quaternary/100    |
+| Default border        | `border-border`                | primary/200       |
+| Stronger border       | `border-border-strong`         | primary/300       |
+| Body text             | `text-text`                    | primary/700       |
+| Muted text            | `text-text-muted`              | primary/500       |
+| Subtle / helper text  | `text-text-subtle`             | primary/400       |
+| Primary button bg     | `bg-accent` + `text-accent-fg` | primary/700 + 100 |
+| Primary button hover  | `hover:bg-accent-hover`        | primary/600       |
+| Focus ring            | `ring-focus-ring`              | primary/700       |
 
 If you find yourself writing `bg-primary-500` in a component, pause — is this really a one-off, or should `--color-something` be added to `@theme`?
 
@@ -201,14 +201,15 @@ Never `rounded-none` unless the design explicitly calls for a sharp edge.
 Always visible. The pattern:
 
 ```tsx
-className="... focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+className =
+  "... focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
 ```
 
 Do not remove `outline` without replacing it with a visible ring. Accessibility is not optional.
 
 ### Dark mode
 
-**Not supported.** The palette is light-biased (all base colors are pale cream/tan). Do not add `dark:` variants or a theme toggle. If dark mode becomes a product requirement post-hackathon, it's a dedicated project — pick new dark swatches, don't invert these.
+**Currently not supported but required for accessibility post-hackathon** The palette is currently light-biased (all base colors are pale cream/tan). There are no `dark:` variants or a theme toggle. Dark mode is a dedicated project — pick new dark swatches, don't invert these.
 
 ### Tech debt
 
@@ -235,6 +236,7 @@ Three words: **premium, quiet, intentional**.
 Deliberately counter-intuitive for an undergrad audience. Tools aimed at students usually shout (mascots, streaks, XP, exclamation marks). The thesis here is the opposite: **treat the student as an intelligent adult doing serious work**. Peers are Linear, Arc, Things 3 — expensive without being loud.
 
 **Copy voice**:
+
 - No exclamation marks. No "Let's do this!" No "You got this, champ."
 - Plain, confident sentences. Short. Editorial cadence.
 - Instructions before encouragement. If encouragement appears, it's earned by specifics ("Your STAR score climbed 2 points since last session"), not sprinkled.
@@ -254,6 +256,7 @@ Also avoid: Calm/Headspace pastel softness (saccharine), and generic SaaS dashbo
 The hero is the current design priority. Treat it as the entry point to a voice-based practice session — not a marketing page full of feature tiles, and not a dashboard.
 
 **What the hero must do**:
+
 1. Signal in under three seconds that this is serious, calm, and for an adult.
 2. Explain in one sentence what a session actually is (voice practice with feedback).
 3. Offer one clear primary action — start a session — with a company input near it. No multi-step funnel.

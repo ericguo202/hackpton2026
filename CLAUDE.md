@@ -1,51 +1,64 @@
 # Logos: AI Behavioral Interview Coach
 
 MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-out → metrics persisted.
-Future plans: terms and conditions, security, add LiveAvatar, gamification with XP
+Future: terms/conditions, security, LiveAvatar, gamification with XP.
 
 ## What the MVP ships
 
 - **Personalization from a resume.** Onboarding ingests a PDF resume + short bio, extracts `resume_text`, stores target role / industry / experience level. Every downstream prompt (opening question, follow-up, evaluator) is conditioned on this profile.
-- **Industry & role autocomplete (required-selection combobox).** Onboarding + Personalize fill `industry` and `target_role` via an autocomplete dropdown backed by `/api/v1/validation/industries?q=` and `/api/v1/validation/roles?q=&industry=` (returns `SuggestionsOut { suggestions: str[≤5], flagged, message }`). This replaced the older classify-what-you-typed validation, which beta testers found slow (~10s on `gpt-oss-120b`) and hard to use when unsure of the field's name. `app/services/profile_validation.py:suggest_industries / suggest_roles` run a three-stage pipeline (moderation MUST precede the billed LLM): (1) cheap deterministic reject (`_looks_like_junk` — empty / prompt-injection / direct-request / gibberish / overlong) → empty list, no network; (2) OpenAI `check_moderation` → `flagged=True` + empty list on a hard-block; (3) LLM completion on `google/gemini-2.5-flash-lite` (primary, for speed) falling back to `openai/gpt-oss-120b`, JSON-only `{"suggestions":[...]}`, sanitized to ≤5 unique Title-Case strings. **Everything fails soft** — missing key / timeout / parse error returns an empty list so the field degrades gracefully. Suggestions are **semantic, not literal completions** (industry "computers" → Software / Cybersecurity / Information Technology; role "software" → Software Developer / Full-Stack Developer / Backend Engineer — they need not contain the typed text); the model is told to include a normalized version of the user's own input as an escape hatch for niche values. **Role suggestions are conditioned on the chosen industry** (empty industry → industry-agnostic). UI: shared `frontend/src/components/SuggestionCombobox.tsx` (ARIA listbox, 350ms debounce via `useDebouncedValue`, arrow-key + Enter or click to select) wrapped by `IndustryAutocompleteField` / `RoleAutocompleteField`. The field is a **required selection** — it's satisfied only once a suggestion is picked (`selected` boolean gate); free-typed text never advances, and editing re-arms the gate. Picking a suggestion in onboarding auto-advances the step. The validation `category` is no longer returned (it was always transient — the 15-bucket category is recomputed at session time by `company_research`). The gate is client-side only (`onboarding.py` stores the strings as-is).
-- **Voice dictation for the bio field (browser-native, free — progressive enhancement).** The "Tell us about you" elevator-pitch `<textarea>` (Onboarding step 3 AND Personalize, the same `short_bio`) offers an optional mic for users who'd rather speak than type. Uses the **Web Speech API** (`window.SpeechRecognition ?? window.webkitSpeechRecognition`) — no API key, no backend round-trip, live interim results, needs only an HTTPS origin (Vercel/EC2/localhost all satisfy) + a one-time mic grant. It is deliberately **NOT** the ElevenLabs STT path — that's a record-blob-then-upload flow for the interview recorder, the wrong shape for an inline textbox. Three pieces:
-  - `frontend/src/hooks/useSpeechRecognition.ts` — thin wrapper. Config `lang='en-US'`, `continuous=true`, `interimResults=true`. Returns `{ supported, listening, interim, error, start, stop, toggle }`. `onResult` fires once per **finalized** phrase; the latest interim guess is surfaced via `interim`. `onResult` is held in a **ref refreshed every render** so listeners use the freshest closure without re-binding. In `continuous` mode Chrome fires `onend` after a pause — a `wantListeningRef` gates an auto-restart so it keeps listening until the user explicitly stops. `not-allowed` / `service-not-allowed` set a gentle `error` and stop; `no-speech` / `aborted` are ignored. Local TS decls for the Web Speech surface (the DOM lib doesn't ship them reliably) — scoped to the file, no global `.d.ts`.
-  - `frontend/src/components/SpeechToTextButton.tsx` — self-contained mic toggle reused by both forms (idle = `Mic` "Dictate", listening = pulsing `Square` "Stop", `aria-pressed`), the live greyed interim preview line, and the permission-error notice. **Renders `null` when `!supported`** (notably Firefox) so the textarea degrades to plain typing. It does NOT own the bio value.
-  - `frontend/src/lib/joinSpoken.ts` — `joinSpoken(prev, chunk)` merges each finalized chunk into the controlled value (single separating space when needed, clamped to `MAX_BIO_LENGTH = 2000` to match the textarea `maxLength`). Both forms wire `onAppend={(chunk) => setShortBio((prev) => joinSpoken(prev, chunk))}`. **Interim text is never written into the textarea value** (avoids duplication) — only finalized chunks commit; interim lives only in the greyed preview. Kept in its own module so the component file exports only a component (satisfies `react-refresh/only-export-components`).
-- **Field-tailored opening question AND evaluator rubric.** Research agent classifies the candidate into one of 15 field/industry buckets (Tech/Product/Design, Data/AI/ML, Cybersecurity, Finance, Consulting, Legal, Government, Healthcare, Sales/Marketing, Ops/Supply Chain, Retail/Hospitality, Nonprofit, Education, Non-Software Engineering, Startups). Classification is driven primarily by **job title**, secondarily by company (so in-house counsel at a tech company → Legal). The category drives (1) opening-question system prompt from `app/services/_field_prompts.py` and (2) evaluator rubric from `app/services/_field_rubrics.py`. Source-of-truth markdown lives in `backend/prompts/opening_question_prompts.md` and `evaluator_prompts.md` — keep Python and markdown in sync.
-- **Experience-level tailoring (second axis).** On top of the 15 field buckets, the opening-question, evaluator, follow-up, AND company-research stages are all tailored by the candidate's `User.experience_level` (`ExperienceLevel`: internship / entry / mid / senior / staff / executive). The matching paragraph from the **15×6 matrix** comes from `experience_question_block(category, level)` / `experience_evaluator_block(category, level)`. So an intern is asked about learning-in-ambiguity and scored on coachability; an executive is asked about portfolio bets and scored on enterprise leadership. Two different assembly strategies:
-  - **Opening question (`build_field_system_prompt(category, experience_level, rng)`):** when a level is present the experience block **leads as the `PRIMARY DRIVER`** and the broad `FIELD_THEMES` are demoted to "Field breadth (BACKGROUND only)… do NOT contradict the experience-level focus above" — this reweighting is deliberate (themes were out-competing the appended level note before). The shared `style_cues` is factored so the legacy `None` path stays **byte-identical**.
-  - **Evaluator (`build_system_instruction(category, experience_level)`):** the level paragraph is **appended** as an extra section, keyed on the same resolved `key` the rubric fell back to (so it matches the industry appendix).
-  - **Empty-omission:** when `experience_level is None` (legacy users) the section/reorder is dropped and output is byte-identical to the category-only prompt. The block helpers fail soft — a non-`ExperienceLevel` value returns `""` (guards the mocked-test path).
-  - **Source of truth:** markdown is `backend/prompts/experience_prompts.md`; the runtime module `app/services/_experience_prompts.py` is **generated** from it via `python scripts/gen_experience_prompts.py` (don't hand-edit the `.py`). An import-time completeness guard (like `_field_rubrics.py`) fails loud if any of the 90 cells is missing.
-  - **Wiring:** threaded through `sessions.py` from `user.experience_level` into `research_company`, `_followup_and_tts` → `generate_followup`, and `evaluate_turn` / `_run_background_eval` (passed explicitly since the bg task has no request-scoped `user`).
-- **Research-inspired, per-session-varied opening question.** Two structural fixes for "opening questions feel identical across companies / sessions":
-  - `_field_prompts.py` = shared intro + per-category `FIELD_THEMES` (5 labels, all shown) + per-category `FIELD_EXAMPLES` (5 questions, **2 randomly sampled per call** by `build_field_system_prompt(category, rng=None)`). The 2-of-5 rotation breaks the "fixed attractor" effect.
-  - `company_research.py` fires **two parallel Serper queries** via `asyncio.gather`: `{company}` (drives description/headlines/values/category) and `{company} {level_label} {job_title} behavioral interview culture` (the generic "interview questions" phrasing was dropped — that corpus is LeetCode/system-design heavy and pulled `role_signals` toward technical proficiencies). `level_label` comes from `_EXPERIENCE_QUERY_LABEL` (e.g. `entry → "entry-level"`) so the surfaced `role_signals` / `sample_question_themes` skew to seniority; `.get()` falls back to the original level-agnostic string when `experience_level is None` (keeps the legacy query byte-identical). The summarizer prompt is unchanged — the level reaches Gemini implicitly because the role query is echoed in the results header.
-  - The brief adds `role_signals` (cultural/soft-skill traits) and `sample_question_themes` (behavioral theme labels — never verbatim questions). Both default to `[]`. Gemini system prompt has explicit MUST-NOTs: no technical proficiencies in `role_signals`, no technical themes in `sample_question_themes`, empty list is correct for obscure companies.
-  - **Empty-omission pattern (load-bearing).** `opening_question.py:_company_digest` surfaces these fields **only when non-empty**. Rendering "Role signals: (none)" cues the model to invent from its priors — exactly the failure mode the anti-hallucination rules prevent. Same pattern is reused by `followup.py` and `SessionDetail.tsx` Overview panel.
-  - **Recent-questions avoid-list (global, reset-on-profile-change).** `users.recent_opening_questions` (JSONB, `'[]'` server-default — migration `0008_recent_opening_qs`) caches the candidate's **3 most recent opening questions**, newest-first. `opening_question.py:_recent_questions_block` injects them into the **user** prompt as an explicit "generate a DISTINCT question — different scenario/theme/phrasing; do NOT rephrase, paraphrase, or echo" avoid-list, using the same **empty-omission pattern** (omitted entirely when `[]`, so the legacy / first-session path stays byte-identical). `sessions.py` reads `user.recent_opening_questions` into `generate_opening_question(..., recent_questions=…)`, then rolls the new question back in (`([opening_q] + old)[:3]`, **reassigned not mutated** so SQLAlchemy dirty-tracking fires without `MutableList`) inside the same session + turn-1 commit. **Scope is global** across all companies — opening questions are role/experience-driven, not company-driven. The list is **reset to `[]` in `onboarding.py`** whenever `target_role` / `industry` / `experience_level` changes (the single mutation point backing both the onboarding wizard AND Personalize), since those fields define the shape of the questions. Internal prompt state — deliberately **not** in `UserOut`.
-- **Field-tailored, confusion-aware follow-up question.** `app/services/followup.py` (Gemini 2.5 Flash). Three coupled rules:
-  - **Brief threading:** `generate_followup` accepts `category`, `role_signals`, `sample_question_themes`, and `experience_level` (all default `None`, so legacy sessions with `brief_out is None` still work). `_followup_and_tts` in `sessions.py` threads them from `brief_out` (+ `experience_level` from `user`). The `Context:` block in the user prompt uses the same empty-omission pattern as `_company_digest`. **No separate experience-tailored follow-up prompt** — the `CompanyBrief` already bakes seniority into `role_signals` / `sample_question_themes` (via the level-aware Serper query), so the level is surfaced as one explicit line ("Candidate's experience level: … — calibrate depth and scope") purely for calibration, not a 90-cell matrix lookup.
-  - **Confused-candidate rule:** if the answer is off-topic / nonsensical / single-word ("test test", "I am a very big drinker"), do NOT pretend it was substantive or echo the phrase back; gently redirect by re-asking the original question more concretely.
-  - **Output-format rule + narrow sanitizer:** prefatory **statements** about company/candidate are fine ("Anthropic values AI safety. When you said…"); meta-reasoning about the model's own thought process is forbidden ("The user seems confused, let me redirect…"). Output runs through `_sanitize_followup` that strips wrap-quotes, leading `Question:` / `Q:` / `Follow-up:` labels, and asterisks. **A heuristic "drop preamble" trimmer was DELIBERATELY NOT added** — walking back from `?` to a sentence boundary false-positives on legitimate framings. Meta-reasoning suppression lives in the prompt, not post-trim (see `prompt_rule_vs_post_trim` memory).
-- **Two-turn interview session with auto-submit.** Locked two-turn loop: 1 opening + 1 follow-up. Practice page has an **Auto-Submit** toggle (persisted per user, key `auto_submit_enabled`). On: "End recording" submits the moment MediaRecorder flushes. Off: Submit / Re-record preview renders inside `CameraColumn` in the same 16:9 slot (no layout jump). Auto-submit has one-shot retry on transient LLM errors. Submit / Re-record lock with `disabled={submitting}` so double-click can't race.
-- **Six scoring metrics per turn.** Five content scores (`structure`, `problem_solving`, `impact`, `initiative`, `depth`) + `delivery` (computed server-side from optional webcam analytics — eye contact / expression / posture / energy). Per-dimension **criteria** are loaded dynamically from `_field_rubrics.py` by category (e.g. Healthcare `problem_solving` = patient-safety reasoning; Finance = quantitative trade-offs). `delivery` is `null` when camera declined. **All five base scores are nullable on the wire** (`int | None = None`) — when eval never completes, `get_session` returns null, not 0; frontend renders "Evaluation Failed" in SessionDetail TurnCard and Practice ReplayCoachCard. Session averages and `turns_evaluated` exclude failed turns. **Do not re-introduce `int(t.structure_score or 0)` coercion** — it brings back the "0 0 0 0 0" failure-masking bug.
-- **Balanced structured feedback per turn.** Feedback layer = `positive_moments`, `main_takeaway`, `improvement_moments`, `quick_wins`. Positive/improvement moments quote exact transcript snippets; positive explains what worked, improvement explains why a phrase weakened the answer + bite-sized suggestion (not a polished replacement). Legacy `coaching_moments` accepted as fallback.
-  - **Char budgets stated TWICE** — in the prompt (per-field target: snippet 120, keep_doing/main_takeaway 240, prose 330) AND in the Pydantic schema (~30 chars headroom: 270 / 270 / 390). `BeforeValidator` truncator clips overflow so one overlong field can't `ValidationError` the whole response — load-bearing for resilience (see `feedback_pydantic_prompt_mirror` memory). `transcript_snippet` truncates without ellipsis so the clip remains a substring of the transcript (survives `_drop_unanchored_moments`). When changing a cap, change BOTH `backend/prompts/evaluator_prompts.md` AND `evaluator.py`.
-  - **Empty positives for non-answers:** unintelligible / off-topic / inappropriate answers get `positive_moments: []` (no invented praise), with `improvement_moments` steered to `does_not_answer_question` / `off_track` and `main_takeaway` plainly stating the response didn't address the question. The "still include one positive" clause applies only to weak-but-genuine attempts. Mirrors `followup.py`'s confused-candidate rule.
-  - **Distinct snippets across `improvement_moments`:** prompt forbids quoting the same sentence twice (combine into one moment with the most important `issue_type`); backend pairs that with `_dedupe_by_snippet` in `evaluator.py` invoked inside `_drop_unanchored_moments`. **Exact-string equality only** — substring/overlap dedup is deliberately NOT added (false-positives on legitimate distinct quotes, per `prompt_rule_vs_post_trim`). First-occurrence wins; applied to both moment lists.
-- **Deterministic post-LLM score calibration.** `evaluator.py:_calibrate_content_scores` runs after the LLM and only ever **LOWERS** the five content scores to evidence-justified ceilings — never raises — so "fluent but proves nothing" answers can't cluster at 5. Two layers:
-  - **Word-count broad cap** on all five dims: `0` words → all five forced to `0`; `<10` → cap `2`; `<25` → cap `4`; `≥25` → no cap. (The old `25–44 → 6` tier was removed as too harsh.)
-  - **Per-dimension evidence caps** gated by transcript regexes: no `_STRUCTURE_RE` (sequencing / STAR words) → `structure ≤ 8`; no `_REASONING_RE` (causal / decision words) → `problem_solving ≤ 8`; no `_RESULT_RE` AND no `_NUMBER_RE` → `impact ≤ 6` (a result without a number → `impact ≤ 8`); no `_OWNERSHIP_RE` (first-person ownership) → `initiative ≤ 8`. **`depth` has NO evidence cap** — the old `_DOMAIN_DETAIL_RE` / `_ACRONYM_RE` regexes and the `depth ≤ 5` cap were removed (tech-keyword-biased, unfair to the non-technical fields among the 15 buckets); depth is steered by *soft* prompt guidance only, never a rigid cutoff. The point of the raised `8`/`6` ceilings: don't penalize strong answers or make candidates sound robotic.
-  - Caps are **soft ceilings mirrored in the prompt** so the model self-targets them. When you change a cap, change all three together: `evaluator.py`, `backend/prompts/evaluator_prompts.md`, and the calibration block in `_field_rubrics.py`.
-- **Delivery score + structured delivery feedback (server-side, never LLM).** `evaluator.py:_compute_delivery_score(cv_summary)` derives the 0–10 `delivery` deterministically from MediaPipe webcam analytics: eye / posture calibrated bands + visual stability, minus coverage and streak penalties for severe sustained issues. Hard caps clamp looking away (`looked_away_pct`), low face visibility (`face_visible_pct`), and bad posture / head-tilt. **Facial energy is deliberately a single soft channel:** normalized `expression_quality` contributes once to the calibrated-quality blend. `low_energy_pct` / its streak are coaching diagnostics only — never score deductions or caps — so a calm, non-smiley speaker isn't penalized repeatedly. Browser `low_energy` classification also requires all three clearly-flat signals (`expression < 32`, `smile < 20`, mouth openness `< .028`) instead of the old effectively-smile-only rule. `_build_delivery_feedback` then emits the `delivery_feedback` object — a `summary` line naming the single biggest visible issue plus optional `eye_contact` / `alignment` / `posture` / `expression` cues (each ≤270 chars, all deterministic text). `_delivery_quick_win` adds one `"Delivery: …"` quick-win bullet. `delivery_feedback` is omitted when there's no `cv_summary` (camera declined).
-- **Browser-local face calibration.** Onboarding continues to optional `/calibrate?from=onboarding`; signed-in navigation exposes `/calibrate` for later recalibration. The six-second capture reduces MediaPipe landmarks to bounded gaze / camera-angle / neutral-expression ratios stored under localStorage key `face_delivery_calibration`. Raw frames and landmark arrays are discarded after capture. `useFaceAnalyzer` passes the saved profile into `FrameSummary`, which adjusts the same delivery aggregates before `cv_summary` is posted; no-calibration sessions retain the frozen fallback constants.
-- **History + per-metric improvement tracking.** Every completed session persists turns / scores / aggregates to Postgres. History page lists sessions and lets the user replay audio, read transcript, see scores. `/me/stats` surfaces per-metric trends.
-- **Interview voices (ElevenLabs).** Setup `VoicePicker` has multiple preset voices (accents/tempos/timbres) + "Surprise me." Aimed at non-native English speakers who want to practice with varied voices. Per-session choice.
-- **Free tier with daily session limits.** `pro` exists in the `user_tier` enum but isn't exposed (flipping a row to `pro` skips the gate). Free = **5 completed sessions per local calendar day**. Counter increments at session **finalization** (in `submit_turn`'s final-turn branch), not creation — abandoning mid-session doesn't burn a slot but also yields no feedback (the natural deterrent). Day reset uses IANA timezone from the browser (stored on `users.timezone`, UTC fallback). Pre-check at `POST /sessions` runs **before** moderation / Serper / OpenRouter / TTS so rate-limited requests don't spend API credits; returns HTTP 429. Race-safe via atomic single-`UPDATE` in `app/services/daily_limit.py`. Frontend reads `me.daily_session_count` for the "X/5 sessions today" indicator on Home; 429 surfaces via FlashBanner.
-  - **`GET /me` also runs `check_and_reset` for free-tier callers** so the Home counter never goes stale across a day boundary. Steady-state path does **zero writes** — the UPDATE is gated by `User.count_reset_date.is_distinct_from(today)` (NULL-safe). Only the first `/me` of a new local day issues an UPDATE. Matters because `/me` hits on every route-guard pass via `useMe()`.
 
-Backed by Clerk JWT (verified against Clerk JWKS), FastAPI, and four straight-line LLM calls per session (research + opening question once at start; follow-up + evaluator once per non-final turn, running in parallel — no multi-agent loop).
+- **Industry & role autocomplete (required-selection combobox).** Onboarding + Personalize fill `industry` / `target_role` via a dropdown backed by `/api/v1/validation/industries?q=` and `/api/v1/validation/roles?q=&industry=` (returns `SuggestionsOut { suggestions: str[≤5], flagged, message }`). Replaced the older classify-what-you-typed validation (too slow). `app/services/profile_validation.py:suggest_industries / suggest_roles` run a three-stage pipeline (moderation MUST precede the billed LLM): (1) deterministic reject `_looks_like_junk` (empty / prompt-injection / direct-request / gibberish / overlong) → empty list, no network; (2) OpenAI `check_moderation` → `flagged=True` + empty list on hard-block; (3) LLM completion on `google/gemini-2.5-flash-lite` (primary) falling back to `openai/gpt-oss-120b`, JSON-only `{"suggestions":[...]}`, sanitized to ≤5 unique Title-Case strings. **Everything fails soft** — missing key / timeout / parse error → empty list. Suggestions are **semantic, not literal completions** (industry "computers" → Software / Cybersecurity / IT; role "software" → Software Developer / Full-Stack Developer / Backend Engineer); model is told to include a normalized version of the user's input as an escape hatch. **Role suggestions conditioned on the chosen industry** (empty → industry-agnostic). UI: shared `frontend/src/components/SuggestionCombobox.tsx` (ARIA listbox, 350ms debounce via `useDebouncedValue`) wrapped by `IndustryAutocompleteField` / `RoleAutocompleteField`. **Required selection** — satisfied only once a suggestion is picked (`selected` boolean gate); free-typed text never advances, editing re-arms it; picking in onboarding auto-advances the step. Validation `category` no longer returned (recomputed at session time by `company_research`). Gate is client-side only.
+
+- **Voice dictation for the bio field (browser-native, free, progressive enhancement).** The "Tell us about you" `<textarea>` (Onboarding step 3 AND Personalize, same `short_bio`) offers an optional mic via the **Web Speech API** (`window.SpeechRecognition ?? window.webkitSpeechRecognition`) — no API key, no backend round-trip, live interim results, needs HTTPS + one-time mic grant. Deliberately **NOT** the ElevenLabs STT path (record-blob-then-upload, wrong shape for an inline textbox). Three pieces:
+  - `frontend/src/hooks/useSpeechRecognition.ts` — wrapper. `lang='en-US'`, `continuous=true`, `interimResults=true`. Returns `{ supported, listening, interim, error, start, stop, toggle }`. `onResult` fires once per **finalized** phrase, held in a **ref refreshed every render** (freshest closure without re-binding). In `continuous` mode Chrome fires `onend` after a pause — a `wantListeningRef` gates auto-restart until the user explicitly stops. `not-allowed` / `service-not-allowed` set a gentle `error` and stop; `no-speech` / `aborted` ignored. Local TS decls scoped to the file.
+  - `frontend/src/components/SpeechToTextButton.tsx` — self-contained mic toggle reused by both forms (idle = `Mic` "Dictate", listening = pulsing `Square` "Stop", `aria-pressed`) + greyed interim preview + permission-error notice. **Renders `null` when `!supported`** (Firefox). Does NOT own the bio value.
+  - `frontend/src/lib/joinSpoken.ts` — `joinSpoken(prev, chunk)` merges each finalized chunk into the controlled value (single separating space, clamped to `MAX_BIO_LENGTH = 2000`). Both forms wire `onAppend={(chunk) => setShortBio((prev) => joinSpoken(prev, chunk))}`. **Interim text never written into the value** (only finalized chunks commit). Own module so the component file satisfies `react-refresh/only-export-components`.
+
+- **Field-tailored opening question AND evaluator rubric.** Research agent classifies the candidate into one of 15 field/industry buckets (Tech/Product/Design, Data/AI/ML, Cybersecurity, Finance, Consulting, Legal, Government, Healthcare, Sales/Marketing, Ops/Supply Chain, Retail/Hospitality, Nonprofit, Education, Non-Software Engineering, Startups). Driven primarily by **job title**, secondarily by company (in-house counsel at a tech company → Legal). Category drives (1) opening-question prompt from `_field_prompts.py` and (2) evaluator rubric from `_field_rubrics.py`. Source-of-truth markdown: `backend/prompts/opening_question_prompts.md`, `evaluator_prompts.md` — keep Python and markdown in sync.
+
+- **Experience-level tailoring (second axis).** On top of the 15 buckets, opening-question, evaluator, follow-up, AND company-research are tailored by `User.experience_level` (`ExperienceLevel`: internship / entry / mid / senior / staff / executive). The paragraph from the **15×6 matrix** comes from `experience_question_block(category, level)` / `experience_evaluator_block(category, level)` (intern → learning-in-ambiguity / coachability; executive → portfolio bets / enterprise leadership). Assembly:
+  - **Opening question (`build_field_system_prompt(category, experience_level, rng)`):** with a level present the experience block **leads as `PRIMARY DRIVER`** and `FIELD_THEMES` are demoted to background ("do NOT contradict the experience-level focus above" — themes were out-competing the appended level note). Shared `style_cues` factored so the legacy `None` path stays byte-identical.
+  - **Evaluator (`build_system_instruction(category, experience_level)`):** level paragraph **appended** as an extra section, keyed on the same resolved `key` the rubric fell back to.
+  - **Empty-omission:** `experience_level is None` (legacy) → section/reorder dropped, byte-identical to category-only. Block helpers fail soft (non-`ExperienceLevel` → `""`).
+  - **Source of truth:** markdown `backend/prompts/experience_prompts.md`; runtime `_experience_prompts.py` is **generated** via `python scripts/gen_experience_prompts.py` (don't hand-edit the `.py`). Import-time guard fails loud if any of the 90 cells is missing.
+  - **Wiring:** threaded through `sessions.py` from `user.experience_level` into `research_company`, `_followup_and_tts` → `generate_followup`, and `evaluate_turn` / `_run_background_eval` (passed explicitly — the bg task has no request-scoped `user`).
+
+- **Research-inspired, per-session-varied opening question.** Two structural fixes for "opening questions feel identical":
+  - `_field_prompts.py` = shared intro + per-category `FIELD_THEMES` (5 labels, all shown) + per-category `FIELD_EXAMPLES` (5 questions, **2 randomly sampled per call** by `build_field_system_prompt(category, rng=None)`). The 2-of-5 rotation breaks the "fixed attractor" effect.
+  - `company_research.py` fires **two parallel Serper queries** via `asyncio.gather`: `{company}` (description/headlines/values/category) and `{company} {level_label} {job_title} behavioral interview culture` (the generic "interview questions" phrasing was dropped — that corpus is LeetCode/system-design heavy and pulled `role_signals` toward technical proficiencies). `level_label` from `_EXPERIENCE_QUERY_LABEL` (e.g. `entry → "entry-level"`); `.get()` falls back to the level-agnostic string when `experience_level is None`. Summarizer prompt unchanged — level reaches Gemini implicitly via the echoed role query.
+  - Brief adds `role_signals` (cultural/soft-skill traits) and `sample_question_themes` (behavioral theme labels, never verbatim questions). Both default `[]`. Gemini prompt has explicit MUST-NOTs: no technical proficiencies in `role_signals`, no technical themes in `sample_question_themes`, empty list correct for obscure companies.
+  - **Empty-omission pattern (load-bearing).** `opening_question.py:_company_digest` surfaces these **only when non-empty**. Rendering "Role signals: (none)" cues the model to invent from priors — the failure mode the anti-hallucination rules prevent. Reused by `followup.py` and `SessionDetail.tsx` Overview.
+  - **Recent-questions avoid-list (global, reset-on-profile-change).** `users.recent_opening_questions` (JSONB, `'[]'` server-default, migration `0008_recent_opening_qs`) caches the **3 most recent opening questions**, newest-first. `_recent_questions_block` injects them into the **user** prompt as a "generate a DISTINCT question — different scenario/theme/phrasing; do NOT rephrase, paraphrase, or echo" avoid-list (empty-omission; legacy path byte-identical). `sessions.py` reads it into `generate_opening_question(..., recent_questions=…)`, then rolls the new question back in (`([opening_q] + old)[:3]`, **reassigned not mutated** so SQLAlchemy dirty-tracking fires without `MutableList`). **Global scope** across companies. **Reset to `[]` in `onboarding.py`** whenever `target_role` / `industry` / `experience_level` changes (the single mutation point for the wizard AND Personalize). Deliberately **not** in `UserOut`.
+
+- **Field-tailored, confusion-aware follow-up question.** `app/services/followup.py` (Gemini 2.5 Flash). Three coupled rules:
+  - **Brief threading:** `generate_followup` accepts `category`, `role_signals`, `sample_question_themes`, `experience_level` (all default `None`, so legacy `brief_out is None` sessions still work). `_followup_and_tts` threads them from `brief_out` (+ `experience_level` from `user`). `Context:` block uses empty-omission. **No separate experience-tailored follow-up prompt** — `CompanyBrief` already bakes seniority into `role_signals` / `sample_question_themes`, so level is one calibration line ("Candidate's experience level: … — calibrate depth and scope"), not a matrix lookup.
+  - **Confused-candidate rule:** off-topic / nonsensical / single-word answer → do NOT pretend it was substantive or echo it back; gently redirect by re-asking the original question more concretely.
+  - **Output-format rule + narrow sanitizer:** prefatory **statements** about company/candidate are fine; meta-reasoning about the model's own thought process is forbidden. Output runs through `_sanitize_followup` (strips wrap-quotes, leading `Question:` / `Q:` / `Follow-up:` labels, asterisks). **A heuristic "drop preamble" trimmer was DELIBERATELY NOT added** (walking back from `?` false-positives on legitimate framings); meta-reasoning suppression lives in the prompt, not post-trim.
+
+- **Two-turn interview session with auto-submit.** Locked: 1 opening + 1 follow-up. Practice has an **Auto-Submit** toggle (persisted, key `auto_submit_enabled`). On: "End recording" submits the moment MediaRecorder flushes (one-shot retry on transient LLM errors). Off: Submit / Re-record preview renders inside `CameraColumn` in the same 16:9 slot (no layout jump). Submit / Re-record lock with `disabled={submitting}` so double-click can't race.
+
+- **Six scoring metrics per turn.** Five content scores (`structure`, `problem_solving`, `impact`, `initiative`, `depth`) + `delivery` (server-side from optional webcam analytics). Per-dimension **criteria** loaded dynamically from `_field_rubrics.py` by category (Healthcare `problem_solving` = patient-safety reasoning; Finance = quantitative trade-offs). `delivery` is `null` when camera declined. **All five base scores nullable on the wire** (`int | None = None`) — when eval never completes, `get_session` returns null, not 0; frontend renders "Evaluation Failed". Session averages and `turns_evaluated` exclude failed turns. **Do not re-introduce `int(t.structure_score or 0)` coercion** — it brings back the "0 0 0 0 0" failure-masking bug.
+
+- **Balanced structured feedback per turn.** Feedback = `positive_moments`, `main_takeaway`, `improvement_moments`, `quick_wins`. Positive/improvement moments quote exact transcript snippets; positive explains what worked, improvement explains why a phrase weakened the answer + bite-sized suggestion. Legacy `coaching_moments` accepted as fallback.
+  - **Char budgets stated TWICE** — prompt (snippet 120, keep_doing/main_takeaway 240, prose 330) AND Pydantic schema (~30 chars headroom: 270 / 270 / 390). `BeforeValidator` truncator clips overflow so one overlong field can't `ValidationError` the whole response. `transcript_snippet` truncates without ellipsis so the clip stays a substring (survives `_drop_unanchored_moments`). When changing a cap, change BOTH `evaluator_prompts.md` AND `evaluator.py`.
+  - **Empty positives for non-answers:** unintelligible / off-topic / inappropriate → `positive_moments: []` (no invented praise), `improvement_moments` steered to `does_not_answer_question` / `off_track`, `main_takeaway` plainly states it didn't address the question. The "still include one positive" clause applies only to weak-but-genuine attempts.
+  - **Distinct snippets across `improvement_moments`:** prompt forbids quoting the same sentence twice (combine into one moment with the most important `issue_type`); backend pairs that with `_dedupe_by_snippet` inside `_drop_unanchored_moments`. **Exact-string equality only** (substring/overlap dedup deliberately NOT added); first-occurrence wins, both lists.
+
+- **Deterministic post-LLM score calibration.** `evaluator.py:_calibrate_content_scores` runs after the LLM and only ever **LOWERS** the five content scores to evidence-justified ceilings — never raises. Two layers:
+  - **Word-count broad cap** on all five: `0` words → all `0`; `<10` → cap `2`; `<25` → cap `4`; `≥25` → no cap. (Old `25–44 → 6` tier removed.)
+  - **Per-dimension evidence caps** gated by transcript regexes: no `_STRUCTURE_RE` (sequencing/STAR) → `structure ≤ 8`; no `_REASONING_RE` (causal/decision) → `problem_solving ≤ 8`; no `_RESULT_RE` AND no `_NUMBER_RE` → `impact ≤ 6` (result without number → `impact ≤ 8`); no `_OWNERSHIP_RE` (first-person) → `initiative ≤ 8`. **`depth` has NO evidence cap** — the old `_DOMAIN_DETAIL_RE` / `_ACRONYM_RE` regexes and `depth ≤ 5` cap were removed (tech-keyword-biased); depth steered by _soft_ prompt guidance only.
+  - Caps are **soft ceilings mirrored in the prompt** so the model self-targets them. When you change a cap, change all three: `evaluator.py`, `evaluator_prompts.md`, and the calibration block in `_field_rubrics.py`.
+
+- **Delivery score + structured delivery feedback (server-side, never LLM).** `evaluator.py:_compute_delivery_score(cv_summary)` derives the 0–10 `delivery` deterministically from MediaPipe webcam analytics: eye/posture calibrated bands + visual stability, minus coverage/streak penalties for severe sustained issues. Hard caps clamp looking away (`looked_away_pct`), low face visibility (`face_visible_pct`), bad posture/head-tilt. **Facial energy is deliberately one soft channel:** normalized `expression_quality` contributes once to the calibrated-quality blend; `low_energy_pct` / its streak are coaching diagnostics only (never deductions/caps) so a calm speaker isn't penalized. Browser `low_energy` requires all three flat signals (`expression < 32`, `smile < 20`, mouth openness `< .028`). `_build_delivery_feedback` emits `delivery_feedback` — `summary` naming the biggest visible issue + optional `eye_contact` / `alignment` / `posture` / `expression` cues (each ≤270 chars, deterministic); `_delivery_quick_win` adds one `"Delivery: …"` quick-win. Omitted when there's no `cv_summary`.
+
+- **Browser-local face calibration.** Onboarding routes to optional `/calibrate?from=onboarding`; signed-in nav exposes `/calibrate`. Six-second capture reduces MediaPipe landmarks to bounded gaze / camera-angle / neutral-expression ratios in localStorage `face_delivery_calibration` (raw frames/landmarks discarded after capture). `useFaceAnalyzer` passes the saved profile into `FrameSummary`, which adjusts delivery aggregates before `cv_summary` is posted; no-calibration sessions use frozen fallback constants.
+
+- **History + per-metric improvement tracking.** Every completed session persists turns / scores / aggregates to Postgres. History page lists sessions, replays audio, reads transcript, shows scores. `/me/stats` surfaces per-metric trends.
+
+- **Interview voices (ElevenLabs).** Setup `VoicePicker` has multiple preset voices + "Surprise me" (aimed at non-native speakers). Per-session choice.
+
+- **Free tier with daily session limits.** `pro` exists in `user_tier` but isn't exposed (flipping a row to `pro` skips the gate). Free = **5 completed sessions per local calendar day**. Counter increments at session **finalization** (in `submit_turn`'s final-turn branch), not creation — abandoning mid-session doesn't burn a slot but yields no feedback. Day reset uses IANA timezone from the browser (`users.timezone`, UTC fallback). Pre-check at `POST /sessions` runs **before** moderation / Serper / OpenRouter / TTS so rate-limited requests don't spend credits; returns 429. Race-safe via atomic single-`UPDATE` in `app/services/daily_limit.py`. Frontend reads `me.daily_session_count` for the "X/5 sessions today" indicator; 429 surfaces via FlashBanner.
+  - **`GET /me` also runs `check_and_reset` for free-tier callers** so the counter never goes stale across a day boundary. Steady-state does **zero writes** — the UPDATE is gated by `User.count_reset_date.is_distinct_from(today)` (NULL-safe). Only the first `/me` of a new local day issues an UPDATE. Matters because `/me` hits on every route-guard pass via `useMe()`.
 
 ---
 
@@ -53,7 +66,7 @@ Backed by Clerk JWT (verified against Clerk JWKS), FastAPI, and four straight-li
 
 - **Frontend**: React + Vite, Clerk (auth), recharts, MediaRecorder, MediaPipe (webcam delivery analytics)
 - **Backend**: FastAPI, Alembic + Postgres, OpenAI Python SDK pointed at OpenRouter (`https://openrouter.ai/api/v1`)
-- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v3.2` for evaluator, `google/gemini-2.5-flash` for research / opening / follow-up, `google/gemini-2.5-flash-lite` for industry/role autocomplete with `openai/gpt-oss-120b` fallback), Serper
+- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v3.2` evaluator, `google/gemini-2.5-flash` research/opening/follow-up, `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback), Serper
 - **Auth**: Clerk JWT verified via `python-jose` against `CLERK_JWT_ISSUER` JWKS
 
 ---
@@ -65,18 +78,18 @@ Browser (React+Vite)
   │── Clerk JWT ──────────────────────► FastAPI
   │── MediaRecorder blob ─────────────► FastAPI
                                           │── ElevenLabs STT (audio → transcript)
-                                          │── OpenRouter (DeepSeek v3.2 evaluator, Gemini 2.5 Flash for research/questions)
+                                          │── OpenRouter (DeepSeek v3.2 evaluator, Gemini 2.5 Flash research/questions)
                                           │── ElevenLabs TTS (text → audio)
                                           │── Serper API (company research)
                                           └── Postgres (via Alembic)
 ```
 
-**Four straight-line LLM calls per session, all via OpenRouter.** #1 and #2 fire once at session start; #3 and #4 fire once per non-final turn (follow-up and evaluator run in parallel — follow-up gates the user response, evaluator is a detached background task).
+**Four straight-line LLM calls per session, all via OpenRouter.** #1/#2 fire once at session start; #3/#4 once per non-final turn (follow-up and evaluator in parallel — follow-up gates the user response, evaluator is a detached background task). See the matching MVP bullets above for full per-call detail.
 
-1. **Company research + field classification.** Two parallel Serper queries via `asyncio.gather` → `google/gemini-2.5-flash`. Q1: `{company}`. Q2: `{company} {job_title} behavioral interview culture`. Returns `CompanyBrief(description, headlines, values, category, role_signals, sample_question_themes)`. `category` is one of 15 buckets; `role_signals` and `sample_question_themes` default to `[]` with explicit anti-hallucination MUST-NOTs in the system prompt.
-2. **Opening question.** `google/gemini-2.5-flash`. System prompt assembled by `build_field_system_prompt(brief.category, rng=None)` (shared intro + full 5-item `FIELD_THEMES` + 2-of-5 sampled `FIELD_EXAMPLES`). User prompt (`opening_question.py:_company_digest`) appends `role_signals` and `sample_question_themes` **only when non-empty**.
-3. **Follow-up question** (non-final turns). `google/gemini-2.5-flash` via `app/services/followup.py`, system+user split. System prompt = hard rules (10–25 words, references something concrete, ends in `?`) + confused-candidate rule + output-format rule. User prompt = question + transcript + optional `Context:` block carrying `Field:`, `role_signals`, `sample_question_themes` (same empty-omission pattern). Output runs through narrow `_sanitize_followup`.
-4. **Evaluate.** `deepseek/deepseek-v3.2` in JSON mode (`response_format={"type": "json_object"}`). Detached background task. Rubric criteria selected from `app/services/_field_rubrics.FIELD_RUBRICS` keyed on `brief.category` — same key as opening / follow-up, guaranteeing one consistent field identity across opening / follow-up / scoring per session.
+1. **Company research + field classification** (`google/gemini-2.5-flash`). Two parallel Serper queries via `asyncio.gather` → `CompanyBrief(description, headlines, values, category, role_signals, sample_question_themes)`. `category` ∈ 15 buckets.
+2. **Opening question** (`google/gemini-2.5-flash`). System by `build_field_system_prompt(brief.category, rng=None)`; user prompt (`_company_digest`) appends `role_signals` / `sample_question_themes` only when non-empty.
+3. **Follow-up question** (non-final turns, `google/gemini-2.5-flash` via `followup.py`, system+user split). System = hard rules (10–25 words, references something concrete, ends in `?`) + confused-candidate + output-format rules; output through `_sanitize_followup`.
+4. **Evaluate** (`deepseek/deepseek-v3.2`, JSON mode, detached background task). Rubric from `_field_rubrics.FIELD_RUBRICS` keyed on `brief.category` — same key as opening/follow-up, one consistent field identity per session.
 
 ---
 
@@ -92,8 +105,7 @@ interview_sessions(id, user_id FK, config_id FK, status, company, job_title, com
 interview_configs(id, user_id FK, company, job_title, job_description, company_context, interview_type, num_turns, ai_plan, created_at)
 
 interview_turns(id, session_id FK, turn_number, question_text, transcript_text, is_followup, parent_turn_id FK,
-structure_score INT, problem_solving_score INT, initiative_score INT,
-impact_score INT, depth_score INT,
+structure_score INT, problem_solving_score INT, initiative_score INT, impact_score INT, depth_score INT,
 delivery_score INT NULL, feedback TEXT NULL, feedback_detail JSONB NULL,
 filler_word_count INT, filler_word_breakdown JSONB, cv_summary JSONB NULL, ai_model_used, evaluated_at, created_at)
 
@@ -108,17 +120,15 @@ All routes except `/health` require Clerk JWT via a FastAPI dependency.
 
 ```
 POST /onboarding              { resume_file, industry, target_role, short_bio }
-POST /sessions                { company, job_title, voice_id?, timezone? } → 201 { session_id, summary, first_question, first_question_audio_url } | 429 (free tier daily limit)
+POST /sessions                { company, job_title, voice_id?, timezone? } → 201 { session_id, summary, first_question, first_question_audio_url } | 429 (daily limit)
 POST /sessions/{id}/turns     { audio_blob } → { transcript, scores, feedback, next_question, next_question_audio_url, is_final }
-GET  /sessions/{id}           full session + turns (summary screen)
+GET  /sessions/{id}           full session + turns
 GET  /sessions                user's session history
-GET  /me                      current user row (includes tier + daily_session_count for the Home counter)
+GET  /me                      current user row (tier + daily_session_count)
 GET  /me/stats                aggregate scores over time
 ```
 
-`timezone` on `POST /sessions` is an IANA name (e.g. `America/New_York`) from `Intl.DateTimeFormat().resolvedOptions().timeZone`. Persisted on `users.timezone`. Missing/unparseable → UTC.
-
-TTS audio: base64 inline in JSON — no S3.
+`timezone` is an IANA name from `Intl.DateTimeFormat().resolvedOptions().timeZone`, persisted on `users.timezone`. Missing/unparseable → UTC. TTS audio: base64 inline in JSON — no S3.
 
 ---
 
@@ -149,10 +159,7 @@ TTS audio: base64 inline in JSON — no S3.
         "how_to_strengthen": "specific bite-sized suggestion, not a full rewritten answer"
       }
     ],
-    "quick_wins": [
-      "one keep-doing bullet",
-      "one short practical fix"
-    ],
+    "quick_wins": ["one keep-doing bullet", "one short practical fix"],
     "delivery_feedback": {
       "summary": "one-line headline naming the biggest visible delivery issue",
       "eye_contact": "optional cue (or null)",
@@ -166,32 +173,25 @@ TTS audio: base64 inline in JSON — no S3.
 ```
 
 - **Evaluator** → `deepseek/deepseek-v3.2` (migrated from Gemma 4 after Gemini rate-limiting + Google SDK deprecation). **Research / opening / follow-up** → `google/gemini-2.5-flash`. No other model mixing.
-- **Scores:** five content dims are LLM-scored 0–10 ints, then run through `_calibrate_content_scores` (deterministic ceilings — only lowers, never raises); `delivery` is computed server-side by `_compute_delivery_score` from webcam analytics (never trusted from the model). All six are nullable on the wire.
-- **Delivery feedback:** `feedback_detail.delivery_feedback` is built server-side from `cv_summary` (never by the LLM) and omitted entirely when the camera was declined. `summary` is required; the four cue fields (`eye_contact` / `alignment` / `posture` / `expression`) are optional, each ≤270 chars.
-- **Feedback caps:** `positive_moments` ≤ 3, `improvement_moments` ≤ 4, `quick_wins` ≤ 3. Server-side: drop moments whose `transcript_snippet` isn't an exact substring of the transcript, then `_dedupe_by_snippet` (exact equality, first-occurrence wins) on both lists.
-- **Legacy feedback:** `notes` still persisted in `interview_turns.feedback`. `feedback_detail.coaching_moments` is normalized into `improvement_moments`.
-- Pass full turn history in prompt so follow-ups reference earlier answers.
-- Filler regex is ground truth; LLM breakdown is supplemental only.
+- **Scores:** five content dims LLM-scored 0–10 ints, then run through `_calibrate_content_scores` (only lowers); `delivery` computed server-side by `_compute_delivery_score` (never trusted from the model). All six nullable on the wire.
+- **Delivery feedback:** `feedback_detail.delivery_feedback` built server-side from `cv_summary` (never the LLM), omitted when camera declined. `summary` required; the four cues optional, each ≤270 chars.
+- **Feedback caps:** `positive_moments` ≤ 3, `improvement_moments` ≤ 4, `quick_wins` ≤ 3. Server-side: drop moments whose `transcript_snippet` isn't an exact substring, then `_dedupe_by_snippet` (exact equality, first-occurrence wins) on both lists.
+- **Legacy:** `notes` still persisted in `interview_turns.feedback`. `feedback_detail.coaching_moments` normalized into `improvement_moments`.
+- Pass full turn history in prompt so follow-ups reference earlier answers. Filler regex is ground truth; LLM breakdown supplemental only.
 
-**Filler word regex** (case-insensitive, word boundaries):
-`um, uh, er, like, you know, basically, literally, actually, i mean, kind of, sort of, right`
+**Filler word regex** (case-insensitive, word boundaries): `um, uh, er, like, you know, basically, literally, actually, i mean, kind of, sort of, right`
 
 ---
 
 ## Session Rules
 
-- **2 turns fixed**: 1 opening + 1 follow-up. Hardcode end condition.
-- `is_final: true` on turn 2. `next_question` is empty string.
+- **2 turns fixed**: 1 opening + 1 follow-up (hardcoded end condition). `is_final: true` on turn 2; `next_question` is empty string.
 
 ---
 
 ## Auth Implementation
 
-```python
-async def current_user(authorization: str = Header(...)) -> User:
-    # verify Bearer JWT against CLERK_JWT_ISSUER JWKS via python-jose
-    # upsert user by clerk_user_id, return DB row
-```
+`current_user(authorization: str = Header(...)) -> User` verifies the Bearer JWT against `CLERK_JWT_ISSUER` JWKS via `python-jose`, upserts the user by `clerk_user_id`, returns the DB row.
 
 ---
 
@@ -201,7 +201,7 @@ async def current_user(authorization: str = Header(...)) -> User:
 DATABASE_URL
 CLERK_SECRET_KEY
 CLERK_JWT_ISSUER
-OPENROUTER_API_KEY      # single key for all LLM calls (evaluator, research, questions)
+OPENROUTER_API_KEY      # single key for all LLM calls
 ELEVENLABS_API_KEY
 ELEVENLABS_VOICE_ID     # default voice; per-session override via VoicePicker
 SERPER_API_KEY
@@ -212,95 +212,29 @@ HEYGEN_API_KEY          # optional, only if avatar feature is attempted
 
 ## Frontend Routing
 
-**React Router v7** (`react-router@^7.14.2`, declarative `<BrowserRouter>` API — not the data router). `main.tsx` nests `<BrowserRouter>` inside `<ClerkProvider>`. Route table in `frontend/src/App.tsx`.
+**React Router v7** (declarative `<BrowserRouter>` API, not the data router). `main.tsx` nests `<BrowserRouter>` inside `<ClerkProvider>`. Route table in `frontend/src/App.tsx`.
 
-### Route table
+Routes (path → component → guards): `/` → `HomeRoute` (branches on auth inside); `/sign-in` → `SignIn` and `/sign-up` → `SignUp` (both `RedirectIfOnboarded`); `/onboarding` → `OnboardingForm` (`RequireAuth` + `RedirectIfOnboarded`); `/practice` → `Practice`, `/history` → `History`, `/sessions/:id` → `SessionDetail`, `/personalize` → `Personalize` (all `RequireAuth` + `RequireOnboarded`); `/calibrate` → `Calibration` (`RequireAuth`); `/sso-callback` → `SsoCallback` (none, Clerk OAuth completes here); `*` → `<Navigate to="/">`.
 
-| Path            | Component           | Guards                                        |
-| --------------- | ------------------- | --------------------------------------------- |
-| `/`             | `HomeRoute`         | None — branches on auth inside                |
-| `/sign-in`      | `SignIn`            | `RedirectIfOnboarded`                         |
-| `/sign-up`      | `SignUp`            | `RedirectIfOnboarded`                         |
-| `/onboarding`   | `OnboardingForm`    | `RequireAuth` + `RedirectIfOnboarded`         |
-| `/practice`     | `Practice`          | `RequireAuth` + `RequireOnboarded`            |
-| `/history`      | `History`           | `RequireAuth` + `RequireOnboarded`            |
-| `/sessions/:id` | `SessionDetail`     | `RequireAuth` + `RequireOnboarded`            |
-| `/personalize`  | `Personalize`       | `RequireAuth` + `RequireOnboarded`            |
-| `/calibrate`    | `Calibration`       | `RequireAuth`                                 |
-| `/sso-callback` | `SsoCallback`       | None (Clerk OAuth completes here)             |
-| `*`             | `<Navigate to="/">` | None                                          |
+**Route guards** (three layout-route components in `route-guards.tsx`): each waits for Clerk `isLoaded` AND `useMe().isReady` (no wrong-page flash), renders `<Outlet />` on pass. `RequireAuth` — signed-out → `/sign-in`. `RequireOnboarded` — signed-in but `completed_registration === false` → `/onboarding`. `RedirectIfOnboarded` — signed-in AND onboarded → `/`. `HomeRoute` is the only auth-bivalent route: signed-out → `<Hero />`, signed-in → `<SignedInHome />` (half-onboarded → `/onboarding`, onboarded → `<Home />`).
 
-### Route guards
+**TopBar nav:** `TopBarNavLink` takes `to` + optional `matchPatterns?: string[]`, active via `matchPath` (Practice: `to="/" matchPatterns={['/practice']}`; History: `to="/history" matchPatterns={['/sessions/:id']}`).
 
-Three layout-route components in `frontend/src/components/route-guards.tsx`. Each waits for Clerk `isLoaded` AND `useMe().isReady` before deciding (no wrong-page flash). Each renders `<Outlet />` on pass.
+**Setup → Practice handoff:** `navigate("/practice", { state: { sessionId, firstQuestion, firstQuestionAudioUrl } })`; `Practice` reads `useLocation().state` on mount, missing → `<Navigate to="/" replace />`. `PracticeLocationState` (exported from `Practice.tsx`) also carries `company` / `jobTitle`.
 
-- `RequireAuth` — signed-out → `/sign-in`.
-- `RequireOnboarded` — signed-in but `me.completed_registration === false` → `/onboarding`.
-- `RedirectIfOnboarded` — signed-in AND onboarded → `/`. Half-onboarded users can still visit `/sign-in`/`/sign-up`.
+**Flash messages:** `FlashBanner.tsx` watches `location.state.flash` via a **`useEffect`** (not a `useState` initializer — lets same-route re-navigations re-trigger), then clears via `navigate(pathname, { replace: true, state: null })`, auto-dismiss 6s. Producers: `SessionDetail` redirects to `/` on 4xx (404/422/403), 5xx falls to inline error; `Home.tsx` 429 catch navigates to `/` with the free-tier message. Routing trade-off: gained deep-linking + normal refresh/back-forward, lost the cross-route morph sweep (in-component morph for Practice's Interview → Results preserved).
 
-`HomeRoute` is the only auth-bivalent route: signed-out → `<Hero />`, signed-in → `<SignedInHome />` which routes half-onboarded users to `/onboarding` and onboarded users to `<Home />`.
+### Practice + SessionDetail
 
-### TopBar nav
+Full component internals live in `frontend/CLAUDE.md`. Cross-cutting facts to know here:
 
-`TopBarNavLink` (`frontend/src/components/TopBar.tsx`) takes `to: string` + optional `matchPatterns?: string[]`; active state computed via `matchPath`.
-
-- Practice link: `to="/" matchPatterns={['/practice']}` — active on Setup and running session.
-- History link: `to="/history" matchPatterns={['/sessions/:id']}` — active on list and any session detail.
-
-### Setup → Practice handoff
-
-Cross-route state via `navigate("/practice", { state: { sessionId, firstQuestion, firstQuestionAudioUrl } })`. `Practice` reads `useLocation().state` on mount; missing state → `<Navigate to="/" replace />` (refresh loses session, matches today's behavior). The `PracticeLocationState` type is exported from `Practice.tsx`.
-
-### Flash messages
-
-`FlashBanner.tsx` watches `location.state.flash` via a **`useEffect`** (not a `useState` initializer), captures into local state, then clears the history entry via `navigate(pathname, { replace: true, state: null })` so refresh doesn't re-show. Auto-dismiss 6s. Fixed overlay (`top-20 z-50`, `pointer-events-none` wrapper / `pointer-events-auto` inner). The effect (not initializer) pattern lets same-route re-navigations re-trigger the banner (e.g. Home's 429 catch handler).
-
-Producers: `SessionDetail` redirects to `/` with a flash on 4xx errors (404/422/403); 5xx falls through to inline error. `Home.tsx` 429 catch handler navigates to `/` with the free-tier message.
-
-### Trade-offs vs. prior state-machine "routing"
-
-- **Pro:** deep-linking works; refresh + back/forward behave normally; new pages just register a `<Route>`.
-- **Lost:** cross-route morph sweep (Hero ↔ SignIn ↔ SignUp; Setup → Practice). In-component morph for Practice's Interview → Results is preserved. `useMorphTransition` and `PageMorphTransition` are kept.
-
-### `Practice.tsx` hides an internal state machine
-
-One mount at `/practice`, two render branches:
-
-| Phase     | Gate                  | What renders                                                                                                                                                                          |
-| --------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interview | `!isDone && currentQ` | Full-viewport `flex h-screen flex-col`: body grid (`<QuestionColumn>` + `<CameraColumn>` + optional `<TranscriptColumn>`) over sticky `<PracticeFooter>` + `<QuitConfirmDialog>` |
-| Results   | `isDone`              | Folder-tab case-file shell mirroring SessionDetail — `<FolderTabs>` + `<SideNavButton>` chevrons over `<PracticeOverviewPanel>` / `<PracticeTurnPanel>` |
-
-- **TopBar is phase-gated** (`{isDone && …}`) — Interview phase is chrome-free; the sticky footer carries every session-level control. Results renders TopBar but drops the legacy ScoreDimensions feature rail and the bottom CTA row.
-- **Layout** (`min-[900px]:grid` desktop / `flex flex-col` mobile). Desktop grid flips between `[33%_67%]` (transcript closed) and `[25%_50%_25%]` (open). Camera box is locked to **`w-[45vw]` on desktop** regardless of template — grid columns flex around it so the preview never resizes when transcript toggles. Mobile stacks question → camera → transcript. `min-[900px]:justify-center` on columns (desktop centers, mobile hugs top).
-- **Interview → Results** uses `useMorphTransition()` full-screen sweep on `setIsDone(true)`. Sub-state changes use lighter `anim-crossfade`.
-- **Interview sub-states** driven by `useRecorder()`'s `recorder.state` plus latches: `endingTurn` (footer tap → immediate spinner), `submittingTurn` (disables preview buttons during POST), `retryingTurn` (one-shot autoSubmit retry gap), `autoSubmit` (persisted under `auto_submit_enabled`; toggle in Home's VoicePicker, read in Practice), `replayKey` (bumped on Re-record / Restart-turn to remount the `<audio>` so `autoPlay` re-fires), `showTranscript` (disabled on turn 1, has its own X close), `showQuitConfirm` (`<QuitConfirmDialog>`; quit calls `handleQuit` that stops recorder + `navigate('/')`; mid-session quit does NOT burn a daily slot).
-- **Auto-submit wiring:** `submitTurnRef` holds the latest `handleSubmitTurn` closure (refreshed every render via no-deps effect). Auto-submit effect watches `[endingTurn, recorder.state, recorder.audioBlob, submittingTurn]` and calls `submitTurnRef.current()` when all four align. Ref keeps closure fresh without the write-during-render anti-pattern the `react-hooks/refs` lint rule flags.
-- **Results nested nav:** `activeTabIndex` (0 = Overview, 1..N = per-turn) — single source of truth. `FolderTabs` strip + circular `SideNavButton` chevrons on desktop (`sticky top-[50vh] -translate-y-1/2` + `items-start` on the gutter columns, same load-bearing pattern as SessionDetail). Mobile drops the chevrons and tabs strip, surfaces a "Overview · 1 of N" indicator + a Prev/Next FlowHoverButton row, plus horizontal-swipe handlers on the `<section>`. `useMorphTransition` still drives the Interview → Results sweep; tab changes within Results use `anim-crossfade` keyed on `activeTabIndex`.
-- **Results data flow:** Final-turn POST refetches the full session and stores it as `sessionDetail`. The Overview / Turn panels consume `effectiveTurns = sessionDetail?.turns ?? turnResults.map(replayToTurnDetail)` so the page renders even when the refetch fails — synthetic `TurnDetail`s carry the same local transcript and feedback, just no canonical server averages. The Practice-only Video and Improve-next cards still consume the local `ReplayTurnResult` (`replayUrl`, `audioReplayUrl`, `cvSummary`, `analyzerDiagnostics`) via the `replayFor()` extractor.
-- **Why one component:** Interview + Results share state (`sessionId`, `turnResults`, `recorder`, `analyzer`); the transition is an animated sweep that shouldn't be interruptible by browser back. Splitting would force a global store for zero user-visible benefit.
-
-### `SessionDetail.tsx` is a folder-tab case file
-
-`/sessions/:id` is a single dark-beige outer card with folder-shaped tabs on top — Overview, Turn 1, Turn 2 (orchestrator iterates `session.turns.length + 1`). TopBar's History link covers the back affordance; per-session metadata lives in the Overview panel.
-
-State is just `activeTabIndex`. Reset on `sessionId` change uses the **React-19 "compare prop to tracked state during render"** pattern (`useState` + render-time comparison), not a `useEffect`-driven `setState` — the linter rejects the latter under `react-hooks/set-state-in-effect`.
-
-**Component composition** (all under `frontend/src/components/session-detail/`):
-
-- **`FolderTabs.tsx`** — tabs strip + circular side-nav buttons (exports `SideNavButton`). Tabs are `<button>`s with `rounded-t-lg`, `border-b-0`, `-mb-px` overlap onto card so there's no seam. Active = `bg-accent text-accent-fg`; inactive = `bg-tertiary-200 text-text-muted` (same fill as card body). Standard ARIA tabs with `←`/`→`/`Home`/`End` keyboard nav.
-- **`OverviewPanel.tsx`** — "case file" identity left, per-dimension averages right. 1-col below 900px, 2-col above. Six `ScoreTile`s in `grid-cols-2 min-[900px]:grid-cols-3`. Conditionally renders `summary.description`, `headlines`, `role_signals`, `sample_question_themes` — empty-array sections omitted entirely.
-- **`TurnPanel.tsx`** — four inner cards as two independent 2-column row grids (Q+A | Scores+Takeaway+QuickWins, then What Worked | Improvement Moments). Single-column stack <900px. A single `grid-rows-2 auto-rows-fr` was tried and rejected: forced both rows to match the taller one, leaving huge gutters under the short row. Two independent row grids let each row size to its own content while equalizing within a row via `items-stretch` + `InnerCard`'s `h-full`.
-- **`_helpers.ts`** — `SCORE_KEYS`, `SCORE_COLOR_MAP`, `num()`, `turnAverage()`. Color map is the single source of truth for per-dimension chart hues; mirrors `History.tsx:DIMENSIONS` (structure → chart-1 teal, problem_solving → chart-2 terracotta, impact → chart-3 forest, initiative → chart-4 plum, depth → chart-5 amber, delivery → chart-6 indigo).
-
-**Mobile (<900px):** folder tabs and side buttons hide (`hidden min-[900px]:flex`). Small "Overview · 1 of 3" indicator replaces the tab strip. Nav comes from horizontal swipe (`touchstart`/`touchend` thresholded `|dx| > 60 && |dx| > 1.5·|dy|` so vertical scrolls don't accidentally page) + Previous/Next `FlowHoverButton` row (Prev = `variant="dark"`, Next = `variant="light"`, absent direction → invisible `flex-1` spacer).
-
-**Issue-type chips** render `formatIssueType(raw)` — generic snake_case → Title Case. Don't hard-code a switch for the 10 canonical types; generic formatter handles unknowns gracefully.
+- **`Practice.tsx`** is one mount hiding a two-branch state machine — Interview (`!isDone && currentQ`, chrome-free full-viewport grid: `QuestionColumn` + `CameraColumn` + optional `TranscriptColumn` over a sticky `PracticeFooter`) and Results (`isDone`, folder-tab shell mirroring SessionDetail). Interview → Results uses a `useMorphTransition()` sweep; one component because both branches share `sessionId` / `turnResults` / `recorder` / `analyzer`. Camera box locked to `w-[45vw]` on desktop so it never resizes when the transcript toggles. Mid-session quit does NOT burn a daily slot. Final-turn POST refetches the session as `sessionDetail`; panels consume `effectiveTurns = sessionDetail?.turns ?? turnResults.map(replayToTurnDetail)` so the page renders even when the refetch fails.
+- **`SessionDetail.tsx`** (`/sessions/:id`): folder-tab case file (Overview, Turn 1, Turn 2 — iterates `session.turns.length + 1`). Tab reset on `sessionId` change uses the **React-19 "compare prop to tracked state during render"** pattern, not a `useEffect` `setState`. Components under `frontend/src/components/session-detail/`; `_helpers.ts:SCORE_COLOR_MAP` mirrors `History.tsx:DIMENSIONS`. Issue-type chips render `formatIssueType(raw)` (generic snake_case → Title Case — don't hard-code a switch for the 10 types).
 
 ## Verification Checklist
 
-- [ ] **Auth**: no JWT → 401, invalid JWT → 401, valid JWT → 200
-- [ ] **Onboarding**: upload real PDF → `users.resume_text` is non-empty and coherent
-- [ ] **Evaluator contract**: canned transcript with 3 "um"s → `filler_word_count == 3`, all scores are ints 0–10
-- [ ] **E2E**: log in → onboard → start session (company: "Google") → complete 5 turns aloud → summary shows 5 rows with non-zero scores → refresh session list → session appears
-- [ ] **Failure mode**: kill ElevenLabs API key mid-session → clear error shown, not blank screen
+- [ ] **Auth**: no/invalid JWT → 401, valid JWT → 200
+- [ ] **Onboarding**: upload real PDF → `users.resume_text` non-empty and coherent
+- [ ] **Evaluator contract**: canned transcript with 3 "um"s → `filler_word_count == 3`, all scores ints 0–10
+- [ ] **E2E**: log in → onboard → start session ("Google") → complete turns aloud → summary shows non-zero scores → refresh → session appears
+- [ ] **Failure mode**: kill ElevenLabs key mid-session → clear error, not blank screen
