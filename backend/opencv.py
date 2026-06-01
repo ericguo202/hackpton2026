@@ -1004,7 +1004,10 @@ class InterviewAnalyzer:
                     "severity": posture_severity,
                 }
             )
-        if smile_score < 40 and mouth_open_ratio < .15:
+        # Keep parity with the browser analyzer: reserve "low energy" for
+        # clearly flat frames. The old mouth threshold (.15) was so loose that
+        # this effectively meant `smile_score < 40`, flagging neutral faces.
+        if expression_score < 32 and smile_score < 20 and mouth_open_ratio < .028:
             issues.append(
                 {
                     "key": "low_energy",

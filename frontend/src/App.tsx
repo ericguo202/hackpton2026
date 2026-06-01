@@ -12,6 +12,7 @@ import { useMe } from './hooks/useMe';
 import Hero from './pages/Hero';
 import History from './pages/History';
 import Home from './pages/Home';
+import Calibration from './pages/Calibration';
 import Personalize from './pages/Personalize';
 import Practice from './pages/Practice';
 import SessionDetail from './pages/SessionDetail';
@@ -71,6 +72,7 @@ function App() {
         <Route element={<RedirectIfOnboarded />}>
           <Route path="/onboarding" element={<OnboardingForm />} />
         </Route>
+        <Route path="/calibrate" element={<Calibration />} />
         <Route element={<RequireOnboarded />}>
           <Route path="/practice" element={<Practice />} />
           <Route path="/history" element={<History />} />
