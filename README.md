@@ -75,6 +75,15 @@ The post-session summary surfaces the same role values and question themes
 as bullets in the Company brief card, so the candidate can see what shaped
 the questions they were just asked.
 
+To stop the same opening question recurring across back-to-back sessions,
+Logos caches each candidate's three most recent opening questions and feeds
+them back into the generator as an explicit avoid-list, so the next question
+has to take a distinct angle. The cache is scoped to the candidate (not the
+company), since opening questions track role and seniority more than which
+company you're interviewing at, and it resets whenever you change your target
+role, industry, or experience level — the point at which older questions stop
+being relevant.
+
 ### Six-dimension rubric with per-turn coaching
 
 Every answer is scored 0–10 on six dimensions: **Structure, Problem Solving,
