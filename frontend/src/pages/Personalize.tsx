@@ -23,12 +23,15 @@ import { UserButton, useUser } from '@clerk/react';
 import { FileText, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
+import IndustryValidationField from '../components/IndustryValidationField';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
+import RoleValidationField from '../components/RoleValidationField';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
 import type { ExperienceLevel, MeResponse } from '../types/user';
+import type { IndustryValidation, RoleValidation } from '../types/validation';
 
 const EXPERIENCE_LEVELS: ExperienceLevel[] = [
   'internship',
@@ -118,13 +121,31 @@ function PersonalizeForm({ me, refetch }: FormProps) {
   const [resumeMode, setResumeMode] = useState<'pdf' | 'text'>('text');
   const [resumeText, setResumeText] = useState(me.resume_text ?? '');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [industryValidation, setIndustryValidation] =
+    useState<IndustryValidation | null>(null);
+  const [confirmedCustomIndustry, setConfirmedCustomIndustry] = useState(false);
+  const [roleValidation, setRoleValidation] = useState<RoleValidation | null>(null);
+  const [confirmedCustomRole, setConfirmedCustomRole] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit =
+  const industryCanSubmit =
     industry.trim().length > 0 &&
+    (industryValidation?.status === 'valid' ||
+      industryValidation?.status === 'unavailable' ||
+      (industryValidation?.status === 'needs_confirmation' &&
+        confirmedCustomIndustry));
+
+  const roleCanSubmit =
     targetRole.trim().length > 0 &&
+    (roleValidation?.status === 'valid' ||
+      roleValidation?.status === 'unavailable' ||
+      (roleValidation?.status === 'needs_confirmation' && confirmedCustomRole));
+
+  const canSubmit =
+    industryCanSubmit &&
+    roleCanSubmit &&
     shortBio.trim().length > 0;
 
   function chooseResumeFile(file: File | null) {
@@ -252,13 +273,14 @@ function PersonalizeForm({ me, refetch }: FormProps) {
               label="Industry"
               hint="e.g. software, finance, biotech"
             >
-              <input
+              <IndustryValidationField
                 id="personalize-industry"
-                type="text"
-                maxLength={200}
                 value={industry}
-                onChange={(e) => setIndustry(e.target.value)}
-                className={inputClass}
+                onChange={setIndustry}
+                confirmedCustom={confirmedCustomIndustry}
+                onConfirmedCustomChange={setConfirmedCustomIndustry}
+                onValidationChange={setIndustryValidation}
+                inputClassName={inputClass}
               />
             </Field>
 
@@ -267,13 +289,14 @@ function PersonalizeForm({ me, refetch }: FormProps) {
               label="Target role"
               hint="e.g. backend engineer, product manager"
             >
-              <input
+              <RoleValidationField
                 id="personalize-target-role"
-                type="text"
-                maxLength={200}
                 value={targetRole}
-                onChange={(e) => setTargetRole(e.target.value)}
-                className={inputClass}
+                onChange={setTargetRole}
+                confirmedCustom={confirmedCustomRole}
+                onConfirmedCustomChange={setConfirmedCustomRole}
+                onValidationChange={setRoleValidation}
+                inputClassName={inputClass}
               />
             </Field>
 

@@ -24,6 +24,9 @@ import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
 import type { ExperienceLevel, MeResponse } from '../types/user';
+import type { IndustryValidation, RoleValidation } from '../types/validation';
+import IndustryValidationField from './IndustryValidationField';
+import RoleValidationField from './RoleValidationField';
 import { FlowHoverButton } from './ui/flow-hover-button';
 import { Progress } from './ui/progress';
 import TopBar from './TopBar';
@@ -80,6 +83,11 @@ export default function OnboardingForm() {
   const [resumeMode, setResumeMode] = useState<'pdf' | 'text'>('pdf');
   const [resumeText, setResumeText] = useState('');
   const [skipResume, setSkipResume] = useState(false);
+  const [industryValidation, setIndustryValidation] =
+    useState<IndustryValidation | null>(null);
+  const [confirmedCustomIndustry, setConfirmedCustomIndustry] = useState(false);
+  const [roleValidation, setRoleValidation] = useState<RoleValidation | null>(null);
+  const [confirmedCustomRole, setConfirmedCustomRole] = useState(false);
 
   const [step, setStep] = useState(0);
   const [stepKey, setStepKey] = useState(0);
@@ -87,9 +95,22 @@ export default function OnboardingForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const industryCanContinue =
+    industry.trim().length > 0 &&
+    (industryValidation?.status === 'valid' ||
+      industryValidation?.status === 'unavailable' ||
+      (industryValidation?.status === 'needs_confirmation' &&
+        confirmedCustomIndustry));
+
+  const roleCanContinue =
+    targetRole.trim().length > 0 &&
+    (roleValidation?.status === 'valid' ||
+      roleValidation?.status === 'unavailable' ||
+      (roleValidation?.status === 'needs_confirmation' && confirmedCustomRole));
+
   const validators: Array<() => boolean> = [
-    () => industry.trim().length > 0,
-    () => targetRole.trim().length > 0,
+    () => industryCanContinue,
+    () => roleCanContinue,
     () => true,
     () => shortBio.trim().length > 0,
     () =>
@@ -101,12 +122,17 @@ export default function OnboardingForm() {
 
   const progressPct = ((step + 1) / TOTAL_STEPS) * 100;
 
-  function advance() {
-    if (!canAdvance) return;
+  function advanceToNext() {
+    if (step >= TOTAL_STEPS - 1) return;
     setDirection('forward');
     setStep((s) => s + 1);
     setStepKey((k) => k + 1);
     setError(null);
+  }
+
+  function advance() {
+    if (!canAdvance) return;
+    advanceToNext();
   }
 
   function retreat() {
@@ -201,28 +227,30 @@ export default function OnboardingForm() {
           )}
 
           {step === 0 && (
-            <input
-              type="text"
+            <IndustryValidationField
               autoFocus
-              maxLength={200}
               value={industry}
-              onChange={(e) => setIndustry(e.target.value)}
+              onChange={setIndustry}
+              confirmedCustom={confirmedCustomIndustry}
+              onConfirmedCustomChange={setConfirmedCustomIndustry}
+              onValidationChange={setIndustryValidation}
+              onAcceptedSuggestion={advanceToNext}
               onKeyDown={handleEnterAdvance}
-              placeholder="Industry"
-              className={inputClass}
+              inputClassName={inputClass}
             />
           )}
 
           {step === 1 && (
-            <input
-              type="text"
+            <RoleValidationField
               autoFocus
-              maxLength={200}
               value={targetRole}
-              onChange={(e) => setTargetRole(e.target.value)}
+              onChange={setTargetRole}
+              confirmedCustom={confirmedCustomRole}
+              onConfirmedCustomChange={setConfirmedCustomRole}
+              onValidationChange={setRoleValidation}
+              onAcceptedSuggestion={advanceToNext}
               onKeyDown={handleEnterAdvance}
-              placeholder="Target role"
-              className={inputClass}
+              inputClassName={inputClass}
             />
           )}
 
