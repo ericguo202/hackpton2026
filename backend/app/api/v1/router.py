@@ -40,7 +40,7 @@ api_router.include_router(
 # Protected. POST /api/v1/sessions starts a new mock interview.
 api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
 
-# Protected. GET /api/v1/validation/{roles,companies} validates setup inputs.
+# Protected. GET /api/v1/validation/{roles,industries} validates profile inputs.
 api_router.include_router(
     validation.router, prefix="/validation", tags=["validation"]
 )

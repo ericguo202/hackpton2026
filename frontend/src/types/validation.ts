@@ -37,22 +37,3 @@ export type IndustryValidation = {
   alternatives: IndustryAlternative[];
   message: string | null;
 };
-
-export type CompanyAlternative = {
-  name: string;
-  domain: string | null;
-  brand_id: string | null;
-  confidence: number;
-};
-
-export type CompanyValidation = {
-  status: ValidationStatus;
-  user_input: string;
-  canonical_name: string | null;
-  domain: string | null;
-  brand_id: string | null;
-  source: string | null;
-  confidence: number;
-  alternatives: CompanyAlternative[];
-  message: string | null;
-};

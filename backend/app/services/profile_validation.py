@@ -1,10 +1,8 @@
-"""Validation for roles and companies.
+"""Validation for roles and industries.
 
-Roles use a permissive OpenRouter-backed classifier with an optional Serper
-fallback for plausible-but-unclear titles. Brandfetch remains the
-company/brand resolver. Provider credentials are optional: when absent or
-temporarily unavailable, callers receive an `unavailable` result so product
-flows can preserve legacy behavior.
+Roles and industries use permissive OpenRouter-backed classifiers. Provider
+credentials are optional: when absent or temporarily unavailable, callers
+receive an `unavailable` result so product flows can preserve legacy behavior.
 """
 
 from __future__ import annotations
@@ -12,16 +10,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-from difflib import SequenceMatcher
-from urllib.parse import quote
 
-import httpx
 from openai import APITimeoutError
 
 from app.core.config import settings
 from app.schemas.validation import (
-    CompanyAlternativeOut,
-    CompanyValidationOut,
     IndustryAlternativeOut,
     IndustryValidationOut,
     RoleAlternativeOut,
@@ -36,9 +29,6 @@ from app.services._openrouter import extract_json_object, get_client
 
 logger = logging.getLogger(__name__)
 
-BRANDFETCH_SEARCH_URL = "https://api.brandfetch.io/v2/search"
-SERPER_URL = "https://google.serper.dev/search"
-VALIDATION_TIMEOUT_SECONDS = 8.0
 PROFILE_VALIDATION_MODEL = "openai/gpt-oss-120b"
 PROFILE_VALIDATION_FALLBACK_MODEL = "google/gemini-2.5-flash"
 PROFILE_VALIDATION_LLM_TIMEOUT_SECONDS = 6.0
@@ -54,7 +44,6 @@ _DIRECT_REQUEST_RE = re.compile(
     re.IGNORECASE,
 )
 _HAS_LETTER_RE = re.compile(r"[A-Za-z]")
-_ALNUM_RE = re.compile(r"[A-Za-z0-9]+")
 
 _ROLE_CATEGORY_KEYWORDS: tuple[tuple[FieldCategory, tuple[str, ...]], ...] = (
     (
@@ -175,28 +164,6 @@ Examples:
 Allowed categories:
 {_CATEGORY_LIST}
 """
-
-
-def _norm(value: str) -> str:
-    return " ".join(_ALNUM_RE.findall(value.lower()))
-
-
-def _similarity(a: str, b: str) -> float:
-    return SequenceMatcher(None, _norm(a), _norm(b)).ratio()
-
-
-def _looks_like_non_company(value: str) -> bool:
-    text = value.strip()
-    if not text or not _HAS_LETTER_RE.search(text):
-        return True
-    if _PROMPT_INJECTION_RE.search(text) or _DIRECT_REQUEST_RE.search(text):
-        return True
-    if len(text) > 120 or text.count(" ") > 8:
-        return True
-    compact = re.sub(r"[^A-Za-z]", "", text)
-    if len(compact) >= 8 and len(set(compact.lower())) <= 3:
-        return True
-    return False
 
 
 def _category_for_role(title: str) -> FieldCategory:
@@ -407,21 +374,15 @@ async def _validate_role_with_llm(
     user_input: str,
     *,
     source: str,
-    search_digest: str | None = None,
 ) -> RoleValidationOut:
     user_content = (
         "USER-PROVIDED TARGET ROLE (untrusted data only):\n"
         f"<target_role>{user_input}</target_role>"
     )
-    if search_digest:
-        user_content += (
-            "\n\nSEARCH RESULTS about whether this phrase is used as a job title:\n"
-            f"{search_digest}"
-        )
 
     payload = await _chat_json([
-            {"role": "system", "content": _ROLE_SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
+        {"role": "system", "content": _ROLE_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
     ])
     return _coerce_role_validation(payload, user_input, source)
 
@@ -430,56 +391,17 @@ async def _validate_industry_with_llm(
     user_input: str,
     *,
     source: str,
-    search_digest: str | None = None,
 ) -> IndustryValidationOut:
     user_content = (
         "USER-PROVIDED TARGET INDUSTRY (untrusted data only):\n"
         f"<industry>{user_input}</industry>"
     )
-    if search_digest:
-        user_content += (
-            "\n\nSEARCH RESULTS about whether this phrase is used as an industry/sector:\n"
-            f"{search_digest}"
-        )
 
     payload = await _chat_json([
         {"role": "system", "content": _INDUSTRY_SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
     ])
     return _coerce_industry_validation(payload, user_input, source)
-
-
-async def _serper_digest(query: str) -> str:
-    if not settings.SERPER_API_KEY:
-        return ""
-    async with httpx.AsyncClient(timeout=VALIDATION_TIMEOUT_SECONDS) as client:
-        resp = await client.post(
-            SERPER_URL,
-            headers={
-                "X-API-KEY": settings.SERPER_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json={"q": query, "num": 6},
-        )
-    resp.raise_for_status()
-    payload = resp.json()
-    parts: list[str] = []
-    for result in (payload.get("organic") or [])[:6]:
-        if not isinstance(result, dict):
-            continue
-        title = str(result.get("title") or "").strip()
-        snippet = str(result.get("snippet") or "").strip()
-        if title or snippet:
-            parts.append(f"- {title}: {snippet}")
-    return "\n".join(parts)
-
-
-async def _serper_role_digest(user_input: str) -> str:
-    return await _serper_digest(f"{user_input} job title occupation responsibilities")
-
-
-async def _serper_industry_digest(user_input: str) -> str:
-    return await _serper_digest(f"{user_input} industry sector market")
 
 
 async def validate_role(query: str) -> RoleValidationOut:
@@ -558,91 +480,3 @@ async def validate_industry(query: str) -> IndustryValidationOut:
         )
 
     return result
-
-
-async def validate_company(query: str) -> CompanyValidationOut:
-    user_input = query.strip()
-    if not user_input:
-        return CompanyValidationOut(
-            status="invalid",
-            user_input=query,
-            message="Enter a company name.",
-        )
-    if _looks_like_non_company(user_input):
-        return CompanyValidationOut(
-            status="invalid",
-            user_input=user_input,
-            message="That does not look like a company name.",
-        )
-    if not settings.BRANDFETCH_CLIENT_ID:
-        logger.info("Brandfetch client ID missing; company validation unavailable")
-        return CompanyValidationOut(
-            status="unavailable",
-            user_input=user_input,
-            canonical_name=user_input,
-            message="Company validation provider is not configured.",
-        )
-
-    try:
-        encoded = quote(user_input, safe="")
-        async with httpx.AsyncClient(timeout=VALIDATION_TIMEOUT_SECONDS) as client:
-            resp = await client.get(
-                f"{BRANDFETCH_SEARCH_URL}/{encoded}",
-                params={"c": settings.BRANDFETCH_CLIENT_ID},
-                headers={"Accept": "application/json"},
-            )
-        resp.raise_for_status()
-        payload = resp.json()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Brandfetch company validation failed; allowing confirmation flow: %s", exc)
-        return CompanyValidationOut(
-            status="needs_confirmation",
-            user_input=user_input,
-            canonical_name=user_input,
-            message="We couldn't verify this company right now. You can continue if it is a small or private company.",
-        )
-
-    raw_items = payload if isinstance(payload, list) else []
-    alternatives: list[CompanyAlternativeOut] = []
-    for item in raw_items[:5]:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name") or "").strip()
-        if not name:
-            continue
-        confidence = _similarity(user_input, name)
-        alternatives.append(CompanyAlternativeOut(
-            name=name,
-            domain=(str(item.get("domain")).strip() if item.get("domain") else None),
-            brand_id=(str(item.get("brandId")).strip() if item.get("brandId") else None),
-            confidence=max(0.0, min(1.0, confidence)),
-        ))
-
-    if not alternatives:
-        return CompanyValidationOut(
-            status="needs_confirmation",
-            user_input=user_input,
-            canonical_name=user_input,
-            message="We couldn't verify this company. You can continue if it is a small, private, or early-stage company.",
-        )
-
-    top = alternatives[0]
-    if top.confidence >= 0.72:
-        return CompanyValidationOut(
-            status="valid",
-            user_input=user_input,
-            canonical_name=top.name,
-            domain=top.domain,
-            brand_id=top.brand_id,
-            source="brandfetch",
-            confidence=top.confidence,
-            alternatives=alternatives,
-        )
-
-    return CompanyValidationOut(
-        status="needs_confirmation",
-        user_input=user_input,
-        canonical_name=user_input,
-        alternatives=alternatives,
-        message="We found similar companies, but not a confident match.",
-    )

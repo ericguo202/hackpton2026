@@ -1,4 +1,4 @@
-"""Wire models for deterministic role/company validation."""
+"""Wire models for role and industry validation."""
 
 from __future__ import annotations
 
@@ -43,23 +43,4 @@ class IndustryValidationOut(BaseModel):
     source: str | None = None
     confidence: float = 0.0
     alternatives: list[IndustryAlternativeOut] = []
-    message: str | None = None
-
-
-class CompanyAlternativeOut(BaseModel):
-    name: str
-    domain: str | None = None
-    brand_id: str | None = None
-    confidence: float
-
-
-class CompanyValidationOut(BaseModel):
-    status: ValidationStatus
-    user_input: str
-    canonical_name: str | None = None
-    domain: str | None = None
-    brand_id: str | None = None
-    source: str | None = None
-    confidence: float = 0.0
-    alternatives: list[CompanyAlternativeOut] = []
     message: str | None = None
