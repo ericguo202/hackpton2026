@@ -104,6 +104,14 @@ async def _persist_session_and_turn(
         is_followup=False,
     )
     db.add(turn)
+
+    # Roll this opening question into the avoid-list, newest-first, capped
+    # at 3. Reassigned (not mutated in place) so SQLAlchemy dirty-tracking
+    # picks it up; rides the same commit as the session + turn 1 INSERT.
+    user.recent_opening_questions = (
+        [opening_q] + (user.recent_opening_questions or [])
+    )[:3]
+
     await db.commit()
     await db.refresh(session)
     return session.id
@@ -178,7 +186,13 @@ async def create_session(
         "Session research complete: company=%r job_title=%r category=%r",
         body.company, body.job_title, brief.category,
     )
-    opening_q = await generate_opening_question(user, brief, body.job_title)
+    # Pass the candidate's recent opening questions (already loaded on the
+    # user row by get_current_user_db — no extra query) as an avoid-list so
+    # the generator doesn't repeat near-identical questions across sessions.
+    opening_q = await generate_opening_question(
+        user, brief, body.job_title,
+        recent_questions=user.recent_opening_questions,
+    )
 
     # Generate the session UUID up front so the voice can be resolved
     # before the row hits the DB. This lets TTS and the INSERT run in

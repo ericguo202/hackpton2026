@@ -119,6 +119,26 @@ def _company_digest(brief: CompanyBrief) -> str:
     return "\n".join(sections)
 
 
+def _recent_questions_block(recent_questions: list[str] | None) -> str:
+    """Render an avoid-list of the candidate's recent opening questions.
+
+    Returns "" when the list is empty (first session, or just after a
+    profile change reset the cache) — same empty-omission discipline as
+    `_company_digest` / `_profile_digest`. Rendering an empty "(none)"
+    section would be noise the model has to parse for no benefit, and the
+    legacy / first-session prompt stays unchanged.
+    """
+    if not recent_questions:
+        return ""
+    listed = "\n".join(f"  - {q}" for q in recent_questions)
+    return (
+        "AVOID REPETITION — you have recently asked this candidate these "
+        "opening questions. Generate a DISTINCT question: a different "
+        "scenario, theme, and phrasing. Do NOT rephrase, paraphrase, or "
+        f"echo any of these:\n{listed}"
+    )
+
+
 def _strip_wrapping_quotes(s: str) -> str:
     s = s.strip()
     if len(s) >= 2 and s[0] in {'"', "'"} and s[-1] == s[0]:
@@ -146,8 +166,16 @@ async def generate_opening_question(
     user: User,
     brief: CompanyBrief,
     job_title: str,
+    recent_questions: list[str] | None = None,
 ) -> str:
-    """Return a single opening interview question — standard or company-flavored."""
+    """Return a single opening interview question — standard or company-flavored.
+
+    `recent_questions` is the candidate's most-recent opening questions
+    (newest-first, capped at 3 by the caller). When non-empty it's surfaced
+    as an explicit avoid-list so the model stops converging on the same
+    attractor question across sessions. None / empty (first session) leaves
+    the prompt byte-identical to the pre-feature behavior.
+    """
     client = get_client()
 
     system_prompt = build_field_system_prompt(
@@ -156,10 +184,13 @@ async def generate_opening_question(
     )
 
     style = random.choice([_STYLE_STANDARD, _STYLE_COMPANY])
+    avoid_block = _recent_questions_block(recent_questions)
+    avoid_section = f"{avoid_block}\n\n" if avoid_block else ""
     prompt = (
         f"{_profile_digest(user, job_title)}\n\n"
         f"{_company_digest(brief)}\n\n"
         f"{_RESEARCH_USAGE_INSTRUCTIONS}\n\n"
+        f"{avoid_section}"
         f"{style}\n\n"
         "Now write the opening question."
     )
