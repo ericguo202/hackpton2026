@@ -72,6 +72,9 @@ export default function Personalize() {
             <TopBarNavLink to="/personalize">
               Personalize
             </TopBarNavLink>
+            <TopBarNavLink to="/calibrate">
+              Calibration
+            </TopBarNavLink>
           </>
         }
         rightSlot={<UserButton />}

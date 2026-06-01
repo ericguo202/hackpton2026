@@ -11,9 +11,16 @@
  * multipart field. Numerical parity with the Python version matters
  * because the evaluator prompt was tuned against that output.
  *
- * Tunable defaults are frozen constants (see `_reset_selected_tunable`
- * in opencv.py L442); there is no runtime tuning in the browser.
+ * The constants below remain the no-calibration fallback. When the user has
+ * completed the browser-local delivery calibration flow, a bounded profile
+ * adjusts camera-relative and face-geometry baselines without retaining raw
+ * landmarks or changing the summary contract consumed by the backend.
  */
+
+import {
+  FACE_CALIBRATION_VERSION,
+  type FaceCalibrationProfile,
+} from './faceCalibration';
 
 export type Point = readonly [number, number];
 
@@ -82,8 +89,27 @@ const POSTURE_HEAD_ALIGNMENT_WEIGHT = 0.30;
 const POSTURE_VERTICAL_WEIGHT = 0.25;
 const POSTURE_MIDPOINT_WEIGHT = 0.20;
 const POSTURE_TILT_WEIGHT = 0.25;
-const LOW_ENERGY_SMILE_MIN = 40;
-const LOW_ENERGY_MOUTH_OPEN_MAX = 0.15;
+// "Low energy" should mean clearly flat, not merely neutral. The old rule
+// effectively reduced to `smileScore < 40` because normal speaking-mouth
+// ratios are almost always below 0.15, which flagged calm candidates through
+// nearly an entire answer. Require all three weak-expression signals instead.
+const LOW_ENERGY_EXPRESSION_MAX = 32;
+const LOW_ENERGY_SMILE_MAX = 20;
+const LOW_ENERGY_MOUTH_OPEN_MAX = 0.028;
+
+export const FACE_CALIBRATION_MIN_SAMPLES = 36;
+
+type CalibrationFeatures = {
+  leftGazeRatio: number;
+  rightGazeRatio: number;
+  headYawOffset: number;
+  midpointOffset: number;
+  verticalPosture: number;
+  headTiltDegrees: number;
+  smileRatio: number;
+  eyeOpenRatio: number;
+  browRelaxRatio: number;
+};
 
 // ── small helpers ─────────────────────────────────────────────────────────────
 export function clamp(value: number, minimum = 0, maximum = 100): number {
@@ -128,6 +154,147 @@ function safeRatio(num: number, den: number): number {
   return den ? num / den : 0;
 }
 
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const midpoint = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[midpoint - 1] + sorted[midpoint]) / 2
+    : sorted[midpoint];
+}
+
+function featureMedian(
+  features: CalibrationFeatures[],
+  key: keyof CalibrationFeatures,
+): number {
+  return median(features.map((feature) => feature[key]));
+}
+
+function extractCalibrationFeatures(points: Point[]): CalibrationFeatures {
+  const leftOuter = points[LEFT_EYE_OUTER];
+  const leftInner = points[LEFT_EYE_INNER];
+  const rightInner = points[RIGHT_EYE_INNER];
+  const rightOuter = points[RIGHT_EYE_OUTER];
+  const leftIris = meanPoint(points, LEFT_IRIS);
+  const rightIris = meanPoint(points, RIGHT_IRIS);
+  const noseTip = points[NOSE_TIP];
+  const faceLeft = points[FACE_LEFT];
+  const faceRight = points[FACE_RIGHT];
+  const forehead = points[FOREHEAD];
+  const chin = points[CHIN];
+  const mouthLeft = points[MOUTH_LEFT];
+  const mouthRight = points[MOUTH_RIGHT];
+  const leftBrow = points[LEFT_BROW];
+  const rightBrow = points[RIGHT_BROW];
+  const leftEyeTop = points[LEFT_EYE_TOP];
+  const leftEyeBottom = points[LEFT_EYE_BOTTOM];
+  const rightEyeTop = points[RIGHT_EYE_TOP];
+  const rightEyeBottom = points[RIGHT_EYE_BOTTOM];
+
+  const faceWidth = distance(faceLeft, faceRight);
+  const faceHeight = distance(forehead, chin);
+  const faceMidX = (faceLeft[0] + faceRight[0]) / 2;
+  const eyeMidX = (leftIris[0] + rightIris[0]) / 2;
+  const leftEyeOpen = distance(leftEyeTop, leftEyeBottom);
+  const rightEyeOpen = distance(rightEyeTop, rightEyeBottom);
+
+  return {
+    leftGazeRatio: safeRatio(
+      leftIris[0] - leftOuter[0],
+      Math.max(leftInner[0] - leftOuter[0], 1),
+    ),
+    rightGazeRatio: Math.abs(
+      safeRatio(
+        rightIris[0] - rightInner[0],
+        Math.min(rightOuter[0] - rightInner[0], -1),
+      ),
+    ),
+    headYawOffset:
+      (noseTip[0] - faceMidX) / Math.max(faceWidth * 0.5, 1),
+    midpointOffset:
+      (eyeMidX - faceMidX) / Math.max(faceWidth * 0.5, 1),
+    verticalPosture:
+      (noseTip[1] - (forehead[1] + chin[1]) / 2) /
+      Math.max(faceHeight * 0.5, 1),
+    headTiltDegrees:
+      (Math.atan2(
+        rightOuter[1] - leftOuter[1],
+        Math.abs(rightOuter[0] - leftOuter[0]),
+      ) *
+        180) /
+      Math.PI,
+    smileRatio: safeRatio(distance(mouthLeft, mouthRight), Math.max(faceWidth, 1)),
+    eyeOpenRatio: safeRatio(
+      (leftEyeOpen + rightEyeOpen) / 2,
+      Math.max(faceWidth, 1),
+    ),
+    browRelaxRatio: safeRatio(
+      distance(leftBrow, rightBrow),
+      Math.max(faceWidth, 1),
+    ),
+  };
+}
+
+/**
+ * Reduce a short neutral-camera capture to a bounded browser-local profile.
+ *
+ * Bounded adjustments are deliberate: calibration accounts for camera angle
+ * and natural face geometry, but cannot normalize a sustained looked-away or
+ * tilted pose into a perfect score.
+ */
+export function buildFaceCalibration(
+  samples: Point[][],
+): FaceCalibrationProfile {
+  if (samples.length < FACE_CALIBRATION_MIN_SAMPLES) {
+    throw new Error(
+      `Need at least ${FACE_CALIBRATION_MIN_SAMPLES} visible-face samples.`,
+    );
+  }
+
+  const features = samples.map(extractCalibrationFeatures);
+  return {
+    version: FACE_CALIBRATION_VERSION,
+    calibratedAt: new Date().toISOString(),
+    sampleCount: samples.length,
+    leftGazeTarget: clamp(
+      featureMedian(features, 'leftGazeRatio'),
+      EYE_CENTER_TARGET - 0.12,
+      EYE_CENTER_TARGET + 0.12,
+    ),
+    rightGazeTarget: clamp(
+      featureMedian(features, 'rightGazeRatio'),
+      EYE_CENTER_TARGET - 0.12,
+      EYE_CENTER_TARGET + 0.12,
+    ),
+    headYawTarget: clamp(featureMedian(features, 'headYawOffset'), -0.16, 0.16),
+    midpointTarget: clamp(featureMedian(features, 'midpointOffset'), -0.12, 0.12),
+    verticalPostureTarget: clamp(
+      featureMedian(features, 'verticalPosture'),
+      -0.18,
+      0.18,
+    ),
+    headTiltTargetDegrees: clamp(
+      featureMedian(features, 'headTiltDegrees'),
+      -6,
+      6,
+    ),
+    smileBaseline: clamp(
+      featureMedian(features, 'smileRatio') - 52 / SMILE_GAIN,
+      SMILE_BASELINE - 0.045,
+      SMILE_BASELINE + 0.045,
+    ),
+    opennessBaseline: clamp(
+      featureMedian(features, 'eyeOpenRatio') - 58 / OPENNESS_GAIN,
+      OPENNESS_BASELINE - 0.015,
+      OPENNESS_BASELINE + 0.015,
+    ),
+    browBaseline: clamp(
+      featureMedian(features, 'browRelaxRatio') - 58 / BROW_GAIN,
+      BROW_BASELINE - 0.05,
+      BROW_BASELINE + 0.05,
+    ),
+  };
+}
+
 // ── scoring ───────────────────────────────────────────────────────────────────
 export interface EyeContactResult {
   score: number;
@@ -145,7 +312,10 @@ export interface EyeContactResult {
  * The returned auxiliary metrics are what `current_issues` reads from
  * `last_metrics` on the Python side — we expose them directly instead.
  */
-export function scoreEyeContact(points: Point[]): EyeContactResult {
+export function scoreEyeContact(
+  points: Point[],
+  calibration: FaceCalibrationProfile | null = null,
+): EyeContactResult {
   const leftOuter = points[LEFT_EYE_OUTER];
   const leftInner = points[LEFT_EYE_INNER];
   const rightInner = points[RIGHT_EYE_INNER];
@@ -162,13 +332,15 @@ export function scoreEyeContact(points: Point[]): EyeContactResult {
   const rightEyeWidth = distance(rightOuter, rightInner);
   const faceWidth = distance(faceLeft, faceRight);
   const faceHeight = distance(forehead, chin);
-  const headTiltDegrees = Math.abs(
+  const rawHeadTiltDegrees =
     (Math.atan2(
-      Math.abs(rightOuter[1] - leftOuter[1]),
+      rightOuter[1] - leftOuter[1],
       Math.abs(rightOuter[0] - leftOuter[0]),
     ) *
       180) /
-      Math.PI,
+    Math.PI;
+  const headTiltDegrees = Math.abs(
+    rawHeadTiltDegrees - (calibration?.headTiltTargetDegrees ?? 0),
   );
 
   // Parity note: Python uses `min(right_outer[0] - right_inner[0], -1)`
@@ -184,15 +356,33 @@ export function scoreEyeContact(points: Point[]): EyeContactResult {
   );
   const rightGazeRatio = Math.abs(rightGazeRatioSigned);
 
-  const leftCenterScore = 100 - Math.abs(leftGazeRatio - EYE_CENTER_TARGET) * EYE_CENTER_SENSITIVITY;
-  const rightCenterScore = 100 - Math.abs(rightGazeRatio - EYE_CENTER_TARGET) * EYE_CENTER_SENSITIVITY;
+  const leftCenterScore =
+    100 -
+    Math.abs(leftGazeRatio - (calibration?.leftGazeTarget ?? EYE_CENTER_TARGET)) *
+      EYE_CENTER_SENSITIVITY;
+  const rightCenterScore =
+    100 -
+    Math.abs(rightGazeRatio - (calibration?.rightGazeTarget ?? EYE_CENTER_TARGET)) *
+      EYE_CENTER_SENSITIVITY;
 
   const eyeMidX = (leftIris[0] + rightIris[0]) / 2;
   const faceMidX = (faceLeft[0] + faceRight[0]) / 2;
-  const headYawOffset = Math.abs(noseTip[0] - faceMidX) / Math.max(faceWidth * 0.5, 1);
-  const midpointOffset = Math.abs(eyeMidX - faceMidX) / Math.max(faceWidth * 0.5, 1);
-  const verticalPosture =
-    Math.abs(noseTip[1] - (forehead[1] + chin[1]) / 2) / Math.max(faceHeight * 0.5, 1);
+  const rawHeadYawOffset =
+    (noseTip[0] - faceMidX) / Math.max(faceWidth * 0.5, 1);
+  const rawMidpointOffset =
+    (eyeMidX - faceMidX) / Math.max(faceWidth * 0.5, 1);
+  const rawVerticalPosture =
+    (noseTip[1] - (forehead[1] + chin[1]) / 2) /
+    Math.max(faceHeight * 0.5, 1);
+  const headYawOffset = Math.abs(
+    rawHeadYawOffset - (calibration?.headYawTarget ?? 0),
+  );
+  const midpointOffset = Math.abs(
+    rawMidpointOffset - (calibration?.midpointTarget ?? 0),
+  );
+  const verticalPosture = Math.abs(
+    rawVerticalPosture - (calibration?.verticalPostureTarget ?? 0),
+  );
   const eyeSizeBalance =
     100 -
     (Math.abs(leftEyeWidth - rightEyeWidth) / Math.max(Math.max(leftEyeWidth, rightEyeWidth), 1)) *
@@ -246,12 +436,23 @@ export interface ExpressionResult {
   mouthOpenRatio: number;
 }
 
+export function isLowEnergyExpression(expression: ExpressionResult): boolean {
+  return (
+    expression.score < LOW_ENERGY_EXPRESSION_MAX &&
+    expression.smileScore < LOW_ENERGY_SMILE_MAX &&
+    expression.mouthOpenRatio < LOW_ENERGY_MOUTH_OPEN_MAX
+  );
+}
+
 /**
  * Ported from `InterviewAnalyzer._score_expression` (opencv.py L670).
  * Auxiliary metrics surfaced for the issue tally (same as Python's
  * `last_metrics` dict).
  */
-export function scoreExpression(points: Point[]): ExpressionResult {
+export function scoreExpression(
+  points: Point[],
+  calibration: FaceCalibrationProfile | null = null,
+): ExpressionResult {
   const mouthLeft = points[MOUTH_LEFT];
   const mouthRight = points[MOUTH_RIGHT];
   const upperLip = points[UPPER_LIP];
@@ -277,9 +478,16 @@ export function scoreExpression(points: Point[]): ExpressionResult {
   const eyeOpenRatio = safeRatio((leftEyeOpen + rightEyeOpen) / 2, Math.max(faceWidth, 1));
   const browRelaxRatio = safeRatio(browWidth, Math.max(faceWidth, 1));
 
-  const smileScore = clamp((smileRatio - SMILE_BASELINE) * SMILE_GAIN);
-  const opennessScore = clamp((eyeOpenRatio - OPENNESS_BASELINE) * OPENNESS_GAIN);
-  const relaxedBrowScore = clamp((browRelaxRatio - BROW_BASELINE) * BROW_GAIN);
+  const smileScore = clamp(
+    (smileRatio - (calibration?.smileBaseline ?? SMILE_BASELINE)) * SMILE_GAIN,
+  );
+  const opennessScore = clamp(
+    (eyeOpenRatio - (calibration?.opennessBaseline ?? OPENNESS_BASELINE)) *
+      OPENNESS_GAIN,
+  );
+  const relaxedBrowScore = clamp(
+    (browRelaxRatio - (calibration?.browBaseline ?? BROW_BASELINE)) * BROW_GAIN,
+  );
   const overTensionPenalty = clamp(
     (mouthOpenRatio - TENSION_BASELINE) * TENSION_GAIN,
     0,
@@ -365,6 +573,9 @@ function summaryGuidance(
  *  stable — `backend/app/services/evaluator._format_cv_block` reads them
  *  by name. */
 export interface InterviewSummary {
+  calibration_applied: boolean;
+  calibration_version: number | null;
+  calibrated_at: string | null;
   frames_processed: number;
   face_visible_pct: number;
   eye_contact_score: number;
@@ -431,6 +642,11 @@ export class FrameSummary {
   private longestPostureDriftStreak = 0;
   private longestTiltedStreak = 0;
   private longestLowEnergyStreak = 0;
+  private readonly calibration: FaceCalibrationProfile | null;
+
+  constructor(calibration: FaceCalibrationProfile | null = null) {
+    this.calibration = calibration;
+  }
 
   private smooth(current: number, next: number): number {
     return clamp((1 - EMA_ALPHA) * current + EMA_ALPHA * next);
@@ -460,8 +676,8 @@ export class FrameSummary {
     }
 
     this.detectedFaceFrames += 1;
-    const eye = scoreEyeContact(points);
-    const expr = scoreExpression(points);
+    const eye = scoreEyeContact(points, this.calibration);
+    const expr = scoreExpression(points, this.calibration);
     const overall = clamp(eye.score * 0.65 + expr.score * 0.35);
 
     this.eyeEma = this.smooth(this.eyeEma, eye.score);
@@ -484,9 +700,7 @@ export class FrameSummary {
       eye.headAlignmentScore < POSTURE_HEAD_ALIGNMENT_MIN ||
       eye.verticalPosture > POSTURE_VERTICAL_MAX ||
       eye.midpointOffset > POSTURE_MIDPOINT_MAX;
-    const lowEnergy =
-      expr.smileScore < LOW_ENERGY_SMILE_MIN &&
-      expr.mouthOpenRatio < LOW_ENERGY_MOUTH_OPEN_MAX;
+    const lowEnergy = isLowEnergyExpression(expr);
 
     if (lookedAway) {
       this.lookedAwayFrames += 1;
@@ -592,6 +806,9 @@ export class FrameSummary {
       this.headTiltSamples.length > 0 ? Math.max(...this.headTiltSamples) : 0;
 
     return {
+      calibration_applied: this.calibration !== null,
+      calibration_version: this.calibration?.version ?? null,
+      calibrated_at: this.calibration?.calibratedAt ?? null,
       frames_processed: this.frameCount,
       face_visible_pct: round1(facePresence),
       eye_contact_score: round1(this.eyeEma),
@@ -632,6 +849,9 @@ export class FrameSummary {
         'Eye contact uses MediaPipe face and iris landmarks as a webcam-based gaze proxy.',
         'Expression scoring uses mouth width, eye openness, and brow relaxation as engagement cues.',
         'Posture scoring uses head tilt, face centering, and vertical head position as webcam posture cues.',
+        ...(this.calibration
+          ? ['Browser-local face calibration adjusted bounded delivery baselines for this turn.']
+          : []),
         'This is still a heuristic practice tool, not a validated interview or hiring assessment.',
       ],
     };

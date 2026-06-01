@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { readFaceCalibration } from '../lib/faceCalibration';
 import { FrameSummary, type InterviewSummary, type Point } from '../lib/faceHeuristics';
 import { getFaceLandmarker } from '../lib/faceLandmarker';
 
@@ -42,7 +43,7 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
     faceFrames: 0,
     lastSummary: null,
   });
-  const summaryRef = useRef(new FrameSummary());
+  const summaryRef = useRef(new FrameSummary(readFaceCalibration()));
   const videoRef   = useRef<HTMLVideoElement | null>(null);
   const rafRef     = useRef<number | null>(null);
   const activeRef  = useRef(active);
