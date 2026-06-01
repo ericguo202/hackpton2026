@@ -1,39 +1,6 @@
-export type ValidationStatus =
-  | 'valid'
-  | 'needs_confirmation'
-  | 'invalid'
-  | 'unavailable';
-
-export type RoleAlternative = {
-  title: string;
-  soc_code: string | null;
-  confidence: number;
-};
-
-export type RoleValidation = {
-  status: ValidationStatus;
-  user_input: string;
-  canonical_title: string | null;
-  soc_code: string | null;
-  category: string | null;
-  source: string | null;
-  confidence: number;
-  alternatives: RoleAlternative[];
-  message: string | null;
-};
-
-export type IndustryAlternative = {
-  name: string;
-  confidence: number;
-};
-
-export type IndustryValidation = {
-  status: ValidationStatus;
-  user_input: string;
-  canonical_industry: string | null;
-  category: string | null;
-  source: string | null;
-  confidence: number;
-  alternatives: IndustryAlternative[];
+// Mirrors backend/app/schemas/validation.py::SuggestionsOut.
+export type Suggestions = {
+  suggestions: string[];
+  flagged: boolean;
   message: string | null;
 };

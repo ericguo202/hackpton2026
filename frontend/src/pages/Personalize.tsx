@@ -23,15 +23,16 @@ import { UserButton, useUser } from '@clerk/react';
 import { FileText, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
-import IndustryValidationField from '../components/IndustryValidationField';
+import IndustryAutocompleteField from '../components/IndustryAutocompleteField';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import RoleValidationField from '../components/RoleValidationField';
+import RoleAutocompleteField from '../components/RoleAutocompleteField';
+import SpeechToTextButton from '../components/SpeechToTextButton';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
+import { joinSpoken } from '../lib/joinSpoken';
 import type { ExperienceLevel, MeResponse } from '../types/user';
-import type { IndustryValidation, RoleValidation } from '../types/validation';
 
 const EXPERIENCE_LEVELS: ExperienceLevel[] = [
   'internship',
@@ -121,31 +122,20 @@ function PersonalizeForm({ me, refetch }: FormProps) {
   const [resumeMode, setResumeMode] = useState<'pdf' | 'text'>('text');
   const [resumeText, setResumeText] = useState(me.resume_text ?? '');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [industryValidation, setIndustryValidation] =
-    useState<IndustryValidation | null>(null);
-  const [confirmedCustomIndustry, setConfirmedCustomIndustry] = useState(false);
-  const [roleValidation, setRoleValidation] = useState<RoleValidation | null>(null);
-  const [confirmedCustomRole, setConfirmedCustomRole] = useState(false);
+  // Prefilled values from `me` are already-accepted choices, so they start
+  // "selected" — Save isn't blocked until the user edits a field, which
+  // re-arms its gate (onSelectedChange(false)) until they pick again.
+  const [industrySelected, setIndustrySelected] = useState(Boolean(me.industry));
+  const [roleSelected, setRoleSelected] = useState(Boolean(me.target_role));
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const industryCanSubmit =
-    industry.trim().length > 0 &&
-    (industryValidation?.status === 'valid' ||
-      industryValidation?.status === 'unavailable' ||
-      (industryValidation?.status === 'needs_confirmation' &&
-        confirmedCustomIndustry));
-
-  const roleCanSubmit =
-    targetRole.trim().length > 0 &&
-    (roleValidation?.status === 'valid' ||
-      roleValidation?.status === 'unavailable' ||
-      (roleValidation?.status === 'needs_confirmation' && confirmedCustomRole));
-
   const canSubmit =
-    industryCanSubmit &&
-    roleCanSubmit &&
+    industry.trim().length > 0 &&
+    industrySelected &&
+    targetRole.trim().length > 0 &&
+    roleSelected &&
     shortBio.trim().length > 0;
 
   function chooseResumeFile(file: File | null) {
@@ -273,13 +263,12 @@ function PersonalizeForm({ me, refetch }: FormProps) {
               label="Industry"
               hint="e.g. software, finance, biotech"
             >
-              <IndustryValidationField
+              <IndustryAutocompleteField
                 id="personalize-industry"
                 value={industry}
                 onChange={setIndustry}
-                confirmedCustom={confirmedCustomIndustry}
-                onConfirmedCustomChange={setConfirmedCustomIndustry}
-                onValidationChange={setIndustryValidation}
+                selected={industrySelected}
+                onSelectedChange={setIndustrySelected}
                 inputClassName={inputClass}
               />
             </Field>
@@ -289,13 +278,13 @@ function PersonalizeForm({ me, refetch }: FormProps) {
               label="Target role"
               hint="e.g. backend engineer, product manager"
             >
-              <RoleValidationField
+              <RoleAutocompleteField
                 id="personalize-target-role"
                 value={targetRole}
                 onChange={setTargetRole}
-                confirmedCustom={confirmedCustomRole}
-                onConfirmedCustomChange={setConfirmedCustomRole}
-                onValidationChange={setRoleValidation}
+                industry={industry}
+                selected={roleSelected}
+                onSelectedChange={setRoleSelected}
                 inputClassName={inputClass}
               />
             </Field>
@@ -356,7 +345,7 @@ function PersonalizeForm({ me, refetch }: FormProps) {
               />
             </div>
 
-            <div className="min-w-0 min-[1180px]:col-start-1 min-[1180px]:row-start-2">
+            <div className="min-w-0 space-y-2 min-[1180px]:col-start-1 min-[1180px]:row-start-2">
               <textarea
                 id="personalize-short-bio"
                 maxLength={2000}
@@ -364,6 +353,12 @@ function PersonalizeForm({ me, refetch }: FormProps) {
                 onChange={(e) => setShortBio(e.target.value)}
                 placeholder="A few sentences about your background and what you are looking for."
                 className={`${inputClass} min-h-[12.5rem] resize-none`}
+              />
+              <SpeechToTextButton
+                ariaLabel="Dictate your bio"
+                onAppend={(chunk) =>
+                  setShortBio((prev) => joinSpoken(prev, chunk))
+                }
               />
             </div>
 

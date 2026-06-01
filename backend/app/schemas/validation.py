@@ -1,46 +1,19 @@
-"""Wire models for role and industry validation."""
+"""Wire model for industry and role autocomplete suggestions."""
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel
 
-from app.services._field_prompts import FieldCategory
 
+class SuggestionsOut(BaseModel):
+    """Autocomplete result for an industry or target-role field.
 
-ValidationStatus = Literal["valid", "needs_confirmation", "invalid", "unavailable"]
+    `suggestions` is the ranked list of up to 5 normalized matches (empty when
+    the input is too short, gibberish, moderation-blocked, or the provider is
+    unavailable). `flagged` is True only when OpenAI moderation hard-blocked the
+    input; `message` carries an optional short user-facing note.
+    """
 
-
-class RoleAlternativeOut(BaseModel):
-    title: str
-    soc_code: str | None = None
-    confidence: float
-
-
-class RoleValidationOut(BaseModel):
-    status: ValidationStatus
-    user_input: str
-    canonical_title: str | None = None
-    soc_code: str | None = None
-    category: FieldCategory | None = None
-    source: str | None = None
-    confidence: float = 0.0
-    alternatives: list[RoleAlternativeOut] = []
-    message: str | None = None
-
-
-class IndustryAlternativeOut(BaseModel):
-    name: str
-    confidence: float
-
-
-class IndustryValidationOut(BaseModel):
-    status: ValidationStatus
-    user_input: str
-    canonical_industry: str | None = None
-    category: FieldCategory | None = None
-    source: str | None = None
-    confidence: float = 0.0
-    alternatives: list[IndustryAlternativeOut] = []
+    suggestions: list[str] = []
+    flagged: bool = False
     message: str | None = None
