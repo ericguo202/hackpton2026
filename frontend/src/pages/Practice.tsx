@@ -534,7 +534,7 @@ function PracticeSession({
   const showPreview =
     !autoSubmit && recorder.state === 'stopped' && recorder.audioUrl != null;
   const previousTurn = turnResults.length > 0 ? turnResults[0] : null;
-  const showTranscriptPanel = showSessionInfo && showTranscript && previousTurn;
+  const showTranscriptPanel = showTranscript && previousTurn;
   const showQuestionDuringSession = showSessionInfo && showQuestionText;
 
   return (
@@ -628,7 +628,7 @@ function PracticeSession({
               recorderState={recorder.state}
               showQuestionText={showQuestionDuringSession}
               showTranscript={Boolean(showTranscriptPanel)}
-              canShowTranscript={showSessionInfo && previousTurn != null}
+              canShowTranscript={previousTurn != null}
               submitting={submitting}
               spinnerMessage={spinnerMessage}
               canEnd={recorder.state === 'recording'}
