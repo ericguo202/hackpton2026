@@ -443,6 +443,70 @@ def test_compute_delivery_score_penalizes_tilted_bad_posture():
     assert _compute_delivery_score(tilted) < _compute_delivery_score(baseline)
 
 
+def test_compute_delivery_score_does_not_compound_low_energy_coverage():
+    baseline = {
+        "frames_processed": 180,
+        "face_visible_pct": 99.0,
+        "eye_contact_score": 76.0,
+        "expression_score": 58.0,
+        "posture_score": 84.0,
+        "overall_interview_score": 70.0,
+        "eye_contact_stability": 90.0,
+        "expression_stability": 88.0,
+        "posture_stability": 92.0,
+        "looked_away_pct": 4.0,
+        "posture_drift_pct": 4.0,
+        "bad_posture_pct": 4.0,
+        "tilted_pct": 2.0,
+        "low_energy_pct": 0.0,
+        "longest_looked_away_streak_frames": 4,
+        "longest_posture_drift_streak_frames": 4,
+        "longest_bad_posture_streak_frames": 4,
+        "longest_tilted_streak_frames": 2,
+        "longest_low_energy_streak_frames": 0,
+    }
+    inflated_energy_coverage = {
+        **baseline,
+        "low_energy_pct": 98.0,
+        "longest_low_energy_streak_frames": 176,
+    }
+
+    assert _compute_delivery_score(inflated_energy_coverage) == _compute_delivery_score(
+        baseline
+    )
+
+
+def test_compute_delivery_score_keeps_expression_as_one_soft_signal():
+    baseline = {
+        "frames_processed": 180,
+        "face_visible_pct": 99.0,
+        "eye_contact_score": 76.0,
+        "posture_score": 84.0,
+        "overall_interview_score": 70.0,
+        "eye_contact_stability": 90.0,
+        "expression_stability": 88.0,
+        "posture_stability": 92.0,
+        "looked_away_pct": 4.0,
+        "posture_drift_pct": 4.0,
+        "bad_posture_pct": 4.0,
+        "tilted_pct": 2.0,
+        "low_energy_pct": 0.0,
+        "longest_looked_away_streak_frames": 4,
+        "longest_posture_drift_streak_frames": 4,
+        "longest_bad_posture_streak_frames": 4,
+        "longest_tilted_streak_frames": 2,
+        "longest_low_energy_streak_frames": 0,
+    }
+    engaged = {**baseline, "expression_score": 72.0}
+    flat = {**baseline, "expression_score": 32.0}
+
+    engaged_score = _compute_delivery_score(engaged)
+    flat_score = _compute_delivery_score(flat)
+
+    assert engaged_score > flat_score
+    assert engaged_score - flat_score <= 2
+
+
 def test_compute_delivery_score_caps_severe_eye_contact_drift():
     looked_away = {
         "frames_processed": 180,

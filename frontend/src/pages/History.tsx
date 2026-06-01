@@ -242,6 +242,9 @@ export default function History() {
             <TopBarNavLink to="/personalize">
               Personalize
             </TopBarNavLink>
+            <TopBarNavLink to="/calibrate">
+              Calibration
+            </TopBarNavLink>
           </>
         }
         rightSlot={<UserButton />}

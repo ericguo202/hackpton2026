@@ -3,8 +3,8 @@
  *
  * Mounted at the `/onboarding` route. The route guard
  * `RedirectIfOnboarded` redirects already-onboarded users to `/`. After a
- * successful submit, refetches /me and navigates to `/`; the home route
- * then renders the Setup form.
+ * successful submit, refetches /me and navigates to the optional delivery
+ * calibration step before the home route renders the Setup form.
  *
  * UI is a stepped flow: one field per screen with a thin wayfinding
  * indicator at the top. Email + name are read from Clerk and posted with
@@ -168,7 +168,7 @@ export default function OnboardingForm() {
         body,
       });
       await refetch();
-      navigate('/');
+      navigate('/calibrate?from=onboarding');
     } catch (err) {
       if (err instanceof ApiError) {
         setError(`${err.status}: ${err.body}`);
