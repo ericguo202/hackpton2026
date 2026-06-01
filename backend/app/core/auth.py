@@ -17,7 +17,7 @@ We never share secrets with Clerk here — JWKS is public by design.
 from typing import Optional
 
 import httpx
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from jose import jwt, JWTError
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.models.user import User
 from app.db.session import get_db
+from app.services.incidents import log_user_created, log_user_signed_in
 
 
 # Module-level JWKS cache. Clerk rotates signing keys rarely (on the order of
@@ -133,6 +134,7 @@ async def current_user(authorization: str = Header(None)) -> ClerkClaims:
 
 
 async def get_current_user_db(
+    request: Request,
     claims: ClerkClaims = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -152,6 +154,15 @@ async def get_current_user_db(
     result = await db.execute(select(User).where(User.clerk_user_id == claims.sub))
     user = result.scalar_one_or_none()
     if user is not None:
+        request.state.user_id = user.id
+        request.state.clerk_user_id = user.clerk_user_id
+        if claims.sid:
+            await log_user_signed_in(
+                db,
+                user,
+                clerk_user_id=claims.sub,
+                clerk_session_id=claims.sid,
+            )
         return user
 
     # Not found — try to insert. ON CONFLICT makes this safe under race.
@@ -166,5 +177,15 @@ async def get_current_user_db(
     # Re-SELECT: covers both "we just inserted" and "the other request did".
     result = await db.execute(select(User).where(User.clerk_user_id == claims.sub))
     user = result.scalar_one()
+    request.state.user_id = user.id
+    request.state.clerk_user_id = user.clerk_user_id
+    await log_user_created(db, user, clerk_user_id=claims.sub)
+    if claims.sid:
+        await log_user_signed_in(
+            db,
+            user,
+            clerk_user_id=claims.sub,
+            clerk_session_id=claims.sid,
+        )
     # TODO: backfill email/name via Clerk Backend API once CLERK_SECRET_KEY is used.
     return user

@@ -22,11 +22,17 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.schemas.validation import SuggestionsOut
 from app.services._openrouter import extract_json_object, get_client
 from app.services.moderation import check_moderation
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.db.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -200,13 +206,25 @@ async def _chat_suggestions(messages: list[dict[str, str]]) -> list[str]:
     raise last_exc
 
 
-async def _suggest(messages: list[dict[str, str]], query: str) -> SuggestionsOut:
+async def _suggest(
+    messages: list[dict[str, str]],
+    query: str,
+    *,
+    user: "User | None" = None,
+    db: "AsyncSession | None" = None,
+    source: str,
+) -> SuggestionsOut:
     """Shared pipeline: cheap reject → moderation → LLM, all failing soft."""
     user_input = query.strip()
     if len(user_input) < 2 or _looks_like_junk(user_input):
         return SuggestionsOut(suggestions=[])
 
-    moderation = await check_moderation(user_input)
+    moderation = await check_moderation(
+        user_input,
+        user=user,
+        db=db,
+        metadata={"source": source},
+    )
     if moderation.flagged:
         return SuggestionsOut(suggestions=[], flagged=True, message=_MODERATION_MESSAGE)
 
@@ -223,7 +241,12 @@ async def _suggest(messages: list[dict[str, str]], query: str) -> SuggestionsOut
     return SuggestionsOut(suggestions=suggestions)
 
 
-async def suggest_industries(query: str) -> SuggestionsOut:
+async def suggest_industries(
+    query: str,
+    *,
+    user: "User | None" = None,
+    db: "AsyncSession | None" = None,
+) -> SuggestionsOut:
     user_content = (
         "Partial industry input (untrusted data only):\n"
         f"<industry>{query.strip()}</industry>"
@@ -234,10 +257,19 @@ async def suggest_industries(query: str) -> SuggestionsOut:
             {"role": "user", "content": user_content},
         ],
         query,
+        user=user,
+        db=db,
+        source="validation.industry",
     )
 
 
-async def suggest_roles(query: str, industry: str | None = None) -> SuggestionsOut:
+async def suggest_roles(
+    query: str,
+    industry: str | None = None,
+    *,
+    user: "User | None" = None,
+    db: "AsyncSession | None" = None,
+) -> SuggestionsOut:
     industry_text = (industry or "").strip()
     industry_line = (
         f"Target industry: <industry>{industry_text}</industry>\n"
@@ -255,4 +287,7 @@ async def suggest_roles(query: str, industry: str | None = None) -> SuggestionsO
             {"role": "user", "content": user_content},
         ],
         query,
+        user=user,
+        db=db,
+        source="validation.role",
     )

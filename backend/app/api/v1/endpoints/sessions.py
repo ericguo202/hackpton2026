@@ -52,6 +52,7 @@ from app.services.daily_limit import (
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words
 from app.services.followup import generate_followup
+from app.services.incidents import log_error, log_interview_session_started
 from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
@@ -157,8 +158,18 @@ async def create_session(
     # feed downstream LLM prompts. Blocking HERE means the content never
     # reaches Serper, OpenRouter, or ElevenLabs — so a malicious company
     # / job-title value can't cost us API-key reputation.
-    company_check = await check_moderation(body.company)
-    title_check = await check_moderation(body.job_title)
+    company_check = await check_moderation(
+        body.company,
+        user=user,
+        db=db,
+        metadata={"source": "sessions.company"},
+    )
+    title_check = await check_moderation(
+        body.job_title,
+        user=user,
+        db=db,
+        metadata={"source": "sessions.job_title"},
+    )
     if company_check.flagged or title_check.flagged:
         logger.warning(
             "Session-create rejected by moderation clerk_user_id=%s "
@@ -219,6 +230,15 @@ async def create_session(
         _persist_session_and_turn(
             db, user, body, brief, opening_q, session_id, voice_id,
         ),
+    )
+    await log_interview_session_started(
+        db,
+        user,
+        session_id=session_id,
+        metadata={
+            "company": body.company,
+            "job_title": body.job_title,
+        },
     )
 
     return SessionCreateOut(
@@ -371,12 +391,20 @@ async def _run_background_eval(
                 # surface a confusing "current transaction is aborted" error.
                 await db.rollback()
                 raise
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         logger.exception(
             "Background eval failed for session=%s turn=%s; "
             "scores remain null and the turn will be excluded from the "
             "session aggregate.",
             session_id, turn_id,
+        )
+        await log_error(
+            exc,
+            metadata={
+                "source": "background_eval",
+                "session_id": session_id,
+                "turn_id": turn_id,
+            },
         )
     finally:
         eval_registry.discard(session_id)
@@ -536,7 +564,17 @@ async def submit_turn(
     # OpenRouter / downstream providers and never lands in `interview_turns`.
     # The user gets a clean 422 instead of a scored turn; they can retry
     # with different content on the same still-pending turn.
-    transcript_check = await check_moderation(transcript)
+    transcript_check = await check_moderation(
+        transcript,
+        user=user,
+        db=db,
+        session_id=session_id,
+        metadata={
+            "source": "turn.transcript",
+            "session_id": session_id,
+            "turn_id": current_turn.id,
+        },
+    )
     if transcript_check.flagged:
         logger.info(
             "Turn rejected by moderation for session=%s turn=%s categories=%s",
@@ -704,11 +742,21 @@ async def submit_turn(
             )
             _log_eval_scores(session_id, t.id, category, inline_eval)
             _apply_eval_to_turn(t, inline_eval)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "Inline-eval fallback also failed for session=%s turn=%s; "
                 "this turn will be excluded from the session aggregate.",
                 session_id, t.id,
+            )
+            await log_error(
+                exc,
+                user=user,
+                db=db,
+                metadata={
+                    "source": "inline_eval_fallback",
+                    "session_id": session_id,
+                    "turn_id": t.id,
+                },
             )
 
     # 9. Aggregate every turn that produced scores. Turns whose eval
