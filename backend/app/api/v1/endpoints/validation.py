@@ -1,32 +1,30 @@
-"""Validation endpoints for profile setup inputs."""
+"""Autocomplete endpoints for the industry and target-role profile inputs."""
 
 from fastapi import APIRouter, Depends, Query
 
 from app.core.auth import get_current_user_db
 from app.db.models.user import User
-from app.schemas.validation import (
-    IndustryValidationOut,
-    RoleValidationOut,
-)
+from app.schemas.validation import SuggestionsOut
 from app.services.profile_validation import (
-    validate_industry,
-    validate_role,
+    suggest_industries,
+    suggest_roles,
 )
 
 router = APIRouter()
 
 
-@router.get("/roles", response_model=RoleValidationOut)
-async def validate_role_endpoint(
+@router.get("/industries", response_model=SuggestionsOut)
+async def suggest_industries_endpoint(
     q: str = Query(..., min_length=1, max_length=200),
     _: User = Depends(get_current_user_db),
-) -> RoleValidationOut:
-    return await validate_role(q)
+) -> SuggestionsOut:
+    return await suggest_industries(q)
 
 
-@router.get("/industries", response_model=IndustryValidationOut)
-async def validate_industry_endpoint(
+@router.get("/roles", response_model=SuggestionsOut)
+async def suggest_roles_endpoint(
     q: str = Query(..., min_length=1, max_length=200),
+    industry: str | None = Query(None, max_length=200),
     _: User = Depends(get_current_user_db),
-) -> IndustryValidationOut:
-    return await validate_industry(q)
+) -> SuggestionsOut:
+    return await suggest_roles(q, industry)

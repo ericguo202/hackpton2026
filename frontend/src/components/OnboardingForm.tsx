@@ -12,11 +12,7 @@
  * truth, so showing them as read-only fields was dead weight.
  */
 
-import {
-  useState,
-  type SubmitEvent,
-  type KeyboardEvent,
-} from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
 import { useNavigate } from 'react-router';
 
@@ -24,9 +20,8 @@ import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
 import type { ExperienceLevel, MeResponse } from '../types/user';
-import type { IndustryValidation, RoleValidation } from '../types/validation';
-import IndustryValidationField from './IndustryValidationField';
-import RoleValidationField from './RoleValidationField';
+import IndustryAutocompleteField from './IndustryAutocompleteField';
+import RoleAutocompleteField from './RoleAutocompleteField';
 import { FlowHoverButton } from './ui/flow-hover-button';
 import { Progress } from './ui/progress';
 import TopBar from './TopBar';
@@ -83,11 +78,8 @@ export default function OnboardingForm() {
   const [resumeMode, setResumeMode] = useState<'pdf' | 'text'>('pdf');
   const [resumeText, setResumeText] = useState('');
   const [skipResume, setSkipResume] = useState(false);
-  const [industryValidation, setIndustryValidation] =
-    useState<IndustryValidation | null>(null);
-  const [confirmedCustomIndustry, setConfirmedCustomIndustry] = useState(false);
-  const [roleValidation, setRoleValidation] = useState<RoleValidation | null>(null);
-  const [confirmedCustomRole, setConfirmedCustomRole] = useState(false);
+  const [industrySelected, setIndustrySelected] = useState(false);
+  const [roleSelected, setRoleSelected] = useState(false);
 
   const [step, setStep] = useState(0);
   const [stepKey, setStepKey] = useState(0);
@@ -95,18 +87,9 @@ export default function OnboardingForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const industryCanContinue =
-    industry.trim().length > 0 &&
-    (industryValidation?.status === 'valid' ||
-      industryValidation?.status === 'unavailable' ||
-      (industryValidation?.status === 'needs_confirmation' &&
-        confirmedCustomIndustry));
+  const industryCanContinue = industry.trim().length > 0 && industrySelected;
 
-  const roleCanContinue =
-    targetRole.trim().length > 0 &&
-    (roleValidation?.status === 'valid' ||
-      roleValidation?.status === 'unavailable' ||
-      (roleValidation?.status === 'needs_confirmation' && confirmedCustomRole));
+  const roleCanContinue = targetRole.trim().length > 0 && roleSelected;
 
   const validators: Array<() => boolean> = [
     () => industryCanContinue,
@@ -140,17 +123,6 @@ export default function OnboardingForm() {
     setStep((s) => s - 1);
     setStepKey((k) => k + 1);
     setError(null);
-  }
-
-  function handleEnterAdvance(
-    e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) {
-    // Only single-line inputs advance on Enter; textareas keep newline behavior.
-    if (e.key !== 'Enter' || e.shiftKey) return;
-    if (e.currentTarget.tagName === 'TEXTAREA') return;
-    if (step >= TOTAL_STEPS - 1) return;
-    e.preventDefault();
-    advance();
   }
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -219,7 +191,11 @@ export default function OnboardingForm() {
         <div className="w-full max-w-lg space-y-10">
         <section
           key={stepKey}
-          className={`${direction === 'back' ? 'anim-slide-in-right' : 'anim-slide-in-left'} space-y-6`}
+          // relative z-10: lift the whole step (and its autocomplete dropdown,
+          // which is trapped in this animated section's stacking context) above
+          // the later-sibling Continue button row, so the opaque dropdown covers
+          // it instead of the button ghosting through.
+          className={`${direction === 'back' ? 'anim-slide-in-right' : 'anim-slide-in-left'} relative z-10 space-y-6`}
         >
           <h2>{HEADINGS[step]}</h2>
           {DESCRIPTIONS[step] && (
@@ -227,29 +203,26 @@ export default function OnboardingForm() {
           )}
 
           {step === 0 && (
-            <IndustryValidationField
+            <IndustryAutocompleteField
               autoFocus
               value={industry}
               onChange={setIndustry}
-              confirmedCustom={confirmedCustomIndustry}
-              onConfirmedCustomChange={setConfirmedCustomIndustry}
-              onValidationChange={setIndustryValidation}
-              onAcceptedSuggestion={advanceToNext}
-              onKeyDown={handleEnterAdvance}
+              selected={industrySelected}
+              onSelectedChange={setIndustrySelected}
+              onSelect={advanceToNext}
               inputClassName={inputClass}
             />
           )}
 
           {step === 1 && (
-            <RoleValidationField
+            <RoleAutocompleteField
               autoFocus
               value={targetRole}
               onChange={setTargetRole}
-              confirmedCustom={confirmedCustomRole}
-              onConfirmedCustomChange={setConfirmedCustomRole}
-              onValidationChange={setRoleValidation}
-              onAcceptedSuggestion={advanceToNext}
-              onKeyDown={handleEnterAdvance}
+              industry={industry}
+              selected={roleSelected}
+              onSelectedChange={setRoleSelected}
+              onSelect={advanceToNext}
               inputClassName={inputClass}
             />
           )}
