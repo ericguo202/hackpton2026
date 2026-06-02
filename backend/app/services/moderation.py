@@ -34,10 +34,22 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+from uuid import UUID
 
 from openai import AsyncOpenAI
 
 from app.core.config import settings
+from app.services.incidents import (
+    SEVERITY_INFO,
+    SEVERITY_WARNING,
+    log_moderation_request,
+)
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.db.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +110,14 @@ class ModerationResult:
 _SAFE = ModerationResult(flagged=False, categories=())
 
 
-async def check_moderation(text: str) -> ModerationResult:
+async def check_moderation(
+    text: str,
+    *,
+    user: "User | None" = None,
+    db: "AsyncSession | None" = None,
+    session_id: UUID | None = None,
+    metadata: dict | None = None,
+) -> ModerationResult:
     """Run `text` through OpenAI moderation; return a block/allow verdict.
 
     Empty / whitespace-only input is short-circuited to `_SAFE` — there's
@@ -121,6 +140,22 @@ async def check_moderation(text: str) -> ModerationResult:
         # enough that occasional pass-through during an outage is
         # acceptable; we still log loudly so it's visible in the journal.
         logger.warning("Moderation call failed; allowing content: %s", exc)
+        await log_moderation_request(
+            text=text,
+            returned_content={
+                "provider": "openai",
+                "model": MODERATION_MODEL,
+                "flagged": False,
+                "categories": [],
+                "hard_block_categories": sorted(_HARD_BLOCK_CATEGORIES),
+                "error": str(exc),
+            },
+            user=user,
+            db=db,
+            session_id=session_id,
+            severity=SEVERITY_WARNING,
+            metadata=metadata,
+        )
         return _SAFE
 
     result = response.results[0]
@@ -134,5 +169,21 @@ async def check_moderation(text: str) -> ModerationResult:
     )
     blocking = any(
         name in _HARD_BLOCK_CATEGORIES for name in tripped
+    )
+    await log_moderation_request(
+        text=text,
+        returned_content={
+            "provider": "openai",
+            "model": MODERATION_MODEL,
+            "flagged": blocking,
+            "categories": list(tripped),
+            "category_map": category_map,
+            "hard_block_categories": sorted(_HARD_BLOCK_CATEGORIES),
+        },
+        user=user,
+        db=db,
+        session_id=session_id,
+        severity=SEVERITY_WARNING if blocking else SEVERITY_INFO,
+        metadata=metadata,
     )
     return ModerationResult(flagged=blocking, categories=tripped)

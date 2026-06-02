@@ -153,8 +153,19 @@ async def onboarding(
     # the stored resume_text, short_bio, industry, target_role). Blocking
     # here prevents a bad profile from poisoning every subsequent session
     # and racking up policy hits on our API keys.
-    for field_value in (industry, target_role, short_bio, final_resume_text):
-        check = await check_moderation(field_value)
+    moderation_fields = (
+        ("onboarding.industry", industry),
+        ("onboarding.target_role", target_role),
+        ("onboarding.short_bio", short_bio),
+        ("onboarding.resume_text", final_resume_text),
+    )
+    for source, field_value in moderation_fields:
+        check = await check_moderation(
+            field_value,
+            user=user,
+            db=db,
+            metadata={"source": source},
+        )
         if check.flagged:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
