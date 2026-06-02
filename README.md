@@ -240,10 +240,6 @@ single-shot scoring). A few directions worth exploring beyond this build:
   the question generator target it, instead of inferring from company + role.
 - **Spoken-feedback mode** — pipe the structured feedback back through TTS at the
   end of the session so the review feels like a debrief, not a report card.
-- **Calibrated delivery scoring** — the OpenCV thresholds were tuned on a
-  small calibration sample (`backend/recordings/calibration_*`). A larger
-  labeled dataset would let us calibrate per ethnicity / lighting / camera
-  angle and flag low-confidence frames instead of silently averaging them in.
 - **Comparative analytics** — anonymized cohort percentiles ("your
   Structure and Impact scores trail the median for entry-level SWE
   candidates") would turn the trend chart from a self-comparison into a
