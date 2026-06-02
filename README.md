@@ -150,6 +150,29 @@ improvement (or regression) on Structure, Impact, or Delivery is visible at a
 glance instead of guessed at. You can open any past session and re-listen to
 your own answer next to the score that explains why.
 
+### Save a question and re-practice it over time
+
+Most prep tools are one-and-done: you answer a question once and never see it
+again. Logos lets you **save an opening question** straight from the results
+screen and come back to it later, so you can drill the same scenario until the
+answer is sharp. Each saved question keeps its own progress chart — every
+re-practice is one point, oldest to newest, plotting the opening answer's
+per-dimension scores and their average, so you can watch a specific question
+get better instead of inferring it from your overall trend.
+
+The key design choice is that a saved question is a **frozen snapshot**, not a
+live pointer. The company, the job title, and your experience level are captured
+the moment you save, and every re-practice replays that exact setup even if you
+later change your profile — so the follow-up framing and the evaluator's rubric
+stay identical across attempts and the comparison is genuinely apples-to-apples.
+(Fixing this also closed a latent bug where changing your experience level
+mid-session could shift the second turn's rubric.) Re-practice is fast because
+it skips the company-research and question-generation model calls entirely and
+reads the frozen question back; only the interviewer voice is regenerated, so
+you can hear it in a different accent each time. You can keep up to five saved
+questions at once, and deleting one never erases the practice sessions behind
+it — they stay in your history.
+
 ### Free tier with daily session limits
 
 Logos currently ships a single **Free** tier, capped at **5 completed
@@ -193,7 +216,7 @@ Browser (React + Vite)
   │                                       │── Gemini 2.5 Flash         (opening + follow-up question)
   │                                       │── DeepSeek v3.2            (evaluator, field-tailored rubric)
   │                                       │── ElevenLabs TTS           (interviewer voice)
-  │                                       └── Postgres (sessions, turns, metrics, incidents)
+  │                                       └── Postgres (sessions, turns, metrics, saved questions, incidents)
   └── base64 audio data URL ◄──────────── FastAPI
 ```
 
@@ -228,10 +251,6 @@ single-shot scoring). A few directions worth exploring beyond this build:
 - **Mobile capture** — the current MediaPipe loop assumes a laptop webcam;
   a dedicated phone capture flow with portrait framing and on-device STT
   would extend the practice context.
-- **Persistent question library** — at the moment the question generator is
-  fully on-the-fly. Caching the strongest prompts per company / role would
-  make demos faster and let candidates retry the same prompt to compare
-  improvement directly.
 - **Production hardening** — exponential backoff on the ElevenLabs / Gemini
   rate limits and an actual test suite beyond the evaluator unit tests.
   Per-user daily caps and the internal incidents table already ship; broader
