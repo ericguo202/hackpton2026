@@ -1,6 +1,6 @@
 # Logos: AI Behavioral Interview Coach
 
-MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-out → metrics persisted.
+MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-out → metrics + incidents persisted.
 Future: terms/conditions, security, LiveAvatar, gamification with XP.
 
 ## What the MVP ships
@@ -60,6 +60,8 @@ Future: terms/conditions, security, LiveAvatar, gamification with XP.
 - **Free tier with daily session limits.** `pro` exists in `user_tier` but isn't exposed (flipping a row to `pro` skips the gate). Free = **5 completed sessions per local calendar day**. Counter increments at session **finalization** (in `submit_turn`'s final-turn branch), not creation — abandoning mid-session doesn't burn a slot but yields no feedback. Day reset uses IANA timezone from the browser (`users.timezone`, UTC fallback). Pre-check at `POST /sessions` runs **before** moderation / Serper / OpenRouter / TTS so rate-limited requests don't spend credits; returns 429. Race-safe via atomic single-`UPDATE` in `app/services/daily_limit.py`. Frontend reads `me.daily_session_count` for the "X/5 sessions today" indicator; 429 surfaces via FlashBanner.
   - **`GET /me` also runs `check_and_reset` for free-tier callers** so the counter never goes stale across a day boundary. Steady-state does **zero writes** — the UPDATE is gated by `User.count_reset_date.is_distinct_from(today)` (NULL-safe). Only the first `/me` of a new local day issues an UPDATE. Matters because `/me` hits on every route-guard pass via `useMe()`.
 
+- **Incidents event log (internal/admin-only).** `incidents` stores a best-effort audit trail for security/product events: `user_created`, `user_signed_in`, `moderation_request`, `interview_session_started`, and `error`. Writes go through `app/services/incidents.py` and are isolated in a fresh DB session so logging failures never break the main request. Payloads are capped (`sent_content` 10k chars, `error` 8k chars, large JSON strings 2k chars). Auth events are **backend-observed** (no extra Clerk webhooks): `user_created` fires when `get_current_user_db` creates the local row; `user_signed_in` dedupes by Clerk `claims.sid` when present. Moderation incidents log only when the OpenAI Moderations API actually fires (not deterministic local rejects), with source metadata such as `onboarding.short_bio`, `sessions.company`, or `turn.transcript`; hard-blocks/API failures are `warning`. `interview_session_started` logs only after session persistence succeeds. Request 5xx/unhandled errors and explicit background eval failures log `error`; normal 4xx control-flow does not.
+
 ---
 
 ## Stack
@@ -98,7 +100,7 @@ Browser (React+Vite)
 ```sql
 users(id, clerk_user_id UNIQUE, email, name, resume_text, industry, target_role, experience_level, short_bio, completed_registration,
 tier user_tier DEFAULT 'free', daily_session_count INT DEFAULT 0, count_reset_date DATE NULL, timezone TEXT NULL,
-created_at, updated_at)
+recent_opening_questions JSONB DEFAULT '[]', created_at, updated_at)
 
 interview_sessions(id, user_id FK, config_id FK, status, company, job_title, company_summary, overall_score, notes, started_at, ended_at, created_at, updated_at)
 
@@ -110,6 +112,9 @@ delivery_score INT NULL, feedback TEXT NULL, feedback_detail JSONB NULL,
 filler_word_count INT, filler_word_breakdown JSONB, cv_summary JSONB NULL, ai_model_used, evaluated_at, created_at)
 
 session_metrics(id, session_id FK, avg_structure, avg_problem_solving, avg_initiative, avg_impact, avg_depth, avg_delivery, total_filler_word_count, overall_score, turns_evaluated, generated_at)
+
+incidents(id, event_type, severity, user_id FK NULL, clerk_user_id TEXT NULL, session_id FK NULL, occurred_at,
+idempotency_key UNIQUE NULL, sent_content TEXT NULL, returned_content JSONB NULL, error TEXT NULL, metadata JSONB DEFAULT '{}')
 ```
 
 ---
@@ -191,7 +196,7 @@ GET  /me/stats                aggregate scores over time
 
 ## Auth Implementation
 
-`current_user(authorization: str = Header(...)) -> User` verifies the Bearer JWT against `CLERK_JWT_ISSUER` JWKS via `python-jose`, upserts the user by `clerk_user_id`, returns the DB row.
+`current_user(authorization: str = Header(...)) -> ClerkClaims` verifies the Bearer JWT against `CLERK_JWT_ISSUER` JWKS via `python-jose`. `get_current_user_db(...) -> User` upserts the user by `clerk_user_id`, returns the DB row, stamps `request.state.user_id` / `request.state.clerk_user_id` for error incidents, logs `user_created` on first local row creation, and logs `user_signed_in` once per Clerk `claims.sid` when that claim is present. No sign-in/sign-up Clerk webhooks are required.
 
 ---
 
@@ -222,7 +227,7 @@ Routes (path → component → guards): `/` → `HomeRoute` (branches on auth in
 
 **Setup → Practice handoff:** `navigate("/practice", { state: { sessionId, firstQuestion, firstQuestionAudioUrl } })`; `Practice` reads `useLocation().state` on mount, missing → `<Navigate to="/" replace />`. `PracticeLocationState` (exported from `Practice.tsx`) also carries `company` / `jobTitle`.
 
-**Flash messages:** `FlashBanner.tsx` watches `location.state.flash` via a **`useEffect`** (not a `useState` initializer — lets same-route re-navigations re-trigger), then clears via `navigate(pathname, { replace: true, state: null })`, auto-dismiss 6s. Producers: `SessionDetail` redirects to `/` on 4xx (404/422/403), 5xx falls to inline error; `Home.tsx` 429 catch navigates to `/` with the free-tier message. Routing trade-off: gained deep-linking + normal refresh/back-forward, lost the cross-route morph sweep (in-component morph for Practice's Interview → Results preserved).
+**Flash messages:** `FlashBanner.tsx` watches `location.state.flash` via a **`useEffect`** (not a `useState` initializer — lets same-route re-navigations re-trigger), then clears via `navigate(pathname, { replace: true, state: null })`, auto-dismiss 6s. Producers: `SessionDetail` redirects to `/` on 4xx (404/422/403), 5xx falls to inline error; `Home.tsx` 429 catch navigates to `/` with the free-tier message. Practice turn-submit errors use `extractApiErrorDetail`; the moderation 422 maps to the user-facing copy "This violates the usage policy. Please re-record and try again." instead of showing raw JSON. Routing trade-off: gained deep-linking + normal refresh/back-forward, lost the cross-route morph sweep (in-component morph for Practice's Interview → Results preserved).
 
 ### Practice + SessionDetail
 
@@ -236,5 +241,6 @@ Full component internals live in `frontend/CLAUDE.md`. Cross-cutting facts to kn
 - [ ] **Auth**: no/invalid JWT → 401, valid JWT → 200
 - [ ] **Onboarding**: upload real PDF → `users.resume_text` non-empty and coherent
 - [ ] **Evaluator contract**: canned transcript with 3 "um"s → `filler_word_count == 3`, all scores ints 0–10
+- [ ] **Incidents**: first auth creates `user_created`; same Clerk `sid` dedupes `user_signed_in`; moderation hard-block writes `moderation_request` with `severity='warning'`; session start logs only after session row commit
 - [ ] **E2E**: log in → onboard → start session ("Google") → complete turns aloud → summary shows non-zero scores → refresh → session appears
 - [ ] **Failure mode**: kill ElevenLabs key mid-session → clear error, not blank screen

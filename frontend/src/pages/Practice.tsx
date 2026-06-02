@@ -43,7 +43,7 @@ import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnaly
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
-import { ApiError } from '../lib/api';
+import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { cn } from '../lib/utils';
 import type { InterviewSummary } from '../lib/faceHeuristics';
 import type { DimensionAverages, SessionDetail, TurnDetail } from '../types/history';
@@ -83,6 +83,21 @@ const SCORE_DIM_KEYS: ReadonlyArray<keyof Scores> = [
   'depth',
   'delivery',
 ];
+
+function formatTurnSubmitError(err: unknown): string {
+  if (!(err instanceof ApiError)) {
+    return err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+  }
+
+  const detail = extractApiErrorDetail(err);
+  if (
+    err.status === 422
+    && detail.toLowerCase().includes('violates our usage policy')
+  ) {
+    return 'This violates the usage policy. Please re-record and try again.';
+  }
+  return detail;
+}
 
 /**
  * Synthesize a `TurnDetail` from a locally-captured `ReplayTurnResult`.
@@ -454,11 +469,7 @@ function PracticeSession({
         return;
       }
 
-      setTurnError(
-        err instanceof ApiError
-          ? `${err.status}: ${err.message}`
-          : (err as Error).message,
-      );
+      setTurnError(formatTurnSubmitError(err));
     } finally {
       setSubmittingTurn(false);
     }

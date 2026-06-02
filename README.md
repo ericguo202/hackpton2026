@@ -159,6 +159,16 @@ actually finishes — abandoning mid-session doesn't burn a slot. A **Pro**
 tier with unmetered sessions is on the roadmap but not yet exposed;
 everyone is on Free today.
 
+### Internal incident log
+
+The backend keeps an internal `incidents` table for security and product
+auditing. It records backend-observed account creation/sign-in events,
+OpenAI moderation requests, successful interview session starts, and server
+errors. Incident writes are best-effort and isolated from the main request so
+the audit trail never breaks an interview flow; moderation payloads and errors
+are capped before storage. This log is intended for admins and debugging, not
+for regular user-facing APIs.
+
 ---
 
 ## Tech stack & architecture
@@ -183,7 +193,7 @@ Browser (React + Vite)
   │                                       │── Gemini 2.5 Flash         (opening + follow-up question)
   │                                       │── DeepSeek v3.2            (evaluator, field-tailored rubric)
   │                                       │── ElevenLabs TTS           (interviewer voice)
-  │                                       └── Postgres (sessions, turns, metrics)
+  │                                       └── Postgres (sessions, turns, metrics, incidents)
   └── base64 audio data URL ◄──────────── FastAPI
 ```
 
@@ -223,6 +233,6 @@ single-shot scoring). A few directions worth exploring beyond this build:
   make demos faster and let candidates retry the same prompt to compare
   improvement directly.
 - **Production hardening** — exponential backoff on the ElevenLabs / Gemini
-  rate limits, structured error reporting, and an actual test suite beyond
-  the evaluator unit tests. Per-user daily caps already ship; broader usage
-  metering (per-hour rate limits, monthly Pro quotas) is the next layer.
+  rate limits and an actual test suite beyond the evaluator unit tests.
+  Per-user daily caps and the internal incidents table already ship; broader
+  usage metering (per-hour rate limits, monthly Pro quotas) is the next layer.

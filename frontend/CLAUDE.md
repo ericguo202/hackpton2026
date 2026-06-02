@@ -39,6 +39,8 @@ Three files work together — don't bypass them:
 
 **All API calls go through `useApi().apiFetch`.** Never call `fetch()` directly to the backend — you'll skip auth and bypass the shared error shape.
 
+When rendering backend errors, prefer `extractApiErrorDetail(err)` from `src/lib/api.ts` over `err.message`; `ApiError.message` intentionally contains status + raw body for debugging and will show JSON to users. `Practice.tsx` additionally maps the moderation 422 to "This violates the usage policy. Please re-record and try again."
+
 **FormData quirk**: `useApi` detects `FormData` bodies and intentionally omits `Content-Type`, letting the browser set the multipart boundary. If you hand-roll a request with FormData, do the same — setting `application/json` breaks multipart parsing server-side.
 
 ### App shell
