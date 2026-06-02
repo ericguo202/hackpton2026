@@ -69,11 +69,12 @@ export function useSavedQuestions() {
   );
 
   const rePractice = useCallback(
-    async (id: string) =>
+    async (id: string, voiceId?: string | null) =>
       apiFetch<RePracticeResult>(`/api/v1/saved-questions/${id}/practice`, {
         method: 'POST',
         body: JSON.stringify({
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          ...(voiceId ? { voice_id: voiceId } : {}),
         }),
       }),
     [apiFetch],

@@ -26,6 +26,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useMeStats } from '../hooks/useMeStats';
@@ -485,12 +486,14 @@ function SavedQuestionsSection() {
   const navigate = useNavigate();
   const { saved, isLoading, remove, rePractice } = useSavedQuestions();
   const [busyId, setBusyId] = useState<string | null>(null);
+  // The saved question pending in the voice picker (null = dialog closed).
+  const [pendingSq, setPendingSq] = useState<SavedQuestionListItem | null>(null);
 
   // Don't render anything (not even a heading) until we know there's at least
   // one saved question — an empty section would be visual noise.
   if (isLoading || !saved || saved.length === 0) return null;
 
-  async function handleRePractice(sq: SavedQuestionListItem) {
+  async function handleRePractice(sq: SavedQuestionListItem, voiceId: string | null) {
     setBusyId(sq.id);
     try {
       // Same mic preflight as Home's Begin-session, so the user lands in
@@ -505,7 +508,7 @@ function SavedQuestionsSection() {
         });
         return;
       }
-      const data = await rePractice(sq.id);
+      const data = await rePractice(sq.id, voiceId);
       const state: PracticeLocationState = {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
@@ -523,6 +526,7 @@ function SavedQuestionsSection() {
       navigate('/', { replace: true, state: { flash: msg } });
     } finally {
       setBusyId(null);
+      setPendingSq(null);
     }
   }
 
@@ -553,11 +557,21 @@ function SavedQuestionsSection() {
             sq={sq}
             busy={busyId === sq.id}
             onOpen={() => navigate(`/saved-question/${sq.id}`)}
-            onRePractice={() => handleRePractice(sq)}
+            onRePractice={() => setPendingSq(sq)}
             onDelete={() => void remove(sq.id)}
           />
         ))}
       </div>
+
+      <RePracticeVoiceDialog
+        open={pendingSq !== null}
+        busy={busyId !== null}
+        questionText={pendingSq?.question_text}
+        onCancel={() => setPendingSq(null)}
+        onStart={(voiceId) => {
+          if (pendingSq) void handleRePractice(pendingSq, voiceId);
+        }}
+      />
     </section>
   );
 }

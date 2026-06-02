@@ -28,6 +28,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useSavedQuestionDetail } from '../hooks/useSavedQuestionDetail';
@@ -177,6 +178,7 @@ export default function SavedQuestionDetail() {
   const { saved, isLoading, error, errorStatus } = useSavedQuestionDetail(id);
   const { rePractice } = useSavedQuestions();
   const [rePracticing, setRePracticing] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const [activeDims, setActiveDims] = useState<Record<DimensionKey, boolean>>({
     structure: true,
@@ -205,7 +207,7 @@ export default function SavedQuestionDetail() {
     }
   }, [shouldRedirect, navigate]);
 
-  async function handleRePractice(sq: SavedQuestionDetailType) {
+  async function handleRePractice(sq: SavedQuestionDetailType, voiceId: string | null) {
     setRePracticing(true);
     try {
       try {
@@ -218,7 +220,7 @@ export default function SavedQuestionDetail() {
         });
         return;
       }
-      const data = await rePractice(sq.id);
+      const data = await rePractice(sq.id, voiceId);
       const state: PracticeLocationState = {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
@@ -235,6 +237,7 @@ export default function SavedQuestionDetail() {
       navigate('/', { replace: true, state: { flash: msg } });
     } finally {
       setRePracticing(false);
+      setDialogOpen(false);
     }
   }
 
@@ -292,12 +295,20 @@ export default function SavedQuestionDetail() {
                 </div>
                 <FlowHoverButton
                   type="button"
-                  onClick={() => handleRePractice(saved)}
+                  onClick={() => setDialogOpen(true)}
                   disabled={rePracticing}
                 >
                   {rePracticing ? 'Starting…' : 'Re-practice'}
                 </FlowHoverButton>
               </div>
+
+              <RePracticeVoiceDialog
+                open={dialogOpen}
+                busy={rePracticing}
+                questionText={saved.question_text}
+                onCancel={() => setDialogOpen(false)}
+                onStart={(voiceId) => void handleRePractice(saved, voiceId)}
+              />
 
               {/* Trend chart */}
               <section className="anim-reveal mb-16" style={{ animationDelay: '120ms' }}>
