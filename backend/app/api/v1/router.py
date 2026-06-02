@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     health,
     me,
     onboarding,
+    saved_questions,
     sessions,
     validation,
     webhooks,
@@ -39,6 +40,11 @@ api_router.include_router(
 
 # Protected. POST /api/v1/sessions starts a new mock interview.
 api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
+
+# Protected. Save & re-practice opening questions.
+api_router.include_router(
+    saved_questions.router, prefix="/saved-questions", tags=["saved-questions"]
+)
 
 # Protected. GET /api/v1/validation/{roles,industries} validates profile inputs.
 api_router.include_router(

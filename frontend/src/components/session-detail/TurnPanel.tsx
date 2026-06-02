@@ -20,6 +20,7 @@
  */
 
 import type { TurnDetail } from '../../types/history';
+import SaveQuestionButton from '../SaveQuestionButton';
 import {
   DeliveryFeedbackSection,
   InnerCard,
@@ -33,13 +34,27 @@ import {
 
 type Props = {
   turn: TurnDetail;
+  /** Set on the opening turn so it can offer the Save-question control. */
+  sessionId?: string;
+  savedQuestionId?: string | null;
 };
 
-export default function TurnPanel({ turn }: Props) {
+export default function TurnPanel({ turn, sessionId, savedQuestionId }: Props) {
   const evaluationFailed = turn.scores.structure === null;
+  // The opening question (turn 1, non-followup) is the only saveable one.
+  const isOpeningTurn = turn.turn_number === 1 && !turn.is_followup;
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {isOpeningTurn && sessionId && (
+        <div className="flex justify-end">
+          <SaveQuestionButton
+            sessionId={sessionId}
+            alreadySaved={savedQuestionId != null}
+            evaluated={!evaluationFailed}
+          />
+        </div>
+      )}
       <div className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-2">
         <QuestionAnswerCard turn={turn} />
         <InnerCard>

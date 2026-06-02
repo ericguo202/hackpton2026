@@ -179,7 +179,11 @@ export default function SessionDetail() {
                     {safeIndex === 0 ? (
                       <OverviewPanel session={session} />
                     ) : (
-                      <TurnPanel turn={session.turns[safeIndex - 1]} />
+                      <TurnPanel
+                        turn={session.turns[safeIndex - 1]}
+                        sessionId={session.id}
+                        savedQuestionId={session.saved_question_id}
+                      />
                     )}
                   </section>
 

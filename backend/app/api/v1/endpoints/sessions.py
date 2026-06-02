@@ -69,11 +69,15 @@ router = APIRouter()
 async def _persist_session_and_turn(
     db: AsyncSession,
     user: User,
-    body: SessionCreateIn,
-    brief: CompanyBrief,
+    company: str,
+    job_title: str,
+    company_summary: str,
     opening_q: str,
     session_id: UUID,
     voice_id: str,
+    experience_level: ExperienceLevel | None,
+    roll_recent: bool = True,
+    saved_question_id: UUID | None = None,
 ) -> UUID:
     """INSERT the session row + turn 1 atomically; return session.id.
 
@@ -84,16 +88,27 @@ async def _persist_session_and_turn(
     voice (either picked by the candidate or the deterministic
     fallback) and is persisted on the row so turn 2 reads the same
     value without re-deriving.
+
+    `experience_level` is frozen onto the session here (from the user's live
+    level on a fresh session, or a saved question's frozen level on
+    re-practice) so `submit_turn` never reads the mutable user row.
+
+    `roll_recent` gates the `recent_opening_questions` avoid-list write: True
+    for fresh sessions (don't repeat questions across sessions), False for
+    re-practice (the repeat is the whole point). `saved_question_id` links the
+    session to a saved question at creation (re-practice path).
     """
     session = InterviewSession(
         id=session_id,
         user_id=user.id,
-        company=body.company,
-        job_title=body.job_title,
-        company_summary=brief.model_dump_json(),
+        company=company,
+        job_title=job_title,
+        company_summary=company_summary,
         status=SessionStatus.in_progress,
         started_at=func.now(),
         voice_id=voice_id,
+        experience_level=experience_level,
+        saved_question_id=saved_question_id,
     )
     db.add(session)
     await db.flush()
@@ -109,9 +124,11 @@ async def _persist_session_and_turn(
     # Roll this opening question into the avoid-list, newest-first, capped
     # at 3. Reassigned (not mutated in place) so SQLAlchemy dirty-tracking
     # picks it up; rides the same commit as the session + turn 1 INSERT.
-    user.recent_opening_questions = (
-        [opening_q] + (user.recent_opening_questions or [])
-    )[:3]
+    # Skipped on re-practice — that flow deliberately wants the same question.
+    if roll_recent:
+        user.recent_opening_questions = (
+            [opening_q] + (user.recent_opening_questions or [])
+        )[:3]
 
     await db.commit()
     await db.refresh(session)
@@ -228,7 +245,15 @@ async def create_session(
     audio_url, _ = await asyncio.gather(
         synthesize_speech(opening_q, voice_id=voice_id),
         _persist_session_and_turn(
-            db, user, body, brief, opening_q, session_id, voice_id,
+            db,
+            user,
+            company=body.company,
+            job_title=body.job_title,
+            company_summary=brief.model_dump_json(),
+            opening_q=opening_q,
+            session_id=session_id,
+            voice_id=voice_id,
+            experience_level=user.experience_level,
         ),
     )
     await log_interview_session_started(
@@ -537,9 +562,13 @@ async def submit_turn(
     brief_out = _parse_company_summary(session.company_summary)
     category: FieldCategory | None = brief_out.category if brief_out else None
     # The candidate's seniority tailors the evaluator rubric alongside the
-    # field category. None for users onboarded before the field existed; the
-    # evaluator omits the experience appendix in that case.
-    experience_level = user.experience_level
+    # field category. Read from the SESSION (frozen at create time), NOT the
+    # live user row: this keeps turn 1 and turn 2 on the same rubric even if
+    # the user edits their profile mid-session, and keeps re-practices of a
+    # saved question apples-to-apples after a profile change. None for legacy
+    # rows created before this column existed; the evaluator omits the
+    # experience appendix in that case.
+    experience_level = session.experience_level
 
     # 2. Find the current unanswered turn (question exists, transcript is NULL).
     result = await db.execute(
@@ -1001,4 +1030,5 @@ async def get_session(
             metrics.total_filler_word_count if metrics else None
         ),
         turns_evaluated=metrics.turns_evaluated if metrics else 0,
+        saved_question_id=session.saved_question_id,
     )

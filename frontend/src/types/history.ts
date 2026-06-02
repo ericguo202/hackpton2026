@@ -118,6 +118,12 @@ export type SessionDetail = {
   averages: DimensionAverages;
   total_filler_word_count: number | null;
   turns_evaluated: number;
+  /**
+   * Non-null when this session's opening question has been saved for
+   * re-practice (this is either the saved baseline or a re-practice attempt).
+   * Drives the Save button's "already saved" state.
+   */
+  saved_question_id: string | null;
 };
 
 export type MeStats = {

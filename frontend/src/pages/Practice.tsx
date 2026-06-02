@@ -735,6 +735,8 @@ function PracticeSession({
                         turn={effectiveTurns[safeIndex - 1]}
                         turnNum={safeIndex}
                         replay={replayFor(turnResults[safeIndex - 1])}
+                        sessionId={sessionId}
+                        savedQuestionId={sessionDetail?.saved_question_id ?? null}
                       />
                     )}
                   </section>

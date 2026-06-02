@@ -233,6 +233,11 @@ class SessionDetailOut(BaseModel):
     averages: DimensionAverages
     total_filler_word_count: int | None
     turns_evaluated: int
+    # Non-null when this session's opening question has been saved for
+    # re-practice (either this is the baseline session that was saved, or a
+    # re-practice attempt). Drives the Save button's "already saved" state so
+    # the frontend doesn't need a separate lookup.
+    saved_question_id: UUID | None = None
 
 
 class MeStatsOut(BaseModel):
