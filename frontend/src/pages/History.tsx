@@ -14,6 +14,7 @@
 
 import { useMemo, useState } from 'react';
 import { UserButton } from '@clerk/react';
+import { Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import {
   CartesianGrid,
@@ -25,14 +26,19 @@ import {
   YAxis,
 } from 'recharts';
 
+import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useMeStats } from '../hooks/useMeStats';
+import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { useSessions } from '../hooks/useSessions';
+import { ApiError, extractApiErrorDetail } from '../lib/api';
 import type {
   DimensionAverages,
   SessionListItem,
 } from '../types/history';
+import type { SavedQuestionListItem } from '../types/savedQuestions';
+import type { PracticeLocationState } from './Practice';
 
 // Chart series colors are sourced from the dedicated --color-chart-*
 // palette in index.css, NOT the primary/secondary/etc. ramps. Those
@@ -296,7 +302,7 @@ export default function History() {
 
           {/* Trend chart */}
           <section
-            className="anim-reveal mb-16"
+            className="anim-reveal mb-6"
             style={{ animationDelay: '240ms' }}
           >
             <div className="flex items-baseline justify-between gap-4 mb-6">
@@ -416,6 +422,9 @@ export default function History() {
             )}
           </section>
 
+          {/* Saved questions — hidden entirely when the user has none. */}
+          <SavedQuestionsSection />
+
           {/* Session list */}
           <section className="anim-reveal" style={{ animationDelay: '320ms' }}>
             <div className="flex items-baseline justify-between gap-4 mb-2">
@@ -462,6 +471,174 @@ export default function History() {
           </section>
         </div>
       </main>
+    </div>
+  );
+}
+
+/**
+ * Saved-questions section — appears above the Sessions list, hidden entirely
+ * when the user has saved nothing. Each row is a frozen snapshot the user can
+ * re-practice or open for a progress chart, plus delete. The "role" column is
+ * the FROZEN `job_title` (what the question was generated for), not the live
+ * profile target_role, so the card reads as an intentional snapshot.
+ */
+function SavedQuestionsSection() {
+  const navigate = useNavigate();
+  const { saved, isLoading, remove, rePractice } = useSavedQuestions();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  // The saved question pending in the voice picker (null = dialog closed).
+  const [pendingSq, setPendingSq] = useState<SavedQuestionListItem | null>(null);
+
+  // Don't render anything (not even a heading) until we know there's at least
+  // one saved question — an empty section would be visual noise.
+  if (isLoading || !saved || saved.length === 0) return null;
+
+  async function handleRePractice(sq: SavedQuestionListItem, voiceId: string | null) {
+    setBusyId(sq.id);
+    try {
+      // Same mic preflight as Home's Begin-session, so the user lands in
+      // Practice with permission already granted.
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        s.getTracks().forEach((t) => t.stop());
+      } catch {
+        navigate('/', {
+          replace: true,
+          state: { flash: 'Microphone access is required to practice.' },
+        });
+        return;
+      }
+      const data = await rePractice(sq.id, voiceId);
+      const state: PracticeLocationState = {
+        sessionId: data.session_id,
+        firstQuestion: data.first_question,
+        firstQuestionAudioUrl: data.first_question_audio_url,
+        company: sq.company,
+        jobTitle: sq.job_title,
+      };
+      navigate('/practice', { state });
+    } catch (err) {
+      // 429 = daily limit; surface via flash like Home does.
+      const msg =
+        err instanceof ApiError
+          ? extractApiErrorDetail(err)
+          : (err as Error).message;
+      navigate('/', { replace: true, state: { flash: msg } });
+    } finally {
+      setBusyId(null);
+      setPendingSq(null);
+    }
+  }
+
+  return (
+    <section className="anim-reveal mb-6" style={{ animationDelay: '300ms' }}>
+      <div className="mb-2 flex items-baseline justify-between gap-4">
+        <h2
+          className="font-display font-medium text-text"
+          style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
+        >
+          Saved questions
+        </h2>
+        <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle tabular-nums">
+          {saved.length}/5 saved
+        </p>
+      </div>
+      <p className="mb-4 text-sm leading-[1.6] text-text-muted">
+        Saving a question freezes its full setup — company, job title, and
+        experience level — as a snapshot. Re-practicing always uses that frozen
+        setup, even if you later change your profile, so every attempt answers
+        the same question under the same conditions and you can watch your scores
+        improve over time. You can keep up to five saved questions at once.
+      </p>
+      <div className="mt-2">
+        {saved.map((sq) => (
+          <SavedQuestionRow
+            key={sq.id}
+            sq={sq}
+            busy={busyId === sq.id}
+            onOpen={() => navigate(`/saved-question/${sq.id}`)}
+            onRePractice={() => setPendingSq(sq)}
+            onDelete={() => void remove(sq.id)}
+          />
+        ))}
+      </div>
+
+      <RePracticeVoiceDialog
+        open={pendingSq !== null}
+        busy={busyId !== null}
+        questionText={pendingSq?.question_text}
+        onCancel={() => setPendingSq(null)}
+        onStart={(voiceId) => {
+          if (pendingSq) void handleRePractice(pendingSq, voiceId);
+        }}
+      />
+    </section>
+  );
+}
+
+function SavedQuestionRow({
+  sq,
+  busy,
+  onOpen,
+  onRePractice,
+  onDelete,
+}: {
+  sq: SavedQuestionListItem;
+  busy: boolean;
+  onOpen: () => void;
+  onRePractice: () => void;
+  onDelete: () => void;
+}) {
+  const savedDate = new Date(sq.created_at);
+  const lastPracticed = sq.last_practiced_at
+    ? new Date(sq.last_practiced_at)
+    : null;
+  return (
+    <div className="grid grid-cols-12 items-baseline gap-4 border-t border-border py-5">
+      {/* Question + frozen context. Clicking opens the progress detail page. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="col-span-12 min-[900px]:col-span-5 text-left rounded-sm px-2 -mx-2 transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface cursor-pointer"
+      >
+        <span className="block font-display text-base text-text leading-snug line-clamp-2">
+          {sq.question_text}
+        </span>
+        <span className="mt-1 block text-xs text-text-subtle">
+          {sq.job_title} @ {sq.company} · saved{' '}
+          {savedDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+        </span>
+      </button>
+
+      <span className="col-span-4 min-[900px]:col-span-2 text-sm text-text-muted tabular-nums">
+        {lastPracticed
+          ? lastPracticed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+          : '—'}
+        <span className="block text-xs text-text-subtle">
+          {sq.attempt_count} {sq.attempt_count === 1 ? 'attempt' : 'attempts'}
+        </span>
+      </span>
+
+      <span className="col-span-3 min-[900px]:col-span-2 text-sm tabular-nums">
+        <span className="text-text font-medium">{fmt(sq.avg_overall_score)}</span>
+        <span className="text-text-subtle">/100</span>
+        <span className="block text-xs text-text-subtle">avg</span>
+      </span>
+
+      <div className="col-span-5 min-[900px]:col-span-3 flex items-center justify-end gap-3">
+        <FlowHoverButton type="button" onClick={onRePractice} disabled={busy}>
+          {busy ? 'Starting…' : 'Re-practice'}
+        </FlowHoverButton>
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="Delete saved question"
+          title="Delete saved question"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border text-text-subtle transition-colors hover:border-border-strong hover:text-text cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+        >
+          <Trash2 aria-hidden className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

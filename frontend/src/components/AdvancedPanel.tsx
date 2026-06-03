@@ -10,7 +10,7 @@
 
 import type { ReactNode } from 'react';
 
-import { VOICE_PROFILES } from '../lib/voices';
+import VoicePickerGrid from './VoicePickerGrid';
 
 type Props = {
   voiceId: string | null;
@@ -33,31 +33,11 @@ export default function AdvancedPanel({
         label="Voice"
         hint="Pick an interviewer accent, or let us choose for you."
       >
-        <div className="flex flex-wrap gap-2">
-          <VoiceTile
-            active={voiceId === null}
-            disabled={disabled}
-            onClick={() => onVoiceSelect(null)}
-          >
-            Surprise me
-          </VoiceTile>
-          {VOICE_PROFILES.map((voice) => {
-            const active = voice.id === voiceId;
-            return (
-              <VoiceTile
-                key={voice.id}
-                active={active}
-                disabled={disabled}
-                onClick={() => onVoiceSelect(voice.id)}
-              >
-                <span>{voice.name}</span>
-                <span className={active ? 'ml-1.5 opacity-75' : 'ml-1.5 text-text-subtle'}>
-                  {voice.accent}
-                </span>
-              </VoiceTile>
-            );
-          })}
-        </div>
+        <VoicePickerGrid
+          voiceId={voiceId}
+          onSelect={onVoiceSelect}
+          disabled={disabled}
+        />
       </Section>
 
       <Section
@@ -99,30 +79,5 @@ function Section({ label, hint, children }: SectionProps) {
       </div>
       {children}
     </section>
-  );
-}
-
-type VoiceTileProps = {
-  active: boolean;
-  disabled: boolean;
-  onClick: () => void;
-  children: ReactNode;
-};
-
-function VoiceTile({ active, disabled, onClick, children }: VoiceTileProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-pressed={active}
-      className={
-        active
-          ? 'rounded-full border border-accent bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-          : 'cursor-pointer rounded-full border border-border bg-transparent px-4 py-2 text-sm text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
-      }
-    >
-      {children}
-    </button>
   );
 }

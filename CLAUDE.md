@@ -55,6 +55,11 @@ Future: terms/conditions, security, LiveAvatar, gamification with XP.
 
 - **History + per-metric improvement tracking.** Every completed session persists turns / scores / aggregates to Postgres. History page lists sessions, replays audio, reads transcript, shows scores. `/me/stats` surfaces per-metric trends.
 
+- **Save & re-practice opening questions.** A user can **save up to 5 opening questions** (never follow-ups) as **frozen scenario snapshots**, re-practice them on demand, and watch their scores move across attempts on a per-question progress chart. Table `saved_questions` (migration `0010_saved_questions`, `down_revision='0009_incidents'`). Sessions gain two columns: a **frozen `experience_level`** (the load-bearing correctness fix — see below) and `saved_question_id` (FK → `saved_questions.id` **ON DELETE SET NULL**, so deleting a saved question never erases interview history). Router `app/api/v1/endpoints/saved_questions.py` at prefix `/saved-questions`, schemas in `app/schemas/saved_question.py`. Five endpoints (all Clerk-gated): **POST** `""` save (404 not-owned / 422 not-completed / 422 opening-turn-not-evaluated / 409 at cap; idempotent dedup on identical `question_text`; back-links the originating session as baseline attempt #1), **GET** `""` list (per-question aggregates `attempt_count` / `last_practiced_at` / `avg_overall_score` via grouped SQL; `func.avg` ignores NULL `overall_score` so failed attempts never drag the line), **GET** `"/{id}"` detail (per-attempt opening-turn scores + `evaluation_failed` marker), **DELETE** `"/{id}"` (204; FK-null leaves sessions in History), **POST** `"/{id}/practice"` re-practice.
+  - **Re-practice skips LLM calls #1 and #2** — the opening question and company brief are read straight off the frozen row; only TTS runs (cheap, lets the voice vary per attempt). Still enforces the free-tier **daily-limit gate before any spend** (429), persists via `_persist_session_and_turn(..., roll_recent=False, saved_question_id=sq.id, experience_level=sq.experience_level)`, copies the frozen `company_summary` so `submit_turn` re-parses the same `category` / `role_signals`, and returns the **same `SessionCreateOut` shape** so the `Home → /practice` handoff works unchanged. `CompanyNotFoundError` can't occur (research skipped). Daily counter still increments at finalization in `submit_turn`.
+  - **The experience-level freeze (critical, also repairs a latent bug).** The follow-up framing AND evaluator rubric are tailored on the **15×6 (field-category × experience-level) matrix**, but `submit_turn` used to read `experience_level` **live off the user row**. So changing experience level between saving and re-practicing — or even mid-session — shifted turn 2's rubric and broke the apples-to-apples comparison. Fix: `interview_sessions.experience_level` is **stamped at create time** from `user.experience_level` (or the frozen saved-question level on re-practice) and `submit_turn` now reads `session.experience_level`. `_persist_session_and_turn` gained `roll_recent: bool = True` (re-practice **skips** the `recent_opening_questions` avoid-list write — the repeat is wanted) and `saved_question_id: UUID | None = None`; the normal `create_session` path passes defaults → byte-identical.
+  - **Saved questions deliberately survive profile drift** — they are **NOT** added to the `recent_opening_questions` reset in `onboarding.py` (their whole value is outlasting role/industry/level changes). `SessionDetailOut` carries `saved_question_id` so the Save button knows its saved state without a second call.
+
 - **Interview voices (ElevenLabs).** Setup `VoicePicker` has multiple preset voices + "Surprise me" (aimed at non-native speakers). Per-session choice.
 
 - **Free tier with daily session limits.** `pro` exists in `user_tier` but isn't exposed (flipping a row to `pro` skips the gate). Free = **5 completed sessions per local calendar day**. Counter increments at session **finalization** (in `submit_turn`'s final-turn branch), not creation — abandoning mid-session doesn't burn a slot but yields no feedback. Day reset uses IANA timezone from the browser (`users.timezone`, UTC fallback). Pre-check at `POST /sessions` runs **before** moderation / Serper / OpenRouter / TTS so rate-limited requests don't spend credits; returns 429. Race-safe via atomic single-`UPDATE` in `app/services/daily_limit.py`. Frontend reads `me.daily_session_count` for the "X/5 sessions today" indicator; 429 surfaces via FlashBanner.
@@ -102,7 +107,13 @@ users(id, clerk_user_id UNIQUE, email, name, resume_text, industry, target_role,
 tier user_tier DEFAULT 'free', daily_session_count INT DEFAULT 0, count_reset_date DATE NULL, timezone TEXT NULL,
 recent_opening_questions JSONB DEFAULT '[]', created_at, updated_at)
 
-interview_sessions(id, user_id FK, config_id FK, status, company, job_title, company_summary, overall_score, notes, started_at, ended_at, created_at, updated_at)
+interview_sessions(id, user_id FK, config_id FK, status, company, job_title, company_summary, overall_score, notes,
+experience_level experience_level NULL, saved_question_id UUID FK saved_questions.id ON DELETE SET NULL NULL,
+started_at, ended_at, created_at, updated_at)
+
+saved_questions(id, user_id FK users.id ON DELETE CASCADE, question_text, company, job_title, category TEXT NULL,
+company_summary TEXT NULL, role_signals JSONB DEFAULT '[]', sample_question_themes JSONB DEFAULT '[]',
+experience_level experience_level NULL, created_at)  -- frozen scenario snapshot; experience_level reuses the existing PG enum (create_type=False)
 
 interview_configs(id, user_id FK, company, job_title, job_description, company_context, interview_type, num_turns, ai_plan, created_at)
 
@@ -127,10 +138,16 @@ All routes except `/health` require Clerk JWT via a FastAPI dependency.
 POST /onboarding              { resume_file, industry, target_role, short_bio }
 POST /sessions                { company, job_title, voice_id?, timezone? } → 201 { session_id, summary, first_question, first_question_audio_url } | 429 (daily limit)
 POST /sessions/{id}/turns     { audio_blob } → { transcript, scores, feedback, next_question, next_question_audio_url, is_final }
-GET  /sessions/{id}           full session + turns
+GET  /sessions/{id}           full session + turns (incl. saved_question_id)
 GET  /sessions                user's session history
 GET  /me                      current user row (tier + daily_session_count)
 GET  /me/stats                aggregate scores over time
+
+POST   /saved-questions             { session_id } → 201 SavedQuestionOut | 404 | 422 (not completed / opening turn unscored) | 409 (5-cap)
+GET    /saved-questions             caller's saved questions + per-question aggregates (attempt_count, last_practiced_at, avg_overall_score)
+GET    /saved-questions/{id}        frozen question + summary + attempts[] (per-attempt opening-turn scores, evaluation_failed)
+DELETE /saved-questions/{id}        → 204 (linked sessions survive — FK ON DELETE SET NULL)
+POST   /saved-questions/{id}/practice  { voice_id?, timezone? } → SessionCreateOut (re-practice; skips research/question LLM calls) | 429 (daily limit)
 ```
 
 `timezone` is an IANA name from `Intl.DateTimeFormat().resolvedOptions().timeZone`, persisted on `users.timezone`. Missing/unparseable → UTC. TTS audio: base64 inline in JSON — no S3.

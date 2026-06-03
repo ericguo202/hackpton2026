@@ -53,7 +53,7 @@ When rendering backend errors, prefer `extractApiErrorDetail(err)` from `src/lib
 
 ### Routes currently wired
 
-Backend exposes `/api/v1/health`, `/api/v1/me`, `/api/v1/onboarding`. Frontend consumes `/me` (via `useMe`) and `/onboarding` (via `OnboardingForm`). **Not yet built**: `/sessions`, `/sessions/{id}/turns`, `/me/stats` — these are the next milestones per `../CLAUDE.md` build order. When you add UI for them, put network calls behind new hooks following the `useMe` pattern, not inline `apiFetch` in components.
+The full MVP surface is built. The frontend consumes (each behind a hook following the `useMe` pattern — never inline `apiFetch` in components): `/me` + `/me/stats` (`useMe`, History stats), `/onboarding` (`OnboardingForm`), `/sessions` + `/sessions/{id}` + `/sessions/{id}/turns` (`useSessions` / `useSessionDetail`, Practice + History + SessionDetail), the `/saved-questions` family (`useSavedQuestions` / `useSavedQuestionDetail` — see "Save & re-practice opening questions" below), and `/validation/industries` + `/validation/roles` (the onboarding/Personalize comboboxes). The canonical request shapes live in `../CLAUDE.md` under "API Routes"; mirror any backend schema change into `src/types/` by hand (no codegen).
 
 ### Practice Interview phase shell
 
@@ -117,6 +117,16 @@ Three extracted components plus a helper module, all under `src/components/sessi
 **Mobile (<900px)** drops the folder tabs strip, the side chevrons, and the desktop two-column / 2×2 layouts. Each panel collapses to a single vertical stack. A small `"Overview · 1 of 3"`-style eyebrow at the top of the active panel labels the section. Tab navigation: horizontal swipe (`touchstart`/`touchend` with `|dx| > 60 && |dx| > 1.5·|dy|` thresholding so vertical scrolls don't accidentally page) plus a `FlowHoverButton` Previous/Next row at the bottom of each panel. The absent direction renders an invisible `flex-1` spacer so the visible button stays edge-aligned.
 
 **Issue-type chip formatting**: `formatIssueType(raw)` is a generic snake_case → Title Case formatter local to `TurnPanel.tsx`. Don't hard-code a switch on the canonical 10 evaluator categories — the generic formatter is correct for unknown / legacy values too.
+
+### Save & re-practice opening questions
+
+Lets a user save up to 5 **opening** questions (never follow-ups) as frozen snapshots, re-practice them, and compare scores across attempts. Backend contract + the experience-level freeze live in `../CLAUDE.md`. Frontend pieces:
+
+- **Wire types** in `src/types/savedQuestions.ts` (mirror the new Pydantic schemas; Decimal scores arrive as **strings** on the wire — coerce with `parseFloat` / the `num()` helper at the chart boundary). `src/types/history.ts` `SessionDetail` gained `saved_question_id: string | null`.
+- **Hooks** follow the `useSessions` / `useSessionDetail` pattern (all network through `useApi().apiFetch`, gated on `isReady`): `useSavedQuestions()` (list + `refetch` + `save` / `remove` / `rePractice` mutators, `RePracticeResult` type) and `useSavedQuestionDetail(id)` (mirrors `useSessionDetail`, exposes `errorStatus`).
+- **`SaveQuestionButton.tsx`** — shared 3-state button (**Save** / **Saved** disabled / **Full** disabled at 5/5), `lucide` `Bookmark` / `BookmarkCheck`. Props `sessionId` / `alreadySaved` / `evaluated`; uses `useSavedQuestions` for the cap + save. Mounted at **two points**, both on the **opening turn only** (`turn_number === 1 && !is_followup`): `components/session-detail/TurnPanel.tsx` and `components/practice/PracticeTurnPanel.tsx` (the latter only once Practice's final-turn refetch persists `sessionId`; saved-state comes from `sessionDetail.saved_question_id`).
+- **History section** — `History.tsx` renders `SavedQuestionsSection` + `SavedQuestionRow` **above** "Sessions", hidden entirely when zero saved, with a full-width explanatory paragraph (snapshot semantics + 5-cap). Each row shows the frozen **`job_title`** (NOT live `target_role`), company, last-practiced, avg score, plus **Re-practice** (→ `POST /saved-questions/{id}/practice` then `navigate('/practice', { state })` reusing `PracticeLocationState`) and **Delete** (`Trash2`). Row click → `/saved-question/:id`.
+- **`pages/SavedQuestionDetail.tsx`** at route `/saved-question/:id` (in `App.tsx` under `RequireAuth` + `RequireOnboarded`, same nesting as `/sessions/:id`). recharts `LineChart` mirroring `History.tsx` (reuses `DIMENSIONS` / `ToggleChip` / `num` / `--color-chart-*`): one **Overall** line plus the **opening-turn (turn-1) per-dimension** lines across attempts. **Overall is recomputed frontend-side as the mean of the plotted turn-1 dims** (`openingOverall()`, excludes nulls) — NOT the session's blended turns-1+2 `overall_score` — so the whole chart consistently represents the opening answer (an earlier mismatch where Overall blended both turns was fixed this way). Failed-eval attempts render an "Evaluation failed" marker and are **not plotted** (left off the line, never a 0 point). A full-width paragraph above the chart explains what the Progress chart tracks. All UI uses semantic tokens so dark mode flips for free.
 
 ## House style
 

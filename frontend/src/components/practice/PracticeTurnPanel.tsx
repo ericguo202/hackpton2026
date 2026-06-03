@@ -23,6 +23,7 @@
 import type { TurnDetail } from '../../types/history';
 import type { InterviewSummary } from '../../lib/faceHeuristics';
 import type { AnalyzerDiagnostics } from '../../hooks/useFaceAnalyzer';
+import SaveQuestionButton from '../SaveQuestionButton';
 import {
   DeliveryFeedbackSection,
   ImprovementMomentsCard,
@@ -47,13 +48,32 @@ type Props = {
   turn: TurnDetail;
   turnNum: number;
   replay: PracticeTurnReplay;
+  /** Present once the session is persisted (final-turn refetch). Enables Save. */
+  sessionId?: string;
+  savedQuestionId?: string | null;
 };
 
-export function PracticeTurnPanel({ turn, turnNum, replay }: Props) {
+export function PracticeTurnPanel({
+  turn,
+  turnNum,
+  replay,
+  sessionId,
+  savedQuestionId,
+}: Props) {
   const evaluationFailed = turn.scores.structure === null;
+  const isOpeningTurn = turnNum === 1 && !turn.is_followup;
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {isOpeningTurn && sessionId && (
+        <div className="flex justify-end">
+          <SaveQuestionButton
+            sessionId={sessionId}
+            alreadySaved={savedQuestionId != null}
+            evaluated={!evaluationFailed}
+          />
+        </div>
+      )}
       {/* Row 1 — clamp the height so the video card stays compact even when
           the transcript is short, and the transcript scrolls when it's long. */}
       <div className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-2 min-[900px]:h-[clamp(22rem,30vw,28rem)]">

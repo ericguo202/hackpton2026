@@ -15,6 +15,7 @@ import Home from './pages/Home';
 import Calibration from './pages/Calibration';
 import Personalize from './pages/Personalize';
 import Practice from './pages/Practice';
+import SavedQuestionDetail from './pages/SavedQuestionDetail';
 import SessionDetail from './pages/SessionDetail';
 import SignIn from './pages/SignIn';
 import SignUp from './pages/SignUp';
@@ -77,6 +78,7 @@ function App() {
           <Route path="/practice" element={<Practice />} />
           <Route path="/history" element={<History />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
+          <Route path="/saved-question/:id" element={<SavedQuestionDetail />} />
           <Route path="/personalize" element={<Personalize />} />
         </Route>
       </Route>

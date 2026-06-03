@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.db.base import Base
-from app.db.models.enums import SessionStatus
+from app.db.models.enums import ExperienceLevel, SessionStatus
 
 
 class InterviewSession(Base):
@@ -72,6 +72,30 @@ class InterviewSession(Base):
     # column existed; the TTS call site falls back to
     # `voice_for_session(session.id)` in that case.
     voice_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Frozen candidate seniority for THIS session. Stamped at create time from
+    # the user's live `experience_level` (or from a saved question's frozen
+    # level on re-practice). `submit_turn` reads this — NOT the live user row —
+    # so the follow-up framing and evaluator rubric (a 15x6 category x level
+    # matrix) stay consistent across the session and across re-practices even
+    # if the user later changes their profile level. Nullable for legacy rows
+    # created before this column existed; the follow-up/evaluator omit the
+    # experience appendix in that case (same as a level-less user).
+    experience_level: Mapped[ExperienceLevel | None] = mapped_column(
+        Enum(ExperienceLevel, name="experience_level", create_type=False),
+        nullable=True,
+    )
+
+    # Links this session to the saved question it was a practice attempt of.
+    # Set at re-practice creation, and also back-filled onto the originating
+    # session when the user first saves the question (that session becomes
+    # attempt #1, the baseline). Write-once. `ON DELETE SET NULL` so deleting a
+    # saved question drops the grouping without erasing interview history.
+    saved_question_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("saved_questions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(nullable=True)
