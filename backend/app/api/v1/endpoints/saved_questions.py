@@ -47,7 +47,10 @@ from app.services.daily_limit import (
     DAILY_LIMIT_FREE,
     check_and_reset as daily_check_and_reset,
 )
-from app.services.incidents import log_interview_session_started
+from app.services.incidents import (
+    log_interview_session_started,
+    log_save_question,
+)
 from app.services.tts import synthesize_speech
 from app.services.voice_pool import is_valid_voice_id, voice_for_session
 
@@ -182,6 +185,21 @@ async def save_question(
     session.saved_question_id = sq.id
     await db.commit()
     await db.refresh(sq)
+
+    # Product analytics: log only genuinely new saves (not the dedup path) so
+    # the popularity signal isn't inflated by repeat save clicks. Best-effort —
+    # isolated session, swallows failures, never affects the response.
+    await log_save_question(
+        db,
+        user,
+        session_id=session.id,
+        question_text=sq.question_text,
+        metadata={
+            "company": sq.company,
+            "job_title": sq.job_title,
+            "saved_question_id": sq.id,
+        },
+    )
 
     return SavedQuestionOut(
         id=sq.id,

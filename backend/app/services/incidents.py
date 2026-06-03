@@ -34,6 +34,7 @@ EVENT_USER_CREATED = "user_created"
 EVENT_USER_SIGNED_IN = "user_signed_in"
 EVENT_MODERATION_REQUEST = "moderation_request"
 EVENT_INTERVIEW_SESSION_STARTED = "interview_session_started"
+EVENT_SAVE_QUESTION = "save_question"
 EVENT_ERROR = "error"
 
 
@@ -184,6 +185,25 @@ async def log_interview_session_started(
         severity=SEVERITY_INFO,
         user=user,
         session_id=session_id,
+        metadata=metadata,
+        db=db,
+    )
+
+
+async def log_save_question(
+    db: AsyncSession,
+    user: User,
+    *,
+    session_id: UUID,
+    question_text: str,
+    metadata: Mapping[str, Any] | None = None,
+) -> None:
+    await log_incident(
+        event_type=EVENT_SAVE_QUESTION,
+        severity=SEVERITY_INFO,
+        user=user,
+        session_id=session_id,
+        sent_content=question_text,
         metadata=metadata,
         db=db,
     )
