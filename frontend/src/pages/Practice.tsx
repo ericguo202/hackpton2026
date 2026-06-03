@@ -139,11 +139,17 @@ function replayToTurnDetail(replay: ReplayTurnResult, idx: number): TurnDetail {
  * backend's `DimensionAverages` shape) from the locally-captured turn
  * results. Used only on the refetch-failed fallback path.
  */
-function localAverages(turns: ReplayTurnResult[]): DimensionAverages {
+function turnDetailAverages(turns: TurnDetail[]): DimensionAverages {
+  return averagesFromScoreSources(turns.map((t) => t.scores));
+}
+
+function averagesFromScoreSources(
+  scoresList: Array<Partial<Record<keyof Scores, number | null>> | null>,
+): DimensionAverages {
   const out: Partial<Record<keyof Scores, string | null>> = {};
   for (const key of SCORE_DIM_KEYS) {
-    const vals = turns
-      .map((t) => t.scores?.[key])
+    const vals = scoresList
+      .map((scores) => scores?.[key])
       .filter((v): v is number => typeof v === 'number');
     out[key] = vals.length === 0
       ? null
@@ -338,6 +344,36 @@ function PracticeSession({
     autoRetriedRef.current = false;
   }, [recorder.audioBlob]);
 
+  useEffect(() => {
+    if (!isDone || !sessionId || sessionDetail?.status === 'completed') return;
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    async function pollSessionDetail() {
+      try {
+        const detail = await apiFetch<SessionDetail>(
+          `/api/v1/sessions/${sessionId}`,
+        );
+        if (cancelled) return;
+        setSessionDetail(detail);
+        if (detail.status === 'completed') return;
+      } catch (err) {
+        console.warn('[Practice] session detail polling failed', err);
+      }
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollSessionDetail, 2000);
+      }
+    }
+
+    void pollSessionDetail();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [apiFetch, isDone, sessionDetail?.status, sessionId]);
+
   async function handleSubmitTurn() {
     if (!recorder.audioBlob || !sessionId || !currentQ) return;
     setSubmittingTurn(true);
@@ -426,24 +462,9 @@ function PracticeSession({
       setTurnResults((prev) => [...prev, enriched]);
 
       if (result.is_final) {
-        // Pull the full session payload — it carries the canonical scores
-        // for turn 1 (which POSTed back null while the evaluator ran in the
-        // background) plus the company brief shown on the Overview tab.
-        // If the refetch fails, the Results phase still renders from the
-        // locally-captured `turnResults` via the `replayToTurnDetail`
-        // adapter — turn 1 will show "Evaluation failed" in that case.
-        try {
-          const detail = await apiFetch<SessionDetail>(
-            `/api/v1/sessions/${sessionId}`,
-          );
-          setSessionDetail(detail);
-        } catch (err) {
-          console.warn(
-            '[Practice] post-finalize session detail refetch failed; '
-            + 'Results panels will render from local turn data only.',
-            err,
-          );
-        }
+        // Enter Results immediately. The final-turn endpoint now completes
+        // scoring in the background; the polling effect above replaces local
+        // replay data with canonical session detail once it is available.
         triggerMorph(() => {
           setIsDone(true);
           setCurrentQ(null);
@@ -670,11 +691,12 @@ function PracticeSession({
           const effectiveTurns: TurnDetail[] = sessionDetail
             ? sessionDetail.turns
             : turnResults.map(replayToTurnDetail);
-          const effectiveAverages: DimensionAverages = sessionDetail
-            ? sessionDetail.averages
-            : localAverages(turnResults);
           const effectiveCompany = sessionDetail?.company ?? initial.company;
           const effectiveJobTitle = sessionDetail?.job_title ?? initial.jobTitle;
+          const sessionCompleted = sessionDetail?.status === 'completed';
+          const effectiveAverages: DimensionAverages = sessionCompleted && sessionDetail
+            ? sessionDetail.averages
+            : turnDetailAverages(effectiveTurns);
 
           const tabs: FolderTab[] = [
             { label: 'Overview', tabId: 'pr-tab-overview', panelId: 'pr-panel-overview' },
@@ -735,12 +757,14 @@ function PracticeSession({
                         jobTitle={effectiveJobTitle}
                         averages={effectiveAverages}
                         turns={effectiveTurns}
+                        sessionCompleted={sessionCompleted}
                       />
                     ) : (
                       <PracticeTurnPanel
                         turn={effectiveTurns[safeIndex - 1]}
                         turnNum={safeIndex}
                         replay={replayFor(turnResults[safeIndex - 1])}
+                        sessionCompleted={sessionCompleted}
                         sessionId={sessionId}
                         savedQuestionId={sessionDetail?.saved_question_id ?? null}
                       />

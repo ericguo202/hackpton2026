@@ -538,79 +538,10 @@ def _add_delivery_quick_win(
     feedback.quick_wins = [tip, *existing][:3]
 
 
-def _format_cv_block(cv_summary: dict) -> str:
-    """Render the browser-computed webcam summary as a compact text block.
-
-    Shape mirrors `backend/interview_feedback_latest.json`. Missing keys
-    fall back to 'n/a' so a partial summary (e.g. face dropped for the
-    entire turn) is still legible to the model.
-    """
-    face_pct = cv_summary.get("face_visible_pct", "n/a")
-    eye = cv_summary.get("eye_contact_score", "n/a")
-    eye_rating = cv_summary.get("eye_contact_rating", "")
-    expr = cv_summary.get("expression_score", "n/a")
-    expr_rating = cv_summary.get("expression_rating", "")
-    posture = cv_summary.get("posture_score", "n/a")
-    posture_rating = cv_summary.get("posture_rating", "")
-    overall = cv_summary.get("overall_interview_score", "n/a")
-    overall_rating = cv_summary.get("interview_rating", "")
-    best_eye = cv_summary.get("best_eye_contact_frame_score", "n/a")
-    best_expr = cv_summary.get("best_expression_frame_score", "n/a")
-    best_posture = cv_summary.get("best_posture_frame_score", "n/a")
-    eye_stability = cv_summary.get("eye_contact_stability", "n/a")
-    expr_stability = cv_summary.get("expression_stability", "n/a")
-    posture_stability = cv_summary.get("posture_stability", "n/a")
-    looked_away_pct = cv_summary.get("looked_away_pct", "n/a")
-    posture_drift_pct = cv_summary.get("posture_drift_pct", "n/a")
-    bad_posture_pct = cv_summary.get("bad_posture_pct", posture_drift_pct)
-    tilted_pct = cv_summary.get("tilted_pct", "n/a")
-    low_energy_pct = cv_summary.get("low_energy_pct", "n/a")
-    longest_looked_away = cv_summary.get("longest_looked_away_streak_frames", "n/a")
-    longest_posture = cv_summary.get(
-        "longest_bad_posture_streak_frames",
-        cv_summary.get("longest_posture_drift_streak_frames", "n/a"),
-    )
-    longest_tilted = cv_summary.get("longest_tilted_streak_frames", "n/a")
-    longest_low_energy = cv_summary.get("longest_low_energy_streak_frames", "n/a")
-    head_tilt_avg = cv_summary.get("head_tilt_degrees_avg", "n/a")
-    head_tilt_max = cv_summary.get("head_tilt_degrees_max", "n/a")
-    tip = cv_summary.get("coaching_tip", "")
-
-    def _tag(rating: str) -> str:
-        return f" ({rating})" if rating else ""
-
-    return (
-        "Webcam analytics (for delivery score + coaching prose):\n"
-        f"  Face visible: {face_pct}% of frames\n"
-        f"  Eye contact score (0-100): {eye}{_tag(eye_rating)}\n"
-        f"  Expression score (0-100): {expr}{_tag(expr_rating)}\n"
-        f"  Posture score (0-100): {posture}{_tag(posture_rating)}\n"
-        f"  Overall: {overall}{_tag(overall_rating)}\n"
-        f"  Best eye-contact frame: {best_eye}\n"
-        f"  Best expression frame: {best_expr}\n"
-        f"  Best posture frame: {best_posture}\n"
-        f"  Eye-contact stability: {eye_stability}\n"
-        f"  Expression stability: {expr_stability}\n"
-        f"  Posture stability: {posture_stability}\n"
-        f"  Looked-away coverage: {looked_away_pct}% of analyzed face frames\n"
-        f"  Posture-drift coverage: {posture_drift_pct}% of analyzed face frames\n"
-        f"  Bad-posture coverage: {bad_posture_pct}% of analyzed face frames\n"
-        f"  Tilted-head coverage: {tilted_pct}% of analyzed face frames\n"
-        f"  Low-energy coverage: {low_energy_pct}% of analyzed face frames\n"
-        f"  Longest looked-away streak: {longest_looked_away} frames\n"
-        f"  Longest bad-posture streak: {longest_posture} frames\n"
-        f"  Longest tilted-head streak: {longest_tilted} frames\n"
-        f"  Longest low-energy streak: {longest_low_energy} frames\n"
-        f"  Avg / max head tilt: {head_tilt_avg} / {head_tilt_max} degrees\n"
-        f"  Heuristic coaching hint: \"{tip}\""
-    )
-
-
 def _build_prompt(
     question: str,
     transcript: str,
     history: list[dict] | None,
-    cv_summary: dict | None = None,
 ) -> str:
     parts: list[str] = []
     if history:
@@ -621,9 +552,6 @@ def _build_prompt(
         parts.append("")
     parts.append(f"Current question: {question}")
     parts.append(f"Candidate answer: {transcript}")
-    if cv_summary:
-        parts.append("")
-        parts.append(_format_cv_block(cv_summary))
     return "\n".join(parts)
 
 
@@ -727,7 +655,7 @@ async def evaluate_turn(
             },
             {
                 "role": "user",
-                "content": _build_prompt(question, transcript, history, cv_summary),
+                "content": _build_prompt(question, transcript, history),
             },
         ],
         temperature=0.2,

@@ -245,14 +245,23 @@ export function ImprovementMomentsCard({ turn }: { turn: TurnDetail }) {
 export function ScoresSection({
   turn,
   evaluationFailed,
+  evaluationPending = false,
 }: {
   turn: TurnDetail;
   evaluationFailed: boolean;
+  evaluationPending?: boolean;
 }) {
   return (
     <div>
       <Eyebrow>Scores</Eyebrow>
-      {evaluationFailed ? (
+      {evaluationPending ? (
+        <div className="mt-3 rounded-md border border-border-strong p-3">
+          <p className="text-sm text-text">Scoring in progress</p>
+          <p className="mt-1 text-xs text-text-muted">
+            Feedback is still being generated for this turn.
+          </p>
+        </div>
+      ) : evaluationFailed ? (
         <div className="mt-3 rounded-md border border-border-strong p-3">
           <p className="text-sm text-text">Evaluation failed</p>
           <p className="mt-1 text-xs text-text-muted">
