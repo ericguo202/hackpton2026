@@ -120,9 +120,9 @@ interview_configs(id, user_id FK, company, job_title, job_description, company_c
 interview_turns(id, session_id FK, turn_number, question_text, transcript_text, is_followup, parent_turn_id FK,
 structure_score INT, problem_solving_score INT, initiative_score INT, impact_score INT, depth_score INT,
 delivery_score INT NULL, feedback TEXT NULL, feedback_detail JSONB NULL,
-filler_word_count INT, filler_word_breakdown JSONB, cv_summary JSONB NULL, ai_model_used, evaluated_at, created_at)
+filler_word_count INT, filler_word_breakdown JSONB, word_count INT NOT NULL DEFAULT 0, cv_summary JSONB NULL, ai_model_used, evaluated_at, created_at)
 
-session_metrics(id, session_id FK, avg_structure, avg_problem_solving, avg_initiative, avg_impact, avg_depth, avg_delivery, total_filler_word_count, overall_score, turns_evaluated, generated_at)
+session_metrics(id, session_id FK, avg_structure, avg_problem_solving, avg_initiative, avg_impact, avg_depth, avg_delivery, total_filler_word_count, total_word_count INT NULL, overall_score, turns_evaluated, generated_at)
 
 incidents(id, event_type, severity, user_id FK NULL, clerk_user_id TEXT NULL, session_id FK NULL, occurred_at,
 idempotency_key UNIQUE NULL, sent_content TEXT NULL, returned_content JSONB NULL, error TEXT NULL, metadata JSONB DEFAULT '{}')
@@ -202,6 +202,8 @@ POST   /saved-questions/{id}/practice  { voice_id?, timezone? } → SessionCreat
 - Pass full turn history in prompt so follow-ups reference earlier answers. Filler regex is ground truth; LLM breakdown supplemental only.
 
 **Filler word regex** (case-insensitive, word boundaries): `um, uh, er, like, you know, basically, literally, actually, i mean, kind of, sort of, right`
+
+**Filler-word RATE (filler words ÷ total words).** Raw count rewards short answers, so the more honest improvement signal is the *percentage* of words that are fillers. The **denominator** is stored alongside the existing count (migration `0011_word_counts`, `down_revision='0010_saved_questions'`): `interview_turns.word_count` (NOT NULL DEFAULT 0, written in `submit_turn` from `count_words()` — whitespace tokenization, sibling of `filler_word_count`) and `session_metrics.total_word_count` (nullable, summed across turns at finalization, sibling of `total_filler_word_count`). Both columns were **backfilled from existing `transcript_text`** in the migration, so the rate is accurate across all history with no gap. The rate itself is never stored — it's derived on read via `app/services/filler_words.py:filler_rate_pct(filler, words)` (returns a `Decimal` percent, 1 dp, `None` when there are no words; serializes to a string on the wire like the other Decimals). Note the slight definitional asymmetry the helper docstring records: a multi-word filler ("you know") is 1 filler but 2 words, so the rate is marginally conservative — accepted, not corrected. Surfaced everywhere as: `MeStatsOut.filler_word_rate` (lifetime, **word-weighted** Σfillers/Σwords — not a mean of per-session rates) + `total_word_count`; `SessionListItem.filler_word_rate` (per session, drives the History "Filler rate over time" trend); `SessionDetailOut.filler_word_rate` (session) + per-turn `TurnOut.filler_word_rate`. **Frontend traffic-light bands** (`fillerRateColor` + `--color-rate-good/ok/warn/bad` tokens, light+dark): ≤5% green, ≤10% yellow, ≤15% orange, >15% red — rendered by the shared `FillerRateBar` (proportional fill capped at 20%) under the Overview scores card and each turn's score stack, on both SessionDetail and Practice results.
 
 ---
 

@@ -125,6 +125,17 @@
   --color-chart-5: #b58a2c;  /* amber      — depth           */
   --color-chart-6: #48538e;  /* indigo     — delivery        */
 
+  /* ---------- Rate quality (traffic-light) ----------
+     Threshold colors for the filler-word rate bar (lower is better):
+       good ≤5% · ok ≤10% · warn ≤15% · bad >15%.
+     Earth-toned greens/ambers/terracotta/brick so the scale reads as a
+     traffic light without breaking the palette. Used only by FillerRateBar;
+     re-resolved per theme in the html.dark block below. */
+  --color-rate-good: #4a7a4a;  /* forest green */
+  --color-rate-ok:   #b58a2c;  /* amber        */
+  --color-rate-warn: #c2683a;  /* terracotta   */
+  --color-rate-bad:  #a3342a;  /* brick red    */
+
   /* ---------- Fonts ----------
      All three app tokens resolve to Inter today. The three-token split is
      forward-looking — if UI/body/display ever need to diverge, swap one
@@ -209,6 +220,12 @@ html.dark {
   --color-chart-4: #C87FA3;  /* plum       — initiative      */
   --color-chart-5: #E0B552;  /* amber      — depth           */
   --color-chart-6: #8D97D6;  /* indigo     — delivery        */
+
+  /* Rate-quality bands brightened to match the dark chart hues. */
+  --color-rate-good: #79B56F;  /* forest green */
+  --color-rate-ok:   #E0B552;  /* amber        */
+  --color-rate-warn: #E08A5F;  /* terracotta   */
+  --color-rate-bad:  #E5705C;  /* brick red    */
 }
 
 /* Manila "case file" exception. The folder card + inactive folder tabs use the

@@ -99,6 +99,12 @@ class InterviewTurn(Base):
     filler_word_breakdown: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # Total word count of `transcript_text` (whitespace tokenization) — the
+    # denominator for filler-word rate. Sibling of `filler_word_count`;
+    # written in `submit_turn`. Backfilled from transcript in migration 0011.
+    word_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
 
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Structured coach feedback used by the current UI. The legacy `feedback`

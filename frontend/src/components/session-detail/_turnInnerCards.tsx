@@ -23,7 +23,8 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import type { TurnDetail } from '../../types/history';
 import { tokenizeTranscript } from '../../lib/fillerWords';
-import { SCORE_COLOR_MAP, SCORE_KEYS, formatIssueType } from './_helpers';
+import FillerRateBar from './FillerRateBar';
+import { SCORE_COLOR_MAP, SCORE_KEYS, formatIssueType, num } from './_helpers';
 
 /* ------------------------------------------------------------------ */
 /* Primitives                                                         */
@@ -269,6 +270,11 @@ export function ScoresSection({
           })}
         </div>
       )}
+      {/* Filler rate sits under the score stack. Transcript-derived, so it
+          shows even when the evaluation failed (no scores above). */}
+      <div className="mt-2">
+        <FillerRateBar rate={num(turn.filler_word_rate)} variant="row" />
+      </div>
     </div>
   );
 }

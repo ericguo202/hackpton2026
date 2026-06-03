@@ -18,18 +18,20 @@ Expected behaviors for /me:
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import Integer, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import ClerkClaims, current_user, get_current_user_db
 from app.db.models.enums import SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
+from app.db.models.interview_turn import InterviewTurn
 from app.db.models.session_metrics import SessionMetrics
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.session import DimensionAverages, MeStatsOut
+from app.schemas.session import DimensionAverages, FillerWordStat, MeStatsOut
 from app.schemas.user import UserOut
 from app.services.daily_limit import check_and_reset as daily_check_and_reset
+from app.services.filler_words import filler_rate_pct
 
 router = APIRouter()
 
@@ -125,6 +127,9 @@ async def get_me_stats(
                 func.sum(SessionMetrics.total_filler_word_count), 0
             ).label("fillers"),
             func.coalesce(
+                func.sum(SessionMetrics.total_word_count), 0
+            ).label("words"),
+            func.coalesce(
                 func.sum(SessionMetrics.turns_evaluated), 0
             ).label("turns"),
             func.avg(SessionMetrics.overall_score).label("overall"),
@@ -139,11 +144,46 @@ async def get_me_stats(
         )
     )).one()
 
+    # Top-5 filler words. Per-word breakdown is only stored per TURN
+    # (session_metrics caches just the total), so this one aggregate is
+    # re-derived from interview_turns at query time — unlike the per-dimension
+    # averages above. `jsonb_each_text` expands each turn's {word: count} map
+    # into (key, value) rows we sum per word; the ::int cast is required since
+    # it yields text. Secondary word-asc order makes ties deterministic.
+    kv = func.jsonb_each_text(InterviewTurn.filler_word_breakdown).table_valued(
+        "key", "value", joins_implicitly=True
+    )
+    filler_rows = (await db.execute(
+        select(
+            kv.c.key.label("word"),
+            func.sum(kv.c.value.cast(Integer)).label("count"),
+        )
+        .select_from(InterviewTurn)
+        .join(InterviewSession, InterviewSession.id == InterviewTurn.session_id)
+        .where(
+            InterviewSession.user_id == user.id,
+            InterviewSession.status == SessionStatus.completed,
+        )
+        .group_by(kv.c.key)
+        .order_by(desc("count"), kv.c.key.asc())
+        .limit(5)
+    )).all()
+    top_filler_words = [
+        FillerWordStat(word=r.word, count=int(r.count)) for r in filler_rows
+    ]
+
+    total_words = int(metrics_row.words or 0)
+    total_fillers = int(metrics_row.fillers or 0)
     return MeStatsOut(
         total_sessions=counts_row.total or 0,
         completed_sessions=counts_row.completed or 0,
         total_turns_evaluated=int(metrics_row.turns or 0),
-        total_filler_word_count=int(metrics_row.fillers or 0),
+        total_filler_word_count=total_fillers,
+        total_word_count=total_words,
+        # Word-weighted lifetime rate (Σfillers / Σwords), not an average of
+        # per-session rates — a 500-word session should count more than a
+        # 20-word one.
+        filler_word_rate=filler_rate_pct(total_fillers, total_words),
         averages=DimensionAverages(
             structure=_to_decimal(metrics_row.st),
             problem_solving=_to_decimal(metrics_row.ps),
@@ -153,4 +193,5 @@ async def get_me_stats(
             delivery=_to_decimal(metrics_row.dl),
         ),
         average_overall_score=_to_decimal(metrics_row.overall),
+        top_filler_words=top_filler_words,
     )

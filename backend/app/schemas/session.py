@@ -187,6 +187,10 @@ class SessionListItem(BaseModel):
     created_at: datetime
     turns_evaluated: int
     total_filler_word_count: int | None
+    # Filler words as a percent of total words for this session (1 decimal).
+    # Null for legacy rows with no cached word total. Drives the filler-rate
+    # trend chart on the history page.
+    filler_word_rate: Decimal | None = None
     averages: DimensionAverages
 
 
@@ -209,6 +213,10 @@ class TurnOut(BaseModel):
     feedback_detail: FeedbackDetailOut | None = None
     filler_word_count: int
     filler_word_breakdown: dict[str, int]
+    # Filler words as a percent of this turn's words (1 decimal). Null when
+    # the turn has no transcript. Transcript-derived, so present even when the
+    # LLM evaluation failed.
+    filler_word_rate: Decimal | None = None
     evaluated_at: datetime | None
     created_at: datetime
 
@@ -232,12 +240,22 @@ class SessionDetailOut(BaseModel):
     turns: list[TurnOut]
     averages: DimensionAverages
     total_filler_word_count: int | None
+    # Session-level filler rate (filler words / total words, percent), shown
+    # on the Overview scores card. Null on legacy rows with no cached word total.
+    filler_word_rate: Decimal | None = None
     turns_evaluated: int
     # Non-null when this session's opening question has been saved for
     # re-practice (either this is the baseline session that was saved, or a
     # re-practice attempt). Drives the Save button's "already saved" state so
     # the frontend doesn't need a separate lookup.
     saved_question_id: UUID | None = None
+
+
+class FillerWordStat(BaseModel):
+    """One row of the top-N filler-word leaderboard. Counts are exact ints."""
+
+    word: str
+    count: int
 
 
 class MeStatsOut(BaseModel):
@@ -251,7 +269,20 @@ class MeStatsOut(BaseModel):
     completed_sessions: int
     total_turns_evaluated: int
     total_filler_word_count: int
+    # Lifetime total spoken word count across completed sessions — the
+    # denominator behind `filler_word_rate`.
+    total_word_count: int
+    # Lifetime filler rate (filler words / total words, percent, 1 decimal),
+    # word-weighted across all completed sessions. Null until the user has
+    # logged any words. The history page shows this as the headline filler
+    # stat with the raw count as the secondary hint.
+    filler_word_rate: Decimal | None
     averages: DimensionAverages
     # Average of the per-session `overall_score` (0-100 scale) across all
     # completed sessions. Null until the user finishes their first session.
     average_overall_score: Decimal | None
+    # Top-5 most-used filler words across the caller's completed sessions,
+    # aggregated at query time from per-turn interview_turns.filler_word_breakdown.
+    # Ordered count-desc, then word-asc for stable ties. Empty until the user
+    # logs at least one filler word.
+    top_filler_words: list[FillerWordStat] = []
