@@ -123,6 +123,12 @@ function replayToTurnDetail(replay: ReplayTurnResult, idx: number): TurnDetail {
     feedback_detail: replay.feedback_detail,
     filler_word_count: replay.filler_word_count,
     filler_word_breakdown: replay.filler_word_breakdown,
+    // Recompute the per-turn rate locally (refetch-failed fallback). Mirrors
+    // the backend's whitespace tokenization so it matches a successful refetch.
+    filler_word_rate: (() => {
+      const words = (replay.transcript ?? '').trim().split(/\s+/).filter(Boolean).length;
+      return words > 0 ? ((replay.filler_word_count / words) * 100).toFixed(1) : null;
+    })(),
     evaluated_at: null,
     created_at: new Date().toISOString(),
   };

@@ -50,7 +50,7 @@ from app.services.daily_limit import (
     increment as daily_increment,
 )
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
-from app.services.filler_words import count_filler_words
+from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
 from app.services.followup import generate_followup
 from app.services.incidents import log_error, log_interview_session_started
 from app.services.moderation import check_moderation
@@ -505,6 +505,7 @@ async def _upsert_session_metrics(
     session_id: UUID,
     averages: dict[str, float | None],
     total_filler_word_count: int,
+    total_word_count: int,
     overall_score: float | None,
     turns_evaluated: int,
 ) -> None:
@@ -531,6 +532,7 @@ async def _upsert_session_metrics(
         avg_depth=averages["depth"],
         avg_delivery=averages["delivery"],
         total_filler_word_count=total_filler_word_count,
+        total_word_count=total_word_count,
         overall_score=overall_score,
         turns_evaluated=turns_evaluated,
     ))
@@ -617,8 +619,10 @@ async def submit_turn(
             ),
         )
 
-    # 4. Filler words (regex ground truth per CLAUDE.md).
+    # 4. Filler words (regex ground truth per CLAUDE.md) + total word count
+    #    (denominator for the filler rate).
     filler_count, filler_breakdown = count_filler_words(transcript)
+    word_count = count_words(transcript)
 
     # 5. Collect prior evaluated turns for history context.
     prior_result = await db.execute(
@@ -660,6 +664,7 @@ async def submit_turn(
     current_turn.cv_summary            = parsed_cv_summary
     current_turn.filler_word_count     = filler_count
     current_turn.filler_word_breakdown = filler_breakdown
+    current_turn.word_count            = word_count
 
     # 8b. Branch: non-final ⇒ scoring goes to background; final ⇒ inline.
     if not is_final:
@@ -813,6 +818,10 @@ async def submit_turn(
     )]
     per_dim_avgs = _per_dimension_averages(all_turn_scores)
     total_fillers = sum(t[6] for t in all_turn_scores)
+    # Sum word counts across every turn (prior turns read their stored
+    # `word_count`; the current turn uses the value just computed) — the
+    # session-level denominator for the filler rate.
+    total_words = sum(int(t.word_count or 0) for t in prior_turns) + word_count
     # Overall: average of every populated dimension score across every
     # turn, scaled 0-10 → 0-100. Matches the prior behavior so existing
     # rows in `interview_sessions.overall_score` remain comparable.
@@ -841,6 +850,7 @@ async def submit_turn(
         session_id=session_id,
         averages=per_dim_avgs,
         total_filler_word_count=total_fillers,
+        total_word_count=total_words,
         overall_score=overall,
         turns_evaluated=turns_evaluated,
     )
@@ -952,6 +962,10 @@ async def list_sessions(
             total_filler_word_count=(
                 metrics.total_filler_word_count if metrics else None
             ),
+            filler_word_rate=filler_rate_pct(
+                metrics.total_filler_word_count if metrics else None,
+                metrics.total_word_count if metrics else None,
+            ),
             averages=_averages_from_metrics(metrics),
         ))
     return rows
@@ -1008,6 +1022,7 @@ async def get_session(
             feedback_detail=t.feedback_detail,
             filler_word_count=t.filler_word_count or 0,
             filler_word_breakdown=t.filler_word_breakdown or {},
+            filler_word_rate=filler_rate_pct(t.filler_word_count, t.word_count),
             evaluated_at=t.evaluated_at,
             created_at=t.created_at,
         )
@@ -1028,6 +1043,10 @@ async def get_session(
         averages=_averages_from_metrics(metrics),
         total_filler_word_count=(
             metrics.total_filler_word_count if metrics else None
+        ),
+        filler_word_rate=filler_rate_pct(
+            metrics.total_filler_word_count if metrics else None,
+            metrics.total_word_count if metrics else None,
         ),
         turns_evaluated=metrics.turns_evaluated if metrics else 0,
         saved_question_id=session.saved_question_id,

@@ -50,6 +50,10 @@ class SessionMetrics(Base):
     # for every turn). Added in migration 0003.
     avg_delivery: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     total_filler_word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Sum of per-turn `word_count` across the session — denominator for the
+    # session-level filler rate. Nullable like the filler total; legacy rows
+    # finalized before migration 0011 are backfilled from transcript text.
+    total_word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     overall_score: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
 

@@ -1,4 +1,10 @@
-from app.services.filler_words import count_filler_words
+from decimal import Decimal
+
+from app.services.filler_words import (
+    count_filler_words,
+    count_words,
+    filler_rate_pct,
+)
 
 
 def test_three_ums():
@@ -41,3 +47,25 @@ def test_multi_word_phrases_preferred():
     total, breakdown = count_filler_words("You know, I mean, it works.")
     assert breakdown == {"you know": 1, "i mean": 1}
     assert total == 2
+
+
+def test_count_words_whitespace_tokenization():
+    # Whitespace runs collapse; leading/trailing space ignored — matches the
+    # SQL backfill (regexp_split_to_array(btrim(x), '\\s+')).
+    assert count_words("um I think you know it works") == 7
+    assert count_words("   spaced   out  words ") == 3
+    assert count_words("single") == 1
+    assert count_words("") == 0
+
+
+def test_filler_rate_pct():
+    # 3 fillers / 80 words = 3.75% -> 3.8 (rounded to 1 dp).
+    assert filler_rate_pct(3, 80) == Decimal("3.8")
+    # No words -> undefined rate (None), never a divide-by-zero or 0%.
+    assert filler_rate_pct(0, 0) is None
+    assert filler_rate_pct(5, 0) is None
+    assert filler_rate_pct(None, 0) is None
+    # Zero fillers over real words is a legitimate 0.0%.
+    assert filler_rate_pct(0, 100) == Decimal("0.0")
+    # None filler count coerces to 0.
+    assert filler_rate_pct(None, 50) == Decimal("0.0")

@@ -15,6 +15,7 @@
 import type { ReactNode } from 'react';
 
 import type { DimensionAverages, SessionDetail } from '../../types/history';
+import FillerRateBar from './FillerRateBar';
 import { SCORE_COLOR_MAP, SCORE_KEYS, num, type ScoreKey } from './_helpers';
 
 type Props = {
@@ -25,7 +26,10 @@ export default function OverviewPanel({ session }: Props) {
   return (
     <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-6 min-[900px]:gap-8 p-6 min-[900px]:p-8">
       <CaseFileColumn session={session} />
-      <ScoresOverviewColumn averages={session.averages} />
+      <ScoresOverviewColumn
+        averages={session.averages}
+        fillerRate={num(session.filler_word_rate)}
+      />
     </div>
   );
 }
@@ -95,9 +99,16 @@ function CaseFileColumn({ session }: { session: SessionDetail }) {
 export function ScoresOverviewColumn({
   averages,
   caption,
+  fillerRate,
 }: {
   averages: DimensionAverages;
   caption?: ReactNode;
+  /**
+   * Session-level filler rate (percent). Rendered as a distinct, full-width
+   * traffic-light bar BELOW the six score tiles — a different kind of metric
+   * (lower is better), so deliberately not a 7th tile. Omitted when null.
+   */
+  fillerRate?: number | null;
 }) {
   return (
     <section className="flex flex-col">
@@ -118,6 +129,12 @@ export function ScoresOverviewColumn({
           />
         ))}
       </div>
+
+      {fillerRate != null && (
+        <div className="mt-3 rounded-lg bg-surface-raised p-4">
+          <FillerRateBar rate={fillerRate} variant="block" />
+        </div>
+      )}
     </section>
   );
 }

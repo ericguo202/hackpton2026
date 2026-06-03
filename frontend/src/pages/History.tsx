@@ -17,7 +17,10 @@ import { UserButton } from '@clerk/react';
 import { Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
+  LabelList,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -35,6 +38,7 @@ import { useSessions } from '../hooks/useSessions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import type {
   DimensionAverages,
+  FillerWordStat,
   SessionListItem,
 } from '../types/history';
 import type { SavedQuestionListItem } from '../types/savedQuestions';
@@ -90,6 +94,10 @@ function buildChartData(sessions: SessionListItem[]) {
       initiative:      num(s.averages.initiative),
       depth:           num(s.averages.depth),
       delivery:        num(s.averages.delivery),
+      // Filler words as a percent of words for this session. Plotted on its
+      // own chart (different axis/scale from the 0-10 scores). Null on legacy
+      // rows with no cached word total — dropped from the line.
+      filler_rate:     num(s.filler_word_rate),
       created_at: s.created_at,
     };
   });
@@ -99,22 +107,80 @@ function StatCell({
   label,
   value,
   hint,
+  href,
 }: {
   label: string;
   value: string;
   hint?: string;
+  /** When set, the value renders as an in-page anchor link (e.g. "#sessions"). */
+  href?: string;
 }) {
+  const valueClass =
+    'font-display text-2xl md:text-3xl text-text tabular-nums leading-none';
   return (
     <div className="flex flex-col gap-1">
       <span className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
         {label}
       </span>
-      <span className="font-display text-2xl md:text-3xl text-text tabular-nums leading-none">
-        {value}
-      </span>
+      {href ? (
+        <a
+          href={href}
+          className={
+            valueClass +
+            ' w-fit rounded-sm underline decoration-border-strong decoration-1 underline-offset-4 transition-colors hover:decoration-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+          }
+        >
+          {value}
+        </a>
+      ) : (
+        <span className={valueClass}>{value}</span>
+      )}
       {hint && (
         <span className="text-xs text-text-subtle">{hint}</span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Top-5 filler words as a horizontal bar chart. Entries arrive already
+ * sorted (count-desc) and capped at 5 from the backend, so this just renders
+ * — no client-side sort/slice (cf. ImproveNextCard's per-turn chart, which
+ * sorts a raw breakdown map). Terracotta `--color-chart-2` is the conventional
+ * filler hue and lives in the dark-mode token swap, so dark mode flips for free.
+ */
+function FillerWordsChart({ entries }: { entries: FillerWordStat[] }) {
+  const rowHeight = 28; // page section, not a card — taller rows than ImproveNext
+  const height = entries.length * rowHeight + 8;
+  return (
+    <div aria-label="Most common filler words">
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart
+          layout="vertical"
+          data={entries}
+          margin={{ top: 2, right: 32, bottom: 2, left: 0 }}
+          barCategoryGap={6}
+        >
+          <XAxis type="number" hide domain={[0, 'dataMax']} />
+          <YAxis
+            type="category"
+            dataKey="word"
+            tick={{ fontSize: 12, fill: 'var(--color-text-muted)' }}
+            axisLine={false}
+            tickLine={false}
+            width={80}
+          />
+          <Bar dataKey="count" fill="var(--color-chart-2)" radius={[0, 3, 3, 0]} barSize={14}>
+            <LabelList
+              dataKey="count"
+              position="right"
+              fontSize={12}
+              fill="var(--color-text-muted)"
+              offset={6}
+            />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -132,6 +198,7 @@ type ChartPoint = {
   initiative:      number | null;
   depth:           number | null;
   delivery:        number | null;
+  filler_rate:     number | null;
   created_at: string;
 };
 
@@ -167,6 +234,91 @@ function ChartTooltip({ active, payload }: {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Filler-rate-over-time tooltip — like `ChartTooltip` but single-series and
+ * percent-formatted (the value is a 0-100 rate, not a 0-10 score).
+ */
+function FillerRateTooltip({ active, payload }: {
+  active?: boolean;
+  payload?: Array<{ value: number | null; payload: ChartPoint }>;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const ctx = payload[0].payload;
+  const date = new Date(ctx.created_at);
+  return (
+    <div className="rounded-md bg-surface-raised border border-border px-3 py-2 shadow-sm">
+      <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted mb-1">
+        Session #{ctx.idx} · {ctx.company}
+      </p>
+      <p className="text-xs text-text-subtle mb-2">
+        {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+      </p>
+      <div className="flex items-center gap-2 text-xs">
+        <span
+          aria-hidden
+          className="inline-block w-2 h-2 rounded-full"
+          style={{ background: 'var(--color-chart-2)' }}
+        />
+        <span className="text-text-muted">Filler rate</span>
+        <span className="text-text font-medium tabular-nums ml-auto">
+          {ctx.filler_rate === null ? '—' : `${ctx.filler_rate.toFixed(1)}%`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Filler rate (% of words) per session, oldest → newest. Lower is better;
+ * unlike raw filler count this normalizes for answer length, so it reads as a
+ * genuine improvement signal. Legacy sessions with no cached word total carry
+ * a null rate and are skipped (`connectNulls`).
+ */
+function FillerRateChart({ data }: { data: ChartPoint[] }) {
+  return (
+    <div className="w-full" style={{ height: 240 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+          <CartesianGrid
+            stroke="var(--color-border)"
+            strokeDasharray="3 3"
+            vertical={false}
+          />
+          <XAxis
+            dataKey="label"
+            stroke="var(--color-text-subtle)"
+            tick={{ fill: 'var(--color-text-muted)', fontSize: 12 }}
+            tickLine={false}
+            axisLine={{ stroke: 'var(--color-border)' }}
+          />
+          <YAxis
+            domain={[0, 'auto']}
+            allowDecimals={false}
+            stroke="var(--color-text-subtle)"
+            tick={{ fill: 'var(--color-text-muted)', fontSize: 12 }}
+            tickLine={false}
+            axisLine={{ stroke: 'var(--color-border)' }}
+            width={36}
+            tickFormatter={(v: number) => `${v}%`}
+          />
+          <Tooltip content={<FillerRateTooltip />} cursor={{ stroke: 'var(--color-border-strong)' }} />
+          <Line
+            type="monotone"
+            dataKey="filler_rate"
+            name="Filler rate"
+            stroke="var(--color-chart-2)"
+            strokeWidth={2.5}
+            dot={{ r: 3, fill: 'var(--color-chart-2)' }}
+            activeDot={{ r: 5 }}
+            connectNulls
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -233,6 +385,10 @@ export default function History() {
 
   const hasSessions = (sessions?.length ?? 0) > 0;
   const enoughForChart = chartData.length >= 1;
+  // Filler-rate trend only renders once at least one session carries a
+  // non-null rate (legacy rows without a cached word total are skipped).
+  const hasFillerRate = chartData.some((d) => d.filler_rate !== null);
+  const hasTopFillerWords = (stats?.top_filler_words?.length ?? 0) > 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
@@ -284,6 +440,7 @@ export default function History() {
                 statsLoading ? '—'
                   : String(stats?.completed_sessions ?? 0)
               }
+              href="#sessions"
             />
             <StatCell
               label="Overall avg"
@@ -294,9 +451,14 @@ export default function History() {
               value={statsLoading ? '—' : String(stats?.total_turns_evaluated ?? 0)}
             />
             <StatCell
-              label="Filler words"
-              value={statsLoading ? '—' : String(stats?.total_filler_word_count ?? 0)}
-              hint="lifetime total"
+              label="Filler rate"
+              value={statsLoading ? '—' : fmt(stats?.filler_word_rate ?? null, '%')}
+              hint={
+                statsLoading
+                  ? undefined
+                  : `${stats?.total_filler_word_count ?? 0} filler words`
+              }
+              href="#filler-words"
             />
           </section>
 
@@ -422,11 +584,43 @@ export default function History() {
             )}
           </section>
 
+          {/* Filler words — rate-over-time + most-common side by side on
+              desktop, stacked full-width below 900px. Each chart self-gates,
+              so the section appears once either has data. */}
+          {(hasFillerRate || hasTopFillerWords) && (
+            <section id="filler-words" className="anim-reveal mb-10" style={{ animationDelay: '270ms' }}>
+              <h2
+                className="font-display font-medium text-text mb-6"
+                style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
+              >
+                Filler words
+              </h2>
+              <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-8 min-[900px]:gap-10">
+                {hasFillerRate && (
+                  <div>
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle mb-4">
+                      Rate over time · % of words
+                    </p>
+                    <FillerRateChart data={chartData} />
+                  </div>
+                )}
+                {hasTopFillerWords && (
+                  <div>
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle mb-4">
+                      Most used
+                    </p>
+                    <FillerWordsChart entries={stats!.top_filler_words} />
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Saved questions — hidden entirely when the user has none. */}
           <SavedQuestionsSection />
 
           {/* Session list */}
-          <section className="anim-reveal" style={{ animationDelay: '320ms' }}>
+          <section id="sessions" className="anim-reveal scroll-mt-8" style={{ animationDelay: '320ms' }}>
             <div className="flex items-baseline justify-between gap-4 mb-2">
               <h2
                 className="font-display font-medium text-text"

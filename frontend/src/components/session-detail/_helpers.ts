@@ -56,6 +56,25 @@ export function turnAverage(t: TurnDetail): number {
 }
 
 /**
+ * Filler-rate bar caps its proportional fill at this percent so high rates
+ * (which are already flagged "bad" red) stay legible instead of pinning the
+ * bar at 100%. A 5% rate fills a quarter of the bar; 20%+ fills it.
+ */
+export const FILLER_RATE_BAR_MAX = 20;
+
+/**
+ * Traffic-light color token for a filler rate (percent of words). Lower is
+ * better: ≤5 green, ≤10 yellow, ≤15 orange, >15 red. Returns a CSS var so
+ * dark mode re-resolves for free.
+ */
+export function fillerRateColor(rate: number): string {
+  if (rate <= 5) return 'var(--color-rate-good)';
+  if (rate <= 10) return 'var(--color-rate-ok)';
+  if (rate <= 15) return 'var(--color-rate-warn)';
+  return 'var(--color-rate-bad)';
+}
+
+/**
  * Convert backend snake_case issue types (off_track, missing_result, …)
  * into title-cased English. Generic title-case — works for any value the
  * backend returns, including legacy / unknown types.
