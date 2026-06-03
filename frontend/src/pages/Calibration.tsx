@@ -15,6 +15,7 @@ import {
   LockKeyhole,
   RefreshCw,
   ScanFace,
+  ShieldCheck,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 
@@ -22,8 +23,13 @@ import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import {
   clearFaceCalibration,
+  clearFaceCalibrationConsent,
+  createFaceCalibrationConsent,
   readFaceCalibration,
+  readFaceCalibrationConsent,
   writeFaceCalibration,
+  writeFaceCalibrationConsent,
+  type FaceCalibrationConsent,
   type FaceCalibrationProfile,
 } from '../lib/faceCalibration';
 import {
@@ -139,6 +145,16 @@ function formatCalibrationDate(value: string): string {
   })}`;
 }
 
+function formatConsentDate(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Accepted in this browser';
+  return `Accepted ${parsed.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })}`;
+}
+
 function SignedInNav() {
   return (
     <>
@@ -170,6 +186,10 @@ export default function Calibration() {
   const [profile, setProfile] = useState<FaceCalibrationProfile | null>(
     readFaceCalibration,
   );
+  const [consent, setConsent] = useState<FaceCalibrationConsent | null>(
+    readFaceCalibrationConsent,
+  );
+  const [consentChecked, setConsentChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [liveRead, setLiveRead] = useState<LiveRead>(EMPTY_LIVE_READ);
@@ -199,7 +219,27 @@ export default function Calibration() {
     };
   }, []);
 
+  function acceptCalibrationConsent() {
+    const nextConsent = createFaceCalibrationConsent();
+    if (!writeFaceCalibrationConsent(nextConsent)) {
+      setError(
+        'Browser storage is unavailable. Enable local storage before saving calibration consent.',
+      );
+      return;
+    }
+    setConsent(nextConsent);
+    setConsentChecked(false);
+    setError(null);
+  }
+
   async function enableCamera() {
+    if (!consent) {
+      setError(
+        'Review and accept the calibration privacy disclosure before enabling the camera.',
+      );
+      return;
+    }
+
     releaseCamera();
     setError(null);
     setPhase('requesting');
@@ -389,7 +429,10 @@ export default function Calibration() {
   function removeCalibration() {
     releaseCamera();
     clearFaceCalibration();
+    clearFaceCalibrationConsent();
     setProfile(null);
+    setConsent(null);
+    setConsentChecked(false);
     setPhase('idle');
     setError(null);
     setProgress(0);
@@ -402,6 +445,7 @@ export default function Calibration() {
   const hasLiveRead = liveRead.faceVisible;
   const hasCaptureAverage = captureAverages.sampleCount > 0;
   const savedLabel = profile ? formatCalibrationDate(profile.calibratedAt) : null;
+  const consentLabel = consent ? formatConsentDate(consent.acceptedAt) : null;
 
   return (
     <div className="min-h-screen bg-surface text-text">
@@ -446,19 +490,15 @@ export default function Calibration() {
               />
             </ol>
 
-            <div className="mt-9 rounded-lg border border-border bg-surface-raised p-4">
-              <div className="flex gap-3">
-                <LockKeyhole
-                  className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
-                  aria-hidden
-                />
-                <p className="text-xs leading-6 text-text-subtle">
-                  Private by design. Frames and landmarks stay on this device
-                  and are discarded after capture. Only aggregate ratios are
-                  saved in this browser.
-                </p>
-              </div>
-            </div>
+            <CalibrationConsentPanel
+              checked={consentChecked}
+              consentLabel={consentLabel}
+              fromOnboarding={fromOnboarding}
+              onAccept={acceptCalibrationConsent}
+              onCheckedChange={setConsentChecked}
+              onClear={removeCalibration}
+              onDecline={() => navigate('/')}
+            />
           </section>
 
           <section className="overflow-hidden rounded-xl border border-border bg-surface-raised text-text shadow-[0_28px_70px_-42px_rgba(23,21,15,0.3)]">
@@ -503,6 +543,8 @@ export default function Calibration() {
                     <p className="max-w-sm text-sm leading-6 text-primary-200">
                       {phase === 'complete'
                         ? 'Baseline saved. Your next interview will use this calibration.'
+                        : !consent
+                          ? 'Accept the calibration privacy disclosure before enabling the camera.'
                         : 'Enable the camera when you are ready. Recording starts only after you confirm.'}
                     </p>
                   </div>
@@ -665,10 +707,11 @@ export default function Calibration() {
                   <FlowHoverButton
                     type="button"
                     onClick={enableCamera}
+                    disabled={!consent}
                     variant="dark"
                     icon={<Eye className="h-4 w-4" aria-hidden />}
                   >
-                    Enable camera
+                    {consent ? 'Enable camera' : 'Accept privacy notice first'}
                   </FlowHoverButton>
                 )}
                 {phase === 'requesting' && (
@@ -738,7 +781,7 @@ export default function Calibration() {
                   onClick={removeCalibration}
                   className="cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline"
                 >
-                  Remove calibration
+                  Remove calibration and consent
                 </button>
               )}
             </div>
@@ -757,6 +800,138 @@ export default function Calibration() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function CalibrationConsentPanel({
+  checked,
+  consentLabel,
+  fromOnboarding,
+  onAccept,
+  onCheckedChange,
+  onClear,
+  onDecline,
+}: {
+  checked: boolean;
+  consentLabel: string | null;
+  fromOnboarding: boolean;
+  onAccept: () => void;
+  onCheckedChange: (checked: boolean) => void;
+  onClear: () => void;
+  onDecline: () => void;
+}) {
+  const accepted = consentLabel !== null;
+
+  return (
+    <div className="mt-9 rounded-lg border border-border bg-surface-raised p-4">
+      <div className="flex gap-3">
+        <LockKeyhole
+          className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
+          aria-hidden
+        />
+        <div>
+          <p className="text-sm font-medium text-text">
+            Calibration privacy notice and consent
+          </p>
+          <p className="mt-2 text-xs leading-6 text-text-subtle">
+            Calibration is optional. Read this notice before enabling the
+            camera.
+          </p>
+        </div>
+      </div>
+
+      <ul className="mt-4 space-y-3 text-xs leading-6 text-text-subtle">
+        <li>
+          <span className="font-medium text-text">Purpose.</span> We use a
+          six-second neutral-face camera capture only to create a delivery
+          baseline for this coaching tool.
+        </li>
+        <li>
+          <span className="font-medium text-text">Data processed.</span> Your
+          browser analyzes webcam frames and face/iris landmarks during the
+          capture. Calibration does not record audio and is not used to identify
+          you.
+        </li>
+        <li>
+          <span className="font-medium text-text">Storage and deletion.</span>{' '}
+          Raw frames, video, and landmark lists are discarded after processing.
+          Only aggregate numeric ratios and this consent timestamp are saved in
+          this browser. Removing calibration deletes both from local storage.
+        </li>
+        <li>
+          <span className="font-medium text-text">Sharing.</span> The
+          calibration profile stays on this device. During practice, if you use
+          the camera, the app may send a numeric delivery summary with your
+          answer for scoring. Raw webcam video is not uploaded.
+        </li>
+        <li>
+          <span className="font-medium text-text">Choice.</span> You can skip
+          calibration and practice without it. Delivery scoring may be absent or
+          less personalized when the camera or calibration is not used.
+        </li>
+      </ul>
+
+      {accepted ? (
+        <div className="mt-4 rounded border border-border bg-surface-sunken px-3 py-3">
+          <div className="flex items-start gap-2">
+            <ShieldCheck
+              className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
+              aria-hidden
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-text">{consentLabel}</p>
+              <p className="mt-1 text-xs leading-5 text-text-subtle">
+                You can revoke this by removing calibration. That clears the
+                local baseline and consent record, but it does not delete
+                completed interview history.
+              </p>
+              <button
+                type="button"
+                onClick={onClear}
+                className="mt-2 cursor-pointer text-xs text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
+              >
+                Remove calibration and consent
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <label className="flex cursor-pointer items-start gap-3 rounded border border-border bg-surface-sunken px-3 py-3 text-xs leading-5 text-text-subtle">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(event) => onCheckedChange(event.currentTarget.checked)}
+              className="mt-1 h-4 w-4 accent-[var(--color-accent)]"
+            />
+            <span>
+              I have read this notice, am authorized to consent, and consent to
+              local camera-based calibration processing for the purpose stated
+              above.
+            </span>
+          </label>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <FlowHoverButton
+              type="button"
+              onClick={onAccept}
+              disabled={!checked}
+              variant="dark"
+              icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
+            >
+              Accept and continue
+            </FlowHoverButton>
+            <button
+              type="button"
+              onClick={onDecline}
+              className="cursor-pointer text-xs text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
+            >
+              {fromOnboarding ? 'Skip calibration for now' : 'Leave calibration'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
