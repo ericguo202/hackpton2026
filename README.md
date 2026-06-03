@@ -96,6 +96,21 @@ suggestions such as adding the customer's actual concern, one reasoning
 sentence, or a small outcome. The goal is specific feedback without turning
 the product into a full answer generator.
 
+### Filler words, as a rate — not just a count
+
+Every answer is scanned for the usual verbal crutches — _um, uh, like, you
+know, basically, actually_ — but a raw tally is misleading: a longer, better
+answer almost always contains more of them. So Logos reports the **filler-word
+rate**: the percentage of your words that were fillers. A four-minute answer
+with twelve "likes" can be _cleaner_ than a thirty-second one with four, and
+the rate is what tells you that. It shows up as a color-graded bar — green
+under 5%, yellow to 10%, orange to 15%, red above — on the session overview,
+under each turn's scores, and as a "filler rate over time" trend on your
+History page so you can watch it fall across sessions. The lifetime figure is
+word-weighted, so one rambling session can't quietly skew it, and the History
+page also breaks out your five most-used filler words so you know which habit
+to target first.
+
 ### Body-language coaching from your webcam
 
 A 478-point MediaPipe face-landmark mesh runs in the browser at 15 fps while

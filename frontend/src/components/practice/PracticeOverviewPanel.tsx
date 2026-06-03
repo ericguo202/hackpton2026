@@ -44,9 +44,29 @@ export function PracticeOverviewPanel({ company, jobTitle, averages, turns }: Pr
   return (
     <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-6 min-[900px]:gap-8 p-6 min-[900px]:p-8">
       <IntroColumn company={company} jobTitle={jobTitle} />
-      <ScoresOverviewColumn averages={averages} caption={caption} />
+      <ScoresOverviewColumn
+        averages={averages}
+        caption={caption}
+        fillerRate={sessionFillerRate(turns)}
+      />
     </div>
   );
+}
+
+/**
+ * Word-weighted session filler rate (percent) from the turns — Σfillers ÷
+ * Σwords. Computed here rather than threaded from the refetch so it also
+ * works on the refetch-failed fallback path (turns synthesized locally).
+ * Whitespace tokenization mirrors the backend's `count_words`.
+ */
+function sessionFillerRate(turns: TurnDetail[]): number | null {
+  let fillers = 0;
+  let words = 0;
+  for (const t of turns) {
+    fillers += t.filler_word_count;
+    words += (t.transcript_text ?? '').trim().split(/\s+/).filter(Boolean).length;
+  }
+  return words > 0 ? (fillers / words) * 100 : null;
 }
 
 function IntroColumn({ company, jobTitle }: { company: string; jobTitle: string }) {
