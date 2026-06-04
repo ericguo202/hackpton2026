@@ -256,7 +256,14 @@ export function ScoresSection({
       <Eyebrow>Scores</Eyebrow>
       {evaluationPending ? (
         <div className="mt-3 rounded-md border border-border-strong p-3">
-          <p className="text-sm text-text">Scoring in progress</p>
+          <div className="flex items-center gap-2">
+            <span
+              role="status"
+              aria-label="Loading"
+              className="inline-block size-4 animate-spin rounded-full border-2 border-current border-t-transparent text-text"
+            />
+            <p className="text-sm text-text">Scoring in progress</p>
+          </div>
           <p className="mt-1 text-xs text-text-muted">
             Feedback is still being generated for this turn.
           </p>

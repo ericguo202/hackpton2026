@@ -567,7 +567,7 @@ function PracticeSession({
   const spinnerMessage = retryingTurn
     ? 'Retrying…'
     : currentQ && currentQ.num >= 2
-      ? 'Scoring — up to 40 seconds'
+      ? 'Feedback will appear shortly.'
       : 'Analyzing — 5–10 seconds';
   const showPreview =
     !autoSubmit && recorder.state === 'stopped' && recorder.audioUrl != null;

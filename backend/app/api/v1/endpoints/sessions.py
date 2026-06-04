@@ -11,7 +11,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -1094,7 +1094,12 @@ def _maybe_reap_stuck_session(
     ):
         return
     # Still within the window where a normal finalizer is expected to finish.
-    if datetime.utcnow() - session.updated_at < _FINALIZE_REAP_AFTER:
+    # `updated_at` comes back tz-aware from Postgres (timestamptz); normalize to
+    # naive UTC so it subtracts cleanly against naive `utcnow()`.
+    last_activity = session.updated_at
+    if last_activity.tzinfo is not None:
+        last_activity = last_activity.astimezone(timezone.utc).replace(tzinfo=None)
+    if datetime.utcnow() - last_activity < _FINALIZE_REAP_AFTER:
         return
     if session.id in _finalizing_sessions:
         return
