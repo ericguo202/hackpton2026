@@ -455,6 +455,10 @@ function AttemptRow({
   onClick: () => void;
 }) {
   const date = new Date(attempt.created_at);
+  // A still-finalizing attempt reports `evaluation_failed` only because its
+  // scores haven't landed yet — surface that as pending, not a failure.
+  const pending =
+    attempt.status === 'in_progress' || attempt.status === 'pending';
   return (
     <button
       type="button"
@@ -468,7 +472,9 @@ function AttemptRow({
         {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
       </span>
       <span className="col-span-5 text-right text-sm tabular-nums">
-        {attempt.evaluation_failed ? (
+        {pending ? (
+          <span className="text-text-subtle">Scoring in progress</span>
+        ) : attempt.evaluation_failed ? (
           <span className="text-text-subtle">Evaluation failed</span>
         ) : (
           <>
