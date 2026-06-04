@@ -1,4 +1,4 @@
-# Logos: AI Behavioral Interview Coach
+# SocraticVoice: AI Behavioral Interview Coach
 
 MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-out → metrics + incidents persisted.
 Future: terms/conditions, security, LiveAvatar, gamification with XP.
