@@ -8,6 +8,8 @@
  * boundary, the same convention as `types/history.ts`.
  */
 
+import type { SessionStatus } from './history';
+
 /** One row in the History "Saved questions" section. */
 export type SavedQuestionListItem = {
   id: string;
@@ -26,6 +28,10 @@ export type SavedQuestionListItem = {
 export type SavedQuestionAttempt = {
   session_id: string;
   created_at: string;
+  /** Session lifecycle state. Non-`completed` (e.g. a still-finalizing
+   *  re-practice) means scores aren't in yet — show "Scoring in progress",
+   *  NOT "Evaluation failed". */
+  status: SessionStatus;
   /** 0-100 scale. Null when the session's evaluation never completed. */
   overall_score: string | null;
   /** Opening-turn per-dimension scores — the same-question comparison line. */

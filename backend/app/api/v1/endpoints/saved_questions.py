@@ -311,6 +311,7 @@ async def get_saved_question(
         attempts.append(SavedQuestionAttempt(
             session_id=s.id,
             created_at=s.created_at,
+            status=s.status.value,
             overall_score=s.overall_score,
             turn1_scores=turn1_scores,
             evaluation_failed=not evaluated,

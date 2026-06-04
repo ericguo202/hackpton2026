@@ -34,13 +34,22 @@ import {
 
 type Props = {
   turn: TurnDetail;
+  /** False while the session is still finalizing — null scores mean
+   *  "Scoring in progress", not "Evaluation failed". */
+  sessionCompleted: boolean;
   /** Set on the opening turn so it can offer the Save-question control. */
   sessionId?: string;
   savedQuestionId?: string | null;
 };
 
-export default function TurnPanel({ turn, sessionId, savedQuestionId }: Props) {
+export default function TurnPanel({
+  turn,
+  sessionCompleted,
+  sessionId,
+  savedQuestionId,
+}: Props) {
   const evaluationFailed = turn.scores.structure === null;
+  const evaluationPending = evaluationFailed && !sessionCompleted;
   // The opening question (turn 1, non-followup) is the only saveable one.
   const isOpeningTurn = turn.turn_number === 1 && !turn.is_followup;
 
@@ -52,6 +61,7 @@ export default function TurnPanel({ turn, sessionId, savedQuestionId }: Props) {
             sessionId={sessionId}
             alreadySaved={savedQuestionId != null}
             evaluated={!evaluationFailed}
+            sessionCompleted={sessionCompleted}
           />
         </div>
       )}
@@ -59,7 +69,11 @@ export default function TurnPanel({ turn, sessionId, savedQuestionId }: Props) {
         <QuestionAnswerCard turn={turn} />
         <InnerCard>
           <div className="flex flex-col gap-5 flex-1 min-h-0 overflow-y-auto">
-            <ScoresSection turn={turn} evaluationFailed={evaluationFailed} />
+            <ScoresSection
+              turn={turn}
+              evaluationFailed={evaluationFailed}
+              evaluationPending={evaluationPending}
+            />
             <MainTakeawaySection turn={turn} />
             <DeliveryFeedbackSection turn={turn} />
             <QuickWinsSection turn={turn} />

@@ -124,22 +124,17 @@ class FeedbackDetailOut(BaseModel):
 class TurnSubmitOut(BaseModel):
     """Response shape for `POST /sessions/{id}/turns`.
 
-    On a non-final turn, Gemma 4 evaluation runs in the background so the
-    candidate can move to the next question without waiting ~30-40s for
-    scoring. In that case `scores` and `feedback` come back as `null` and
-    `evaluation_pending` is `true`; the frontend skips rendering them and
-    re-fetches the full session via `GET /sessions/{id}` at finalization
-    once the background task has finished writing scores to the DB.
-
-    On the final turn, evaluation is awaited inline (we need the scores
-    for aggregation), so `scores`, `feedback` and `evaluation_pending=false`
-    are populated as before.
+    Evaluation runs in the background for every turn. Non-final turns return
+    the next question immediately after STT + follow-up/TTS. Final turns return
+    immediately after transcript persistence, then a background finalizer writes
+    scores, aggregates, and flips the session to completed. Clients should poll
+    `GET /sessions/{id}` while `evaluation_pending` is true.
     """
 
     transcript: str
     # Scores/feedback are only present once the evaluator has actually run.
-    # Nullable so the turn-1 response can return immediately after STT +
-    # follow-up generation without waiting on Gemma 4.
+    # Nullable so turn responses can return immediately while background
+    # evaluation writes the canonical scores.
     scores: ScoresOut | None = None
     feedback: str | None = None
     feedback_detail: FeedbackDetailOut | None = None

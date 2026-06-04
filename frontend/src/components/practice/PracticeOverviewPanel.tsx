@@ -23,9 +23,16 @@ type Props = {
   jobTitle: string;
   averages: DimensionAverages;
   turns: TurnDetail[];
+  sessionCompleted: boolean;
 };
 
-export function PracticeOverviewPanel({ company, jobTitle, averages, turns }: Props) {
+export function PracticeOverviewPanel({
+  company,
+  jobTitle,
+  averages,
+  turns,
+  sessionCompleted,
+}: Props) {
   const evaluatedAverages = turns
     .map((t) => turnAverageOrNull(t))
     .filter((v): v is number => v !== null);
@@ -39,6 +46,8 @@ export function PracticeOverviewPanel({ company, jobTitle, averages, turns }: Pr
   const caption =
     overall != null
       ? `Overall ${overall}/10 averaged across ${evaluatedCount} of ${totalTurns} turn${totalTurns === 1 ? '' : 's'}`
+      : !sessionCompleted
+        ? 'Scoring is still in progress. Scores will fill in here as feedback finishes.'
       : `No turns were scored in this session.`;
 
   return (

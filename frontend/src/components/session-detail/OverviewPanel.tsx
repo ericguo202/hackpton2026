@@ -20,15 +20,23 @@ import { SCORE_COLOR_MAP, SCORE_KEYS, num, type ScoreKey } from './_helpers';
 
 type Props = {
   session: SessionDetail;
+  /** False while the session is still finalizing — averages are null and a
+   *  pending caption explains why, rather than reading as a scoreless session. */
+  sessionCompleted: boolean;
 };
 
-export default function OverviewPanel({ session }: Props) {
+export default function OverviewPanel({ session, sessionCompleted }: Props) {
   return (
     <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-6 min-[900px]:gap-8 p-6 min-[900px]:p-8">
       <CaseFileColumn session={session} />
       <ScoresOverviewColumn
         averages={session.averages}
         fillerRate={num(session.filler_word_rate)}
+        caption={
+          sessionCompleted
+            ? undefined
+            : 'Scoring is still in progress. Scores will fill in here as feedback finishes.'
+        }
       />
     </div>
   );

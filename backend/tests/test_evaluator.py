@@ -246,10 +246,11 @@ async def test_delivery_roundtrips_with_cv_summary(monkeypatch):
         cv_summary=cv_summary,
     )
     assert result.delivery == _compute_delivery_score(cv_summary)
-    # The analytics block must actually reach the prompt — otherwise the
-    # model can't write an analytics-aware coaching note.
-    assert "Webcam analytics" in captured_prompt["value"]
-    assert "67.9" in captured_prompt["value"]
+    # Webcam analytics stay out of the LLM prompt; delivery scoring and
+    # delivery feedback are deterministic server-side post-processing.
+    assert "Webcam analytics" not in captured_prompt["value"]
+    assert "67.9" not in captured_prompt["value"]
+    assert result.feedback_detail.delivery_feedback is not None
 
 
 async def test_delivery_falls_back_when_model_omits_it_despite_cv_summary(monkeypatch):
