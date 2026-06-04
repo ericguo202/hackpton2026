@@ -61,6 +61,7 @@ export default function TurnPanel({
             sessionId={sessionId}
             alreadySaved={savedQuestionId != null}
             evaluated={!evaluationFailed}
+            sessionCompleted={sessionCompleted}
           />
         </div>
       )}

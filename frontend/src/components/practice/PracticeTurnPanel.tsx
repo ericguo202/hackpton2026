@@ -74,6 +74,7 @@ export function PracticeTurnPanel({
             sessionId={sessionId}
             alreadySaved={savedQuestionId != null}
             evaluated={!evaluationFailed}
+            sessionCompleted={sessionCompleted}
           />
         </div>
       )}
