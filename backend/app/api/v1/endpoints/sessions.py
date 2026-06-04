@@ -11,7 +11,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -63,12 +63,49 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 _finalize_tasks: set[asyncio.Task[None]] = set()
+_finalizing_sessions: set[UUID] = set()
+
+# How long after the final answer was persisted we wait before the lazy
+# reaper in `get_session` is allowed to re-spawn finalization. Comfortably
+# longer than a normal finalize (turn-1 drain + ~30-40s evaluator) so a
+# still-running finalizer is never raced; the per-session dedup set below is
+# the primary guard within a process, this grace covers the multi-worker case.
+_FINALIZE_REAP_AFTER = timedelta(seconds=90)
 
 
-def _register_finalize_task(task: asyncio.Task[None]) -> None:
-    """Keep a strong reference to background finalization until it finishes."""
+def _spawn_finalize(
+    *,
+    session_id: UUID,
+    final_turn_id: UUID,
+    category: FieldCategory | None,
+    experience_level: ExperienceLevel | None,
+) -> None:
+    """Spawn background finalization, deduped per session within this process.
+
+    Holds a strong reference to the task (so it isn't GC'd mid-flight) and
+    records the session id so the lazy reaper in `get_session` won't start a
+    second, concurrent finalizer for a session this worker is already
+    finishing — which would otherwise double the free-tier daily increment.
+    """
+    if session_id in _finalizing_sessions:
+        return
+    _finalizing_sessions.add(session_id)
+    task = asyncio.create_task(
+        _run_background_finalize(
+            session_id=session_id,
+            final_turn_id=final_turn_id,
+            category=category,
+            experience_level=experience_level,
+        ),
+        name=f"finalize-session-{session_id}",
+    )
     _finalize_tasks.add(task)
-    task.add_done_callback(_finalize_tasks.discard)
+
+    def _done(t: asyncio.Task[None]) -> None:
+        _finalize_tasks.discard(t)
+        _finalizing_sessions.discard(session_id)
+
+    task.add_done_callback(_done)
 
 
 # ── session creation ──────────────────────────────────────────────────────────
@@ -913,19 +950,19 @@ async def submit_turn(
     # 8c. Final turn: persist immediately, then complete scoring/aggregation
     #     in the background so the user can enter Results without waiting on
     #     the evaluator. The session remains `in_progress` until the task
-    #     writes metrics and flips it to `completed`.
+    #     writes metrics and flips it to `completed`. `updated_at` is stamped
+    #     here as the "final answer committed" clock the lazy reaper in
+    #     `get_session` measures its grace period against (the column has no
+    #     onupdate, so nothing else moves it between create and now).
+    session.updated_at = datetime.utcnow()
     await db.commit()
 
-    finalize_task = asyncio.create_task(
-        _run_background_finalize(
-            session_id=session_id,
-            final_turn_id=current_turn.id,
-            category=category,
-            experience_level=experience_level,
-        ),
-        name=f"finalize-session-{session_id}",
+    _spawn_finalize(
+        session_id=session_id,
+        final_turn_id=current_turn.id,
+        category=category,
+        experience_level=experience_level,
     )
-    _register_finalize_task(finalize_task)
 
     return TurnSubmitOut(
         transcript=transcript,
@@ -1027,6 +1064,56 @@ async def list_sessions(
     return rows
 
 
+def _maybe_reap_stuck_session(
+    session: InterviewSession,
+    turns: list[InterviewTurn],
+) -> None:
+    """Lazily recover a session left `in_progress` by a dead finalizer.
+
+    The final-turn POST persists the transcript and hands scoring to a
+    detached `_run_background_finalize` task. If the worker that spawned it
+    dies before it commits (deploy, crash, OOM) — or the task itself raised
+    and left the session un-finalized — the row stays `in_progress` forever:
+    there is no cron sweeper. Recover opportunistically on read.
+
+    Only fires once the final answer is durably persisted and the grace
+    window has elapsed, and re-uses `_spawn_finalize`'s per-session dedup so
+    it can never run alongside a finalizer this worker is already driving.
+    `_run_background_finalize` is itself idempotent — it no-ops on a session
+    that's since completed and only evaluates still-unscored turns — so a
+    spurious re-spawn is harmless.
+    """
+    if session.status != SessionStatus.in_progress:
+        return
+    # Final answer committed? (2-turn rule: turn 2 carries the last answer.)
+    final_turn = max(turns, key=lambda t: t.turn_number, default=None)
+    if (
+        final_turn is None
+        or final_turn.turn_number < 2
+        or final_turn.transcript_text is None
+    ):
+        return
+    # Still within the window where a normal finalizer is expected to finish.
+    if datetime.utcnow() - session.updated_at < _FINALIZE_REAP_AFTER:
+        return
+    if session.id in _finalizing_sessions:
+        return
+
+    logger.warning(
+        "Lazy-reaping stuck session=%s (in_progress, last activity %s); "
+        "re-spawning finalization.",
+        session.id,
+        session.updated_at,
+    )
+    brief = _parse_company_summary(session.company_summary)
+    _spawn_finalize(
+        session_id=session.id,
+        final_turn_id=final_turn.id,
+        category=brief.category if brief else None,
+        experience_level=session.experience_level,
+    )
+
+
 @router.get("/{session_id}", response_model=SessionDetailOut)
 async def get_session(
     session_id: UUID,
@@ -1047,7 +1134,13 @@ async def get_session(
         .where(InterviewTurn.session_id == session_id)
         .order_by(InterviewTurn.turn_number)
     )
-    turns = turns_result.scalars().all()
+    turns = list(turns_result.scalars().all())
+
+    # Self-heal a session whose background finalizer never completed. This
+    # read returns the still-`in_progress` payload as usual; the re-spawned
+    # task flips it to `completed` out of band, and the client's poll picks
+    # up the scores on a subsequent fetch.
+    _maybe_reap_stuck_session(session, turns)
 
     metrics_result = await db.execute(
         select(SessionMetrics).where(SessionMetrics.session_id == session_id)
