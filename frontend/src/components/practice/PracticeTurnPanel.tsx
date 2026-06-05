@@ -110,9 +110,7 @@ export function PracticeTurnPanel({
       <div className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-2">
         <ImprovementMomentsCard turn={turn} />
         <ImproveNextCard
-          scores={turn.scores}
-          fillerWordCount={turn.filler_word_count}
-          fillerWordBreakdown={turn.filler_word_breakdown}
+          turn={turn}
           cvSummary={replay.cvSummary}
           analyzerDiagnostics={replay.analyzerDiagnostics}
         />
