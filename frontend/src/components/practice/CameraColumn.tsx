@@ -75,6 +75,7 @@ export function CameraColumn({
       {showPreview && (
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <FlowHoverButton
+            variant="dark"
             type="button"
             onClick={onSubmitPreview}
             disabled={submitting}
@@ -82,7 +83,6 @@ export function CameraColumn({
             Submit answer
           </FlowHoverButton>
           <FlowHoverButton
-            variant="dark"
             type="button"
             onClick={onReRecordPreview}
             disabled={submitting}
