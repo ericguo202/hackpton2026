@@ -26,6 +26,7 @@ type CoachingBlock = {
   title: string;
   detail: string;
   action?: string;
+  example?: string;
   checklist?: string[];
   extra?: ReactNode;
 };
@@ -42,14 +43,18 @@ type PriorityKind =
 
 type QuestionKind =
   | 'workload'
+  | 'project'
   | 'conflict'
   | 'leadership'
   | 'failure'
   | 'general';
 
 type StoryPlaybook = {
+  alreadyHad: string;
   checklist: string[];
+  assignment: string;
   scaffold: Partial<Record<PriorityKind, string>> & { default: string };
+  examples: Partial<Record<PriorityKind, string>> & { default: string };
 };
 
 const SCORE_LABELS: Record<keyof TurnDetail['scores'], string> = {
@@ -63,15 +68,19 @@ const SCORE_LABELS: Record<keyof TurnDetail['scores'], string> = {
 
 const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
   workload: {
+    alreadyHad:
+      'You already gave a priority rule. Now make the load concrete and prove the rule worked.',
     checklist: [
       'What was the actual load: tests, assignments, deadlines, or stakes?',
       'What rule did you use to rank the work?',
       'What did you do first, next, and deliberately not overdo?',
       'What got finished, protected, improved, or avoided because of that system?',
     ],
+    assignment:
+      'Next take: keep setup to one sentence, use two sentences for your priority rule and actions, then end with one concrete result.',
     scaffold: {
       outcome:
-        'I had ___ due by ___, so I ranked them by deadline, difficulty, and grade risk. I handled ___ first because ___. Using that order, I finished ___ by ___ and protected/improved ___.',
+        'I had ___ tests and ___ assignments due by ___. I handled ___ first because ___. Then I spent ___ on ___. Using that order, I finished ___ and ___.',
       reasoning:
         'I prioritized ___ over ___ because ___ had the bigger deadline/grade risk. That let me ___ without falling behind on ___.',
       detail:
@@ -83,14 +92,66 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
       default:
         'I had ___ due by ___. I ranked the work by ___. I did ___ first because ___. The result was ___.',
     },
+    examples: {
+      outcome:
+        'Example direction: "Using that order, I finished the two assignments before Friday and had enough time to prepare for the harder test."',
+      reasoning:
+        'Example direction: "I chose the harder test first because it had the biggest grade risk, then used easy assignments to keep momentum."',
+      detail:
+        'Example direction: "I had two tests and three assignments due by Friday, with the hardest test in the class where my grade was lowest."',
+      default:
+        'Example direction: "I ranked the work by deadline and difficulty, then finished the smaller assignments first so I could focus on the hardest test."',
+    },
+  },
+  project: {
+    alreadyHad:
+      'You already gave the goal of the project. Now make your role, the build, and what happened afterward concrete.',
+    checklist: [
+      'What were you trying to build or accomplish?',
+      'What was your specific role on the team?',
+      'What did you personally make, decide, coordinate, or fix?',
+      'What happened at the end: demo, feedback, award, feature, lesson, or result?',
+    ],
+    assignment:
+      'Next take: name the project goal quickly, spend two sentences on your specific contribution, then end with what the project achieved or taught you.',
+    scaffold: {
+      outcome:
+        'We built ___ for ___. My role was ___. I contributed ___, and we ended up ___. That mattered because ___.',
+      reasoning:
+        'We chose ___ because ___ mattered more than ___. My part was ___, which helped us ___.',
+      detail:
+        'The project was ___. The constraint was ___. I worked on ___ so that ___.',
+      ownership:
+        'My specific role was ___. I owned ___, coordinated ___, and helped the team ___.',
+      structure:
+        'The goal was ___. My role was ___. I worked on ___. The result was ___.',
+      default:
+        'We built ___ for ___. My role was ___. I worked on ___. The result was ___.',
+    },
+    examples: {
+      outcome:
+        'Example direction: "We finished the demo, presented it to judges, and I learned how to divide technical work under a deadline."',
+      reasoning:
+        'Example direction: "We kept the scope smaller because finishing a working demo mattered more than adding one more unfinished feature."',
+      detail:
+        'Example direction: "I owned the front-end flow and connected it to the API so the demo worked end to end."',
+      ownership:
+        'Example direction: "I coordinated the build plan, owned the presentation flow, and helped unblock teammates when parts slipped."',
+      default:
+        'Example direction: "We completed a working prototype, got useful feedback, and I learned how to keep a team moving under time pressure."',
+    },
   },
   conflict: {
+    alreadyHad:
+      'You already have an example to discuss. Now make the disagreement, your response, and the resolution easy to follow.',
     checklist: [
       'What was the disagreement or tension?',
       'What did the other person care about?',
       'What did you say or do to move it forward?',
       'How was the relationship, decision, or outcome better afterward?',
     ],
+    assignment:
+      'Next take: name the disagreement quickly, explain the other person’s concern, then show the action you took and the resolution.',
     scaffold: {
       outcome:
         'After that conversation, we agreed to ___, which improved ___ because ___.',
@@ -105,14 +166,26 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
       default:
         'The disagreement was ___. I learned they cared about ___. I responded by ___. The result was ___.',
     },
+    examples: {
+      outcome:
+        'Example direction: "We agreed on a smaller first step, which let the project move forward without ignoring their concern."',
+      reasoning:
+        'Example direction: "I focused on reliability because that was their main concern, while my original plan prioritized speed."',
+      default:
+        'Example direction: "I clarified their concern, adjusted my proposal, and we left with a decision both sides could support."',
+    },
   },
   leadership: {
+    alreadyHad:
+      'You already have a situation where something needed to happen. Now make your ownership and the team outcome explicit.',
     checklist: [
       'What need or gap did you notice?',
       'What did you personally take ownership of?',
       'Who did you influence, organize, or help?',
       'What changed because you stepped in?',
     ],
+    assignment:
+      'Next take: spend one sentence on the gap, two on what you personally drove, and one on the result for the group.',
     scaffold: {
       outcome:
         'Because I took ownership of ___, the team was able to ___ by ___.',
@@ -127,14 +200,26 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
       default:
         'I noticed ___. I took ownership of ___. I helped ___ do ___. The result was ___.',
     },
+    examples: {
+      outcome:
+        'Example direction: "Because I owned the schedule, the team finished the presentation on time and everyone knew their part."',
+      ownership:
+        'Example direction: "I created the task list, checked progress each day, and helped teammates unblock the hardest pieces."',
+      default:
+        'Example direction: "I noticed the team was stuck, organized the next steps, and helped us finish with a clearer plan."',
+    },
   },
   failure: {
+    alreadyHad:
+      'You already have a setback to explain. Now make the cause, your ownership, and the changed behavior clear.',
     checklist: [
       'What went wrong?',
       'What caused it, including your part?',
       'What did you change afterward?',
       'How did your behavior or result improve next time?',
     ],
+    assignment:
+      'Next take: own the mistake plainly, explain the cause without over-defending it, then end with what you changed.',
     scaffold: {
       outcome:
         'After changing ___, the next time I ___ and the result was ___.',
@@ -149,14 +234,26 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
       default:
         'I made the mistake of ___. I realized the cause was ___. I changed ___. The next time, ___.',
     },
+    examples: {
+      outcome:
+        'Example direction: "After changing how I planned the work, I caught the issue earlier the next time and avoided the same mistake."',
+      ownership:
+        'Example direction: "I owned that I had waited too long to ask for help, then set earlier check-ins on the next project."',
+      default:
+        'Example direction: "I learned that I needed earlier feedback, so I changed my process before the next deadline."',
+    },
   },
   general: {
+    alreadyHad:
+      'You already gave part of the story. Now make the role, action, and result impossible to miss.',
     checklist: [
       'What was the situation?',
       'What was your role or decision?',
       'What action did you take?',
       'What changed or what did you learn?',
     ],
+    assignment:
+      'Next take: keep the setup brief, make your action specific, and end with a result or learning.',
     scaffold: {
       outcome:
         'The result was ___, which mattered because ___.',
@@ -170,6 +267,18 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
         'The situation was ___. My role was ___. I acted by ___. The result was ___.',
       default:
         'The situation was ___. My role was ___. I did ___. The result was ___.',
+    },
+    examples: {
+      outcome:
+        'Example direction: "The work led to a finished deliverable, clearer team process, useful feedback, or a lesson I applied afterward."',
+      reasoning:
+        'Example direction: "I chose the simpler approach because finishing reliably mattered more than adding extra scope."',
+      detail:
+        'Example direction: "The constraint was time, unclear requirements, or a teammate dependency, so I focused on the part I could unblock."',
+      ownership:
+        'Example direction: "I owned the planning, made the key decision, or followed through on the part others were waiting on."',
+      default:
+        'Example direction: "I made a specific contribution, it changed the outcome, and I can explain what I learned from it."',
     },
   },
 };
@@ -215,6 +324,11 @@ export function ImproveNextCard({
                     {block.action}
                   </p>
                 )}
+                {block.example && (
+                  <p className="mt-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-sm leading-6 text-text-muted">
+                    {block.example}
+                  </p>
+                )}
                 {block.extra}
               </li>
             ))}
@@ -237,6 +351,7 @@ function buildCoachingBlocks({
   const playbook = PLAYBOOKS[questionKind];
   const blocks: CoachingBlock[] = [
     buildPriorityBlock({ turn, priority, moments, questionKind }),
+    buildAlreadyHadBlock(playbook),
     buildStoryBlock({ questionKind, playbook }),
     buildTryThisBlock({ priority, playbook }),
   ];
@@ -245,7 +360,7 @@ function buildCoachingBlocks({
   if (fillerBlock) blocks.push(fillerBlock);
 
   if (
-    blocks.length === 3 &&
+    blocks.length === 4 &&
     !turn.feedback_detail?.main_takeaway &&
     scoreEntries.length === 0 &&
     analyzerDiagnostics.framesProcessed === 0
@@ -259,6 +374,13 @@ function buildCoachingBlocks({
   }
 
   return blocks;
+}
+
+function buildAlreadyHadBlock(playbook: StoryPlaybook): CoachingBlock {
+  return {
+    title: 'Keep this part',
+    detail: playbook.alreadyHad,
+  };
 }
 
 function buildPriorityBlock({
@@ -276,7 +398,9 @@ function buildPriorityBlock({
     (moment) => priorityFromIssue(moment.issue_type) === priority,
   );
   const snippet = matchingMoment?.transcript_snippet?.trim();
-  const snippetText = snippet ? ` The phrase "${snippet}" is the spot to tighten first.` : '';
+  const snippetText = snippet
+    ? ` You stopped at: "${snippet}". Build past it by adding what happened next.`
+    : '';
 
   switch (priority) {
     case 'outcome':
@@ -284,7 +408,10 @@ function buildPriorityBlock({
         title: 'What to fix first',
         detail:
           questionKind === 'workload'
-            ? 'You explained your prioritization system, but the answer stops before the interviewer knows whether it worked. That is why impact feels low: there is no finished outcome, avoided problem, grade improvement, or concrete result.'
+            ? 'You explained your prioritization system, but the answer stops before the interviewer knows whether it worked. Add a payoff: finished on time, avoided missing a deadline, improved a grade, reduced stress, or completed the harder prep.'
+            : questionKind === 'project'
+              ? 'You explained the project goal, but the payoff is still unclear. Add what happened next: a finished demo, judge feedback, an award, a working feature, a teammate outcome, or a lesson you applied afterward.' +
+                snippetText
             : 'You explained the action, but the payoff is still unclear. The interviewer needs to hear what changed because of your work.' +
               snippetText,
       };
@@ -302,7 +429,7 @@ function buildPriorityBlock({
         title: 'What to fix first',
         detail:
           questionKind === 'workload'
-            ? 'The workload needs to feel concrete. Add numbers, deadlines, class difficulty, grade risk, or the exact pressure so your prioritization has stakes.'
+            ? 'The workload needs to feel concrete. Add the number of tests or assignments, due dates, hardest class, grade risk, or how much time you had.'
             : 'The story needs one concrete detail. Name the constraint, person, metric, or exact problem so the answer feels real.' +
               snippetText,
       };
@@ -349,7 +476,7 @@ function buildStoryBlock({
   playbook: StoryPlaybook;
 }): CoachingBlock {
   return {
-    title: 'How to build the better story',
+    title: 'How to think about it',
     detail: storyIntroFor(questionKind),
     checklist: playbook.checklist,
   };
@@ -363,10 +490,10 @@ function buildTryThisBlock({
   playbook: StoryPlaybook;
 }): CoachingBlock {
   return {
-    title: 'Try this next',
-    detail:
-      'Use this as a rough scaffold, not a script. Fill the blanks with your real details.',
+    title: 'Next take assignment',
+    detail: playbook.assignment,
     action: playbook.scaffold[priority] ?? playbook.scaffold.default,
+    example: playbook.examples[priority] ?? playbook.examples.default,
   };
 }
 
@@ -510,6 +637,9 @@ function questionKindFor(question: string): QuestionKind {
   if (/\b(workload|prioriti[sz]e|multiple projects|supervisors|tasks|assignments|deadlines?)\b/i.test(question)) {
     return 'workload';
   }
+  if (/\b(project|competition|hackathon|team|proud|won|award|judge|demo|prototype)\b/i.test(question)) {
+    return 'project';
+  }
   if (/\b(conflict|disagree|difficult person|teammate|stakeholder|pushback|persuad|resolve)\b/i.test(question)) {
     return 'conflict';
   }
@@ -526,6 +656,8 @@ function storyIntroFor(questionKind: QuestionKind): string {
   switch (questionKind) {
     case 'workload':
       return 'For workload questions, the interviewer is testing whether your system actually helped you make trade-offs and finish the right work.';
+    case 'project':
+      return 'For project questions, the interviewer is testing whether you can explain your role, your contribution, and what the work achieved.';
     case 'conflict':
       return 'For conflict questions, the interviewer is testing whether you understood both sides and moved the situation forward professionally.';
     case 'leadership':
