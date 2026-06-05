@@ -29,6 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import DimensionMenu from '../components/DimensionMenu';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
@@ -378,9 +379,23 @@ export default function History() {
   });
   const [showOverall, setShowOverall] = useState(true);
 
+  // Per-chart time window (default: 10 most recent). `effectiveRange` reconciles
+  // this against the actual session count at render time, so no async init.
+  const [scoreRange, setScoreRange] = useState<RangeWindow>(10);
+  const [fillerRange, setFillerRange] = useState<RangeWindow>(10);
+
   const chartData = useMemo(
     () => (sessions ? buildChartData(sessions) : []),
     [sessions],
+  );
+
+  const scoreData = useMemo(
+    () => applyRange(chartData, effectiveRange(scoreRange, chartData.length)),
+    [chartData, scoreRange],
+  );
+  const fillerData = useMemo(
+    () => applyRange(chartData, effectiveRange(fillerRange, chartData.length)),
+    [chartData, fillerRange],
   );
 
   const hasSessions = (sessions?.length ?? 0) > 0;
@@ -498,32 +513,55 @@ export default function History() {
 
             {enoughForChart && (
               <>
-                {/* Dimension toggles. The "Overall" chip shows the per-session
-                    overall score (0-100, rescaled to 0-10 in the chart series). */}
-                <div className="flex flex-wrap gap-2 mb-6">
-                  <ToggleChip
-                    active={showOverall}
-                    onClick={() => setShowOverall((v) => !v)}
-                    color="var(--color-text)"
-                    label="Overall"
-                  />
-                  {DIMENSIONS.map((d) => (
+                {/* Dimension toggles (left) + time-window selector (right). The
+                    "Overall" chip shows the per-session overall score (0-100,
+                    rescaled to 0-10 in the chart series). */}
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+                  {/* Desktop (≥900px): inline pills. */}
+                  <div className="hidden min-[900px]:flex flex-wrap gap-2">
                     <ToggleChip
-                      key={d.key}
-                      active={activeDims[d.key]}
-                      onClick={() =>
-                        setActiveDims((prev) => ({ ...prev, [d.key]: !prev[d.key] }))
-                      }
-                      color={d.color}
-                      label={d.label}
+                      active={showOverall}
+                      onClick={() => setShowOverall((v) => !v)}
+                      color="var(--color-text)"
+                      label="Overall"
                     />
-                  ))}
+                    {DIMENSIONS.map((d) => (
+                      <ToggleChip
+                        key={d.key}
+                        active={activeDims[d.key]}
+                        onClick={() =>
+                          setActiveDims((prev) => ({ ...prev, [d.key]: !prev[d.key] }))
+                        }
+                        color={d.color}
+                        label={d.label}
+                      />
+                    ))}
+                  </div>
+                  {/* Mobile (<900px): the same toggles collapse into a dropdown
+                      checklist so they don't wrap into a tall pill block. Shares
+                      the same state as the desktop pills above. */}
+                  <div className="min-[900px]:hidden">
+                    <DimensionMenu
+                      showOverall={showOverall}
+                      onToggleOverall={() => setShowOverall((v) => !v)}
+                      dimensions={DIMENSIONS}
+                      activeDims={activeDims}
+                      onToggleDim={(key) =>
+                        setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
+                      }
+                    />
+                  </div>
+                  <RangeSelector
+                    total={chartData.length}
+                    value={scoreRange}
+                    onChange={setScoreRange}
+                  />
                 </div>
 
                 <div className="w-full" style={{ height: 320 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
-                      data={chartData}
+                      data={scoreData}
                       margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
                     >
                       <CartesianGrid
@@ -598,10 +636,17 @@ export default function History() {
               <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-8 min-[900px]:gap-10">
                 {hasFillerRate && (
                   <div>
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle mb-4">
-                      Rate over time · % of words
-                    </p>
-                    <FillerRateChart data={chartData} />
+                    <div className="flex items-center justify-between gap-2 mb-4">
+                      <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle">
+                        Rate over time · % of words
+                      </p>
+                      <RangeSelector
+                        total={chartData.length}
+                        value={fillerRange}
+                        onChange={setFillerRange}
+                      />
+                    </div>
+                    <FillerRateChart data={fillerData} />
                   </div>
                 )}
                 {hasTopFillerWords && (
@@ -833,6 +878,83 @@ function SavedQuestionRow({
           <Trash2 aria-hidden className="h-4 w-4" />
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Time-window for the trend charts. A numeric value windows the chart to the N
+ * most recent sessions; `'all'` shows the full history (chess.com-style "Max").
+ */
+type RangeWindow = 5 | 10 | 20 | 'all';
+
+const RANGE_STEPS = [5, 10, 20] as const;
+
+/**
+ * The range buttons worth showing for a given session count. A numeric window
+ * >= total renders the same view as Lifetime, so it's dropped as redundant;
+ * `'all'` is always appended. For <= 5 sessions only `['all']` remains, which
+ * the selector treats as "nothing to choose" and hides itself.
+ */
+function visibleRangeOptions(total: number): RangeWindow[] {
+  return [...RANGE_STEPS.filter((w) => total > w), 'all'];
+}
+
+/**
+ * Reconcile the stored selection against what's actually available. Lets the
+ * default stay `10` even when the user has only 7 sessions: `10` isn't a
+ * visible option there, so we fall back to `'all'` (full view, Lifetime active)
+ * without needing to init state from the async-loaded session count.
+ */
+function effectiveRange(value: RangeWindow, total: number): RangeWindow {
+  return visibleRangeOptions(total).includes(value) ? value : 'all';
+}
+
+/** Window an oldest-first series to its most recent N (or pass through for `'all'`). */
+function applyRange<T>(data: T[], range: RangeWindow): T[] {
+  return range === 'all' ? data : data.slice(-range);
+}
+
+/**
+ * Per-chart segmented control for the visible time window. Renders one pill per
+ * `visibleRangeOptions(total)`; the active pill matches `effectiveRange`. Hidden
+ * entirely when the only option is `'all'` (<= 5 sessions) — a single-button
+ * selector is noise. Styling mirrors `ToggleChip` so the controls read as one
+ * family.
+ */
+function RangeSelector({
+  total,
+  value,
+  onChange,
+}: {
+  total: number;
+  value: RangeWindow;
+  onChange: (next: RangeWindow) => void;
+}) {
+  const options = visibleRangeOptions(total);
+  if (options.length <= 1) return null; // only `'all'` — nothing to window
+  const active = effectiveRange(value, total);
+  return (
+    <div className="inline-flex items-center gap-1" role="group" aria-label="Sessions shown">
+      {options.map((opt) => {
+        const isActive = opt === active;
+        return (
+          <button
+            key={String(opt)}
+            type="button"
+            onClick={() => onChange(opt)}
+            aria-pressed={isActive}
+            className={
+              'cursor-pointer inline-flex items-center rounded-full border px-3 py-1.5 text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
+              (isActive
+                ? 'border-border-strong text-text bg-surface-raised'
+                : 'border-border text-text-subtle hover:text-text-muted')
+            }
+          >
+            {opt === 'all' ? 'All' : `Last ${opt}`}
+          </button>
+        );
+      })}
     </div>
   );
 }
