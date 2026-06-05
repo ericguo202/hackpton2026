@@ -103,18 +103,24 @@ export function PracticeTurnPanel({
             <QuickWinsSection turn={turn} />
           </div>
         </InnerCard>
-        <WhatWorkedCard turn={turn} />
+        <WhatWorkedCard
+          turn={turn}
+          evaluationPending={evaluationPending}
+          evaluationFailed={evaluationFailed}
+        />
       </div>
 
       {/* Row 3 — Improvement moments | Improve next. */}
       <div className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-2">
-        <ImprovementMomentsCard turn={turn} />
+        <ImprovementMomentsCard
+          turn={turn}
+          evaluationPending={evaluationPending}
+          evaluationFailed={evaluationFailed}
+        />
         <ImproveNextCard
-          scores={turn.scores}
-          fillerWordCount={turn.filler_word_count}
-          fillerWordBreakdown={turn.filler_word_breakdown}
-          cvSummary={replay.cvSummary}
-          analyzerDiagnostics={replay.analyzerDiagnostics}
+          turn={turn}
+          evaluationPending={evaluationPending}
+          evaluationFailed={evaluationFailed}
         />
       </div>
     </div>

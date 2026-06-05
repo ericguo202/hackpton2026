@@ -49,6 +49,7 @@ from app.services.daily_limit import (
     check_and_reset as daily_check_and_reset,
     increment as daily_increment,
 )
+from app.services.coaching import generate_next_take
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
 from app.services.followup import generate_followup
@@ -405,6 +406,32 @@ def _apply_eval_to_turn(turn: InterviewTurn, eval_out: EvaluatorOutput) -> None:
     turn.evaluated_at          = datetime.utcnow()
 
 
+async def _attach_next_take(
+    eval_out: EvaluatorOutput,
+    question: str,
+    transcript: str,
+    category: FieldCategory | None,
+    experience_level: ExperienceLevel | None,
+) -> None:
+    """Run the focused coaching call and merge `next_take` into `eval_out`.
+
+    Best-effort and grounded in the evaluator output that just landed. The
+    coaching service already fails soft (returns None on any error), but we
+    still guard here so a coaching problem can never block scoring/finalization.
+    Mutates `eval_out.feedback_detail` in place so the downstream
+    `_apply_eval_to_turn` persists it with the rest of the feedback.
+    """
+    try:
+        next_take = await generate_next_take(
+            question, transcript, eval_out,
+            category=category, experience_level=experience_level,
+        )
+        if next_take is not None:
+            eval_out.feedback_detail.next_take = next_take
+    except Exception:  # noqa: BLE001
+        logger.exception("next_take generation failed; leaving it unset")
+
+
 async def _run_background_eval(
     session_id: UUID,
     turn_id: UUID,
@@ -439,6 +466,9 @@ async def _run_background_eval(
                     experience_level=experience_level,
                 )
                 _log_eval_scores(session_id, turn_id, category, eval_out)
+                await _attach_next_take(
+                    eval_out, question, transcript, category, experience_level,
+                )
                 turn = await db.get(InterviewTurn, turn_id)
                 if turn is None:
                     logger.warning(
@@ -721,6 +751,13 @@ async def _run_background_finalize(
                         experience_level=experience_level,
                     )
                     _log_eval_scores(session_id, turn.id, category, eval_out)
+                    await _attach_next_take(
+                        eval_out,
+                        turn.question_text,
+                        turn.transcript_text,
+                        category,
+                        experience_level,
+                    )
                     _apply_eval_to_turn(turn, eval_out)
                 except Exception as exc:  # noqa: BLE001
                     logger.exception(
