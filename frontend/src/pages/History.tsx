@@ -29,6 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import DimensionMenu from '../components/DimensionMenu';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
@@ -516,7 +517,8 @@ export default function History() {
                     "Overall" chip shows the per-session overall score (0-100,
                     rescaled to 0-10 in the chart series). */}
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
-                  <div className="flex flex-wrap gap-2">
+                  {/* Desktop (≥900px): inline pills. */}
+                  <div className="hidden min-[900px]:flex flex-wrap gap-2">
                     <ToggleChip
                       active={showOverall}
                       onClick={() => setShowOverall((v) => !v)}
@@ -534,6 +536,20 @@ export default function History() {
                         label={d.label}
                       />
                     ))}
+                  </div>
+                  {/* Mobile (<900px): the same toggles collapse into a dropdown
+                      checklist so they don't wrap into a tall pill block. Shares
+                      the same state as the desktop pills above. */}
+                  <div className="min-[900px]:hidden">
+                    <DimensionMenu
+                      showOverall={showOverall}
+                      onToggleOverall={() => setShowOverall((v) => !v)}
+                      dimensions={DIMENSIONS}
+                      activeDims={activeDims}
+                      onToggleDim={(key) =>
+                        setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
+                      }
+                    />
                   </div>
                   <RangeSelector
                     total={chartData.length}
