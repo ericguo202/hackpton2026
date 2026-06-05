@@ -113,6 +113,8 @@ export function PracticeTurnPanel({
           turn={turn}
           cvSummary={replay.cvSummary}
           analyzerDiagnostics={replay.analyzerDiagnostics}
+          evaluationPending={evaluationPending}
+          evaluationFailed={evaluationFailed}
         />
       </div>
     </div>

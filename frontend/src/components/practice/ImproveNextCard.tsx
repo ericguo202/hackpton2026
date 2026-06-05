@@ -287,23 +287,43 @@ type Props = {
   turn: TurnDetail;
   cvSummary: InterviewSummary | null;
   analyzerDiagnostics: AnalyzerDiagnostics;
+  // While scoring is still running (pending) or after a completed session whose
+  // evaluation never returned (failed), the score/feedback-derived playbook is
+  // meaningless — it would be built from the question text alone. Gate it.
+  evaluationPending: boolean;
+  evaluationFailed: boolean;
 };
 
 export function ImproveNextCard({
   turn,
   cvSummary,
   analyzerDiagnostics,
+  evaluationPending,
+  evaluationFailed,
 }: Props) {
-  const blocks = buildCoachingBlocks({ turn, cvSummary, analyzerDiagnostics });
+  // Until this turn is actually scored, the coaching playbook is derived only
+  // from the question text and would mislead (and silently change once scores
+  // arrive). Show a status notice instead, but keep the filler block — filler
+  // counts are persisted at submit time, so they're accurate before scoring.
+  const gated = evaluationPending || evaluationFailed;
+  const blocks = gated
+    ? (() => {
+        const fillerBlock = buildFillerBlock(turn);
+        return fillerBlock ? [fillerBlock] : [];
+      })()
+    : buildCoachingBlocks({ turn, cvSummary, analyzerDiagnostics });
 
   return (
     <InnerCard>
       <Eyebrow>Improve next</Eyebrow>
       <div className="mt-3 flex-1 min-h-0 overflow-y-auto">
+        {gated && <EvalStatusNotice pending={evaluationPending} />}
         {blocks.length === 0 ? (
-          <p className="text-sm text-text-subtle">
-            Nothing to prioritize from this turn.
-          </p>
+          gated ? null : (
+            <p className="text-sm text-text-subtle">
+              Nothing to prioritize from this turn.
+            </p>
+          )
         ) : (
           <ul className="flex flex-col gap-5">
             {blocks.map((block) => (
@@ -339,11 +359,43 @@ export function ImproveNextCard({
   );
 }
 
+// Mirrors `ScoresSection`'s pending/failed notice (session-detail/_turnInnerCards.tsx)
+// so the score stack and this card flip to the same state together.
+function EvalStatusNotice({ pending }: { pending: boolean }) {
+  return (
+    <div className="mb-4 rounded-md border border-border-strong p-3">
+      {pending ? (
+        <>
+          <div className="flex items-center gap-2">
+            <span
+              role="status"
+              aria-label="Loading"
+              className="inline-block size-4 animate-spin rounded-full border-2 border-current border-t-transparent text-text"
+            />
+            <p className="text-sm text-text">Scoring in progress</p>
+          </div>
+          <p className="mt-1 text-xs text-text-muted">
+            Your focus areas will appear here once scoring finishes.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-text">Evaluation failed</p>
+          <p className="mt-1 text-xs text-text-muted">
+            Focus areas could not be generated because the evaluator did not
+            return scores.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function buildCoachingBlocks({
   turn,
   cvSummary,
   analyzerDiagnostics,
-}: Props): CoachingBlock[] {
+}: Pick<Props, 'turn' | 'cvSummary' | 'analyzerDiagnostics'>): CoachingBlock[] {
   const moments = improvementMoments(turn);
   const scoreEntries = scoreEntriesFor(turn);
   const priority = inferPriority({ turn, moments, cvSummary });
