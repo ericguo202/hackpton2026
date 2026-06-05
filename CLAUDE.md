@@ -74,7 +74,7 @@ Future: terms/conditions, security, LiveAvatar, gamification with XP.
 
 - **Frontend**: React + Vite, Clerk (auth), recharts, MediaRecorder, MediaPipe (webcam delivery analytics)
 - **Backend**: FastAPI, Alembic + Postgres, OpenAI Python SDK pointed at OpenRouter (`https://openrouter.ai/api/v1`)
-- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v3.2` evaluator, `google/gemini-2.5-flash` research/opening/follow-up, `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback), Serper
+- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v3.2` evaluator, `google/gemini-2.5-flash` research/opening/follow-up/coaching, `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback), Serper
 - **Auth**: Clerk JWT verified via `python-jose` against `CLERK_JWT_ISSUER` JWKS
 
 ---
@@ -92,12 +92,13 @@ Browser (React+Vite)
                                           └── Postgres (via Alembic)
 ```
 
-**Four straight-line LLM calls per session, all via OpenRouter.** #1/#2 fire once at session start; #3 fires once after turn 1 to generate the follow-up; #4 evaluates each submitted turn in detached/background work. Turn 1 eval runs while the user answers turn 2. Final-turn eval runs in `_run_background_finalize` after the final POST returns, then metrics are written and the session flips to `completed`. See the matching MVP bullets above for full per-call detail.
+**Up to five straight-line LLM calls per session, all via OpenRouter.** #1/#2 fire once at session start; #3 fires once after turn 1 to generate the follow-up; #4 evaluates each submitted turn in detached/background work; #5 generates forward coaching right after each evaluation (same background task). Turn 1 eval+coaching runs while the user answers turn 2. Final-turn eval+coaching runs in `_run_background_finalize` after the final POST returns, then metrics are written and the session flips to `completed`. See the matching MVP bullets above for full per-call detail.
 
 1. **Company research + field classification** (`google/gemini-2.5-flash`). Two parallel Serper queries via `asyncio.gather` → `CompanyBrief(description, headlines, values, category, role_signals, sample_question_themes)`. `category` ∈ 15 buckets.
 2. **Opening question** (`google/gemini-2.5-flash`). System by `build_field_system_prompt(brief.category, rng=None)`; user prompt (`_company_digest`) appends `role_signals` / `sample_question_themes` only when non-empty.
 3. **Follow-up question** (non-final turns, `google/gemini-2.5-flash` via `followup.py`, system+user split). System = hard rules (10–25 words, references something concrete, ends in `?`) + confused-candidate + output-format rules; output through `_sanitize_followup`.
 4. **Evaluate** (`deepseek/deepseek-v3.2`, JSON mode, detached background task). Rubric from `_field_rubrics.FIELD_RUBRICS` keyed on `brief.category` — same key as opening/follow-up, one consistent field identity per session.
+5. **Forward coaching** (`google/gemini-2.5-flash` via `coaching.py:generate_next_take`, JSON mode). A deliberately SEPARATE, short, focused call (NOT folded into the evaluator's long/LOCKED prompt) run right after #4 in the same background task (`sessions.py:_attach_next_take`). Input is grounded in the evaluator's just-returned output — question + transcript + `main_takeaway` + top `improvement_moments`. Writes `feedback_detail.next_take` (`NextTake{focus, approach}`). **Fails soft**: any error → `next_take` stays null and scoring/finalization are unaffected. Surfaced only in Practice's `ImproveNextCard` ("What to fix first"). This replaced the retired client-side `PLAYBOOKS`/`questionKindFor` template machinery.
 
 ---
 
@@ -198,6 +199,7 @@ POST   /saved-questions/{id}/practice  { voice_id?, timezone? } → SessionCreat
 - **Evaluator** → `deepseek/deepseek-v3.2` (migrated from Gemma 4 after Gemini rate-limiting + Google SDK deprecation). **Research / opening / follow-up** → `google/gemini-2.5-flash`. No other model mixing.
 - **Scores:** five content dims LLM-scored 0–10 ints, then run through `_calibrate_content_scores` (only lowers); `delivery` computed server-side by `_compute_delivery_score` (never trusted from the model). All six nullable on the wire.
 - **Delivery feedback:** `feedback_detail.delivery_feedback` built server-side from `cv_summary` (never the LLM and not included in the evaluator prompt), omitted when camera declined. `summary` required; the four cues optional, each ≤270 chars.
+- **Forward coaching:** `feedback_detail.next_take` (`{focus ≤270, approach ≤390}`) is NOT produced by the evaluator — it's written by the separate coaching call (#5, `coaching.py`) right after scoring and merged into `feedback_detail` before persistence. Null on legacy turns / coaching failure (best-effort). Drives Practice's `ImproveNextCard` "What to fix first". Reuses the evaluator's `ProseStr*` `BeforeValidator` truncators.
 - **Feedback caps:** `positive_moments` ≤ 3, `improvement_moments` ≤ 4, `quick_wins` ≤ 3. Server-side: drop moments whose `transcript_snippet` isn't an exact substring, then `_dedupe_by_snippet` (exact equality, first-occurrence wins) on both lists.
 - **Legacy:** `notes` still persisted in `interview_turns.feedback`. `feedback_detail.coaching_moments` normalized into `improvement_moments`.
 - Pass full turn history in prompt so follow-ups reference earlier answers. Filler regex is ground truth; LLM breakdown supplemental only.

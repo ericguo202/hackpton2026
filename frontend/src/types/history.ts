@@ -45,6 +45,13 @@ export type DeliveryFeedback = {
   expression?: string | null;
 };
 
+/** Forward "do this next time" coaching from the separate coaching call.
+ *  Null on legacy turns or when the best-effort coaching call failed. */
+export type NextTake = {
+  focus: string;
+  approach: string;
+};
+
 export type FeedbackDetail = {
   main_takeaway: string;
   positive_moments?: PositiveMoment[];
@@ -53,6 +60,7 @@ export type FeedbackDetail = {
   coaching_moments?: ImprovementMoment[];
   quick_wins: string[];
   delivery_feedback?: DeliveryFeedback | null;
+  next_take?: NextTake | null;
 };
 
 export type SessionListItem = {

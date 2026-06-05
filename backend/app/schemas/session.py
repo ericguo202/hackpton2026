@@ -104,12 +104,20 @@ class DeliveryFeedbackOut(BaseModel):
     expression: str | None = None
 
 
+class NextTakeOut(BaseModel):
+    focus: str
+    approach: str
+
+
 class FeedbackDetailOut(BaseModel):
     main_takeaway: str
     positive_moments: list[PositiveMomentOut] = Field(default_factory=list)
     improvement_moments: list[ImprovementMomentOut] = Field(default_factory=list)
     quick_wins: list[str] = Field(default_factory=list)
     delivery_feedback: DeliveryFeedbackOut | None = None
+    # Forward coaching from the separate coaching call; null on legacy turns or
+    # when the coaching call failed (it's best-effort).
+    next_take: NextTakeOut | None = None
 
     @model_validator(mode="before")
     @classmethod

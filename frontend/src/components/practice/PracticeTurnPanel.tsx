@@ -119,7 +119,6 @@ export function PracticeTurnPanel({
         />
         <ImproveNextCard
           turn={turn}
-          cvSummary={replay.cvSummary}
           evaluationPending={evaluationPending}
           evaluationFailed={evaluationFailed}
         />

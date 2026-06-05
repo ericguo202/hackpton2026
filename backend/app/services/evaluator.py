@@ -135,12 +135,28 @@ class DeliveryFeedback(BaseModel):
     expression: ProseStr270 | None = Field(default=None, max_length=270)
 
 
+class NextTake(BaseModel):
+    """Forward-looking "do this on your next attempt" coaching.
+
+    NOT produced by the evaluator LLM — populated post-hoc by the focused
+    `coaching.generate_next_take` call (see `app/services/coaching.py`), which
+    runs right after scoring and writes into `FeedbackDetail.next_take`. The
+    field defaults `None` so a coaching failure (or legacy turns) just omits it.
+    """
+
+    focus: ProseStr270 = Field(min_length=1, max_length=270)
+    approach: ProseStr390 = Field(min_length=1, max_length=390)
+
+
 class FeedbackDetail(BaseModel):
     main_takeaway: ProseStr270 = Field(min_length=1, max_length=270)
     positive_moments: list[PositiveMoment] = Field(default_factory=list, max_length=3)
     improvement_moments: list[ImprovementMoment] = Field(default_factory=list, max_length=4)
     quick_wins: list[str] = Field(default_factory=list, max_length=3)
     delivery_feedback: DeliveryFeedback | None = None
+    # Filled by the separate coaching call after the evaluator returns; the
+    # evaluator never sets it. See `NextTake`.
+    next_take: NextTake | None = None
 
     @model_validator(mode="before")
     @classmethod
