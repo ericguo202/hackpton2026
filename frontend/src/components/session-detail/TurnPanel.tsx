@@ -81,8 +81,16 @@ export default function TurnPanel({
         </InnerCard>
       </div>
       <div className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-2">
-        <WhatWorkedCard turn={turn} />
-        <ImprovementMomentsCard turn={turn} />
+        <WhatWorkedCard
+          turn={turn}
+          evaluationPending={evaluationPending}
+          evaluationFailed={evaluationFailed}
+        />
+        <ImprovementMomentsCard
+          turn={turn}
+          evaluationPending={evaluationPending}
+          evaluationFailed={evaluationFailed}
+        />
       </div>
     </div>
   );

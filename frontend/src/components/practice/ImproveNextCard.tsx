@@ -17,10 +17,9 @@ import {
   YAxis,
 } from 'recharts';
 
-import type { ImprovementMoment, TurnDetail } from '../../types/history';
+import type { ImprovementMoment, PositiveMoment, TurnDetail } from '../../types/history';
 import type { InterviewSummary } from '../../lib/faceHeuristics';
-import type { AnalyzerDiagnostics } from '../../hooks/useFaceAnalyzer';
-import { Eyebrow, InnerCard } from '../session-detail/_turnInnerCards';
+import { EvalStatusNotice, Eyebrow, InnerCard } from '../session-detail/_turnInnerCards';
 
 type CoachingBlock = {
   title: string;
@@ -50,7 +49,6 @@ type QuestionKind =
   | 'general';
 
 type StoryPlaybook = {
-  alreadyHad: string;
   checklist: string[];
   assignment: string;
   scaffold: Partial<Record<PriorityKind, string>> & { default: string };
@@ -68,8 +66,6 @@ const SCORE_LABELS: Record<keyof TurnDetail['scores'], string> = {
 
 const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
   workload: {
-    alreadyHad:
-      'You already gave a priority rule. Now make the load concrete and prove the rule worked.',
     checklist: [
       'What was the actual load: tests, assignments, deadlines, or stakes?',
       'What rule did you use to rank the work?',
@@ -104,8 +100,6 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
     },
   },
   project: {
-    alreadyHad:
-      'You already gave the goal of the project. Now make your role, the build, and what happened afterward concrete.',
     checklist: [
       'What were you trying to build or accomplish?',
       'What was your specific role on the team?',
@@ -142,8 +136,6 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
     },
   },
   conflict: {
-    alreadyHad:
-      'You already have an example to discuss. Now make the disagreement, your response, and the resolution easy to follow.',
     checklist: [
       'What was the disagreement or tension?',
       'What did the other person care about?',
@@ -176,8 +168,6 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
     },
   },
   leadership: {
-    alreadyHad:
-      'You already have a situation where something needed to happen. Now make your ownership and the team outcome explicit.',
     checklist: [
       'What need or gap did you notice?',
       'What did you personally take ownership of?',
@@ -210,8 +200,6 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
     },
   },
   failure: {
-    alreadyHad:
-      'You already have a setback to explain. Now make the cause, your ownership, and the changed behavior clear.',
     checklist: [
       'What went wrong?',
       'What caused it, including your part?',
@@ -244,8 +232,6 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
     },
   },
   general: {
-    alreadyHad:
-      'You already gave part of the story. Now make the role, action, and result impossible to miss.',
     checklist: [
       'What was the situation?',
       'What was your role or decision?',
@@ -286,7 +272,6 @@ const PLAYBOOKS: Record<QuestionKind, StoryPlaybook> = {
 type Props = {
   turn: TurnDetail;
   cvSummary: InterviewSummary | null;
-  analyzerDiagnostics: AnalyzerDiagnostics;
   // While scoring is still running (pending) or after a completed session whose
   // evaluation never returned (failed), the score/feedback-derived playbook is
   // meaningless — it would be built from the question text alone. Gate it.
@@ -297,7 +282,6 @@ type Props = {
 export function ImproveNextCard({
   turn,
   cvSummary,
-  analyzerDiagnostics,
   evaluationPending,
   evaluationFailed,
 }: Props) {
@@ -311,13 +295,20 @@ export function ImproveNextCard({
         const fillerBlock = buildFillerBlock(turn);
         return fillerBlock ? [fillerBlock] : [];
       })()
-    : buildCoachingBlocks({ turn, cvSummary, analyzerDiagnostics });
+    : buildCoachingBlocks({ turn, cvSummary });
 
   return (
     <InnerCard>
       <Eyebrow>Improve next</Eyebrow>
       <div className="mt-3 flex-1 min-h-0 overflow-y-auto">
-        {gated && <EvalStatusNotice pending={evaluationPending} />}
+        {gated && (
+          <EvalStatusNotice
+            pending={evaluationPending}
+            className="mb-4"
+            pendingHint="Your focus areas will appear here once scoring finishes."
+            failedHint="Focus areas could not be generated because the evaluator did not return scores."
+          />
+        )}
         {blocks.length === 0 ? (
           gated ? null : (
             <p className="text-sm text-text-subtle">
@@ -359,51 +350,22 @@ export function ImproveNextCard({
   );
 }
 
-// Mirrors `ScoresSection`'s pending/failed notice (session-detail/_turnInnerCards.tsx)
-// so the score stack and this card flip to the same state together.
-function EvalStatusNotice({ pending }: { pending: boolean }) {
-  return (
-    <div className="mb-4 rounded-md border border-border-strong p-3">
-      {pending ? (
-        <>
-          <div className="flex items-center gap-2">
-            <span
-              role="status"
-              aria-label="Loading"
-              className="inline-block size-4 animate-spin rounded-full border-2 border-current border-t-transparent text-text"
-            />
-            <p className="text-sm text-text">Scoring in progress</p>
-          </div>
-          <p className="mt-1 text-xs text-text-muted">
-            Your focus areas will appear here once scoring finishes.
-          </p>
-        </>
-      ) : (
-        <>
-          <p className="text-sm text-text">Evaluation failed</p>
-          <p className="mt-1 text-xs text-text-muted">
-            Focus areas could not be generated because the evaluator did not
-            return scores.
-          </p>
-        </>
-      )}
-    </div>
-  );
-}
-
 function buildCoachingBlocks({
   turn,
   cvSummary,
-  analyzerDiagnostics,
-}: Pick<Props, 'turn' | 'cvSummary' | 'analyzerDiagnostics'>): CoachingBlock[] {
+}: Pick<Props, 'turn' | 'cvSummary'>): CoachingBlock[] {
   const moments = improvementMoments(turn);
-  const scoreEntries = scoreEntriesFor(turn);
   const priority = inferPriority({ turn, moments, cvSummary });
   const questionKind = questionKindFor(turn.question_text);
   const playbook = PLAYBOOKS[questionKind];
+  // "Keep this part" is grounded in the evaluator's real positive moments, so a
+  // non-answer (positive_moments: []) gets no invented praise — the block is
+  // simply omitted. This runs only on scored turns (the caller gates pending /
+  // failed before reaching here), so there is always at least one real score.
+  const keepThis = buildKeepThisBlock(turn);
   const blocks: CoachingBlock[] = [
     buildPriorityBlock({ turn, priority, moments, questionKind }),
-    buildAlreadyHadBlock(playbook),
+    ...(keepThis ? [keepThis] : []),
     buildStoryBlock({ questionKind, playbook }),
     buildTryThisBlock({ priority, playbook }),
   ];
@@ -411,27 +373,22 @@ function buildCoachingBlocks({
   const fillerBlock = buildFillerBlock(turn);
   if (fillerBlock) blocks.push(fillerBlock);
 
-  if (
-    blocks.length === 4 &&
-    !turn.feedback_detail?.main_takeaway &&
-    scoreEntries.length === 0 &&
-    analyzerDiagnostics.framesProcessed === 0
-  ) {
-    return [{
-      title: 'Next focus',
-      detail:
-        'There was not enough scored feedback to isolate a specific issue. Build the next take around one clear example with your role and result.',
-      action: PLAYBOOKS.general.scaffold.default,
-    }];
-  }
-
   return blocks;
 }
 
-function buildAlreadyHadBlock(playbook: StoryPlaybook): CoachingBlock {
+function buildKeepThisBlock(turn: TurnDetail): CoachingBlock | null {
+  const top = positiveMoments(turn)[0];
+  if (!top) return null;
+
+  const reinforcement = top.keep_doing?.trim() || top.why_this_helped?.trim();
+  if (!reinforcement) return null;
+
+  const snippet = top.transcript_snippet?.trim();
   return {
     title: 'Keep this part',
-    detail: playbook.alreadyHad,
+    detail: snippet
+      ? `Carry forward what worked when you said "${snippet}" — ${reinforcement}`
+      : `Carry this forward into the next take: ${reinforcement}`,
   };
 }
 
@@ -630,6 +587,10 @@ function improvementMoments(turn: TurnDetail): ImprovementMoment[] {
     turn.feedback_detail?.coaching_moments ??
     []
   );
+}
+
+function positiveMoments(turn: TurnDetail): PositiveMoment[] {
+  return turn.feedback_detail?.positive_moments ?? [];
 }
 
 function scoreEntriesFor(turn: TurnDetail): ScoreEntry[] {
