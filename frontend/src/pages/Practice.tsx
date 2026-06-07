@@ -27,7 +27,7 @@ import PageMorphTransition from '../components/PageMorphTransition';
 import { PracticeFooter } from '../components/PracticeFooter';
 import { QuitConfirmDialog } from '../components/QuitConfirmDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import { CameraColumn } from '../components/practice/CameraColumn';
+import { CameraColumn, type RecordingNotice } from '../components/practice/CameraColumn';
 import { QuestionColumn } from '../components/practice/QuestionColumn';
 import { TranscriptColumn } from '../components/practice/TranscriptColumn';
 import { PracticeOverviewPanel } from '../components/practice/PracticeOverviewPanel';
@@ -83,6 +83,13 @@ const SCORE_DIM_KEYS: ReadonlyArray<keyof Scores> = [
   'depth',
   'delivery',
 ];
+
+// Recording-length guardrails (seconds of actual recording, not question
+// playback). Keeps a normal answer well under the backend's 50 MB audio cap
+// and nudges the candidate to stay concise. warn → countdown → auto-stop.
+const RECORDING_WARNING_SECONDS = 240;   // 4:00 — gentle heads-up appears
+const RECORDING_COUNTDOWN_SECONDS = 270; // 4:30 — live countdown begins
+const RECORDING_MAX_SECONDS = 300;       // 5:00 — recording auto-stops
 
 function formatTurnSubmitError(err: unknown): string {
   if (!(err instanceof ApiError)) {
@@ -294,6 +301,10 @@ function PracticeSession({
   const [replayKey, setReplayKey] = useState(0);
   const [showTranscript, setShowTranscript] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  // Seconds of the current recording. Driven by the interval effect below;
+  // reset to 0 in `handleAudioEnded` (the sole recording-start path) so it
+  // never carries a stale value into a new turn.
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
     turnResultsRef.current = turnResults;
@@ -343,6 +354,39 @@ function PracticeSession({
   useEffect(() => {
     autoRetriedRef.current = false;
   }, [recorder.audioBlob]);
+
+  // Recording-length cap. While recording, tick a local elapsed clock (drives
+  // the under-camera warning/countdown) and auto-end the turn at
+  // RECORDING_MAX_SECONDS via the SAME path as tapping "End recording" — so
+  // auto-submit vs. manual-preview behavior is preserved at the cap.
+  // `handleEndRef` mirrors the latest `handleEnd` closure (it's declared later)
+  // so the interval always calls the current one without re-subscribing.
+  const recordingStartRef = useRef<number | null>(null);
+  const handleEndRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    handleEndRef.current = handleEnd;
+  });
+  useEffect(() => {
+    if (recorder.state !== 'recording') {
+      // Ref-only writes here (no setState) keep this lint-clean; `elapsedSeconds`
+      // is reset on the next recording start in `handleAudioEnded`, and the
+      // notice below is gated on `recorder.state` so a stale value never shows.
+      recordingStartRef.current = null;
+      return;
+    }
+    recordingStartRef.current = Date.now();
+    let autoStopped = false;
+    const id = window.setInterval(() => {
+      if (recordingStartRef.current == null) return;
+      const secs = Math.floor((Date.now() - recordingStartRef.current) / 1000);
+      setElapsedSeconds(secs);
+      if (secs >= RECORDING_MAX_SECONDS && !autoStopped) {
+        autoStopped = true;
+        handleEndRef.current();
+      }
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [recorder.state]);
 
   useEffect(() => {
     if (!isDone || !sessionId || sessionDetail?.status === 'completed') return;
@@ -523,6 +567,9 @@ function PracticeSession({
 
   function handleAudioEnded() {
     if (recorder.state !== 'idle') return;
+    // Zero the clock here (the only place recording begins) so the timer
+    // effect starts from 0 with no synchronous setState inside the effect.
+    setElapsedSeconds(0);
     recorder.start().catch((err: Error) => {
       setTurnError(`Could not start recording: ${err.message}`);
     });
@@ -571,6 +618,31 @@ function PracticeSession({
       : 'Analyzing — 5–10 seconds';
   const showPreview =
     !autoSubmit && recorder.state === 'stopped' && recorder.audioUrl != null;
+  // Recording-length notice rendered UNDER the camera box. Warning from 4:00,
+  // live countdown from 4:30 to the 5:00 auto-stop. Countdown wording differs
+  // by mode: auto-submit "submits", manual "ends" (drops into the preview).
+  const secondsRemaining = Math.max(0, RECORDING_MAX_SECONDS - elapsedSeconds);
+  let recordingNotice: RecordingNotice | null = null;
+  if (recorder.state === 'recording') {
+    if (elapsedSeconds >= RECORDING_COUNTDOWN_SECONDS) {
+      recordingNotice = {
+        tone: 'countdown',
+        text: autoSubmit
+          ? `Recording automatically submits in ${secondsRemaining}s`
+          : `Recording automatically ends in ${secondsRemaining}s`,
+      };
+    } else if (elapsedSeconds >= RECORDING_WARNING_SECONDS) {
+      recordingNotice = {
+        tone: 'warning',
+        text: 'Heads up — recording auto-stops at the 5-minute limit.',
+      };
+    }
+  }
+  // Pre-start heads-up under the camera box while the FIRST question plays, so
+  // the candidate learns the 5-minute cap before recording begins. Turn 1 only
+  // (the in-recording RecordingNotice covers later turns); hidden once recording
+  // starts (state leaves 'idle').
+  const showFirstTurnHint = recorder.state === 'idle' && currentQ?.num === 1;
   const previousTurn = turnResults.length > 0 ? turnResults[0] : null;
   const showTranscriptPanel = showTranscript && previousTurn;
   const showQuestionDuringSession = showQuestionText;
@@ -633,6 +705,8 @@ function PracticeSession({
                 showPreview={showPreview}
                 submitting={submitting}
                 isFinalTurn={currentQ.num >= 2}
+                recordingNotice={recordingNotice}
+                firstTurnHint={showFirstTurnHint}
                 onSubmitPreview={handleSubmitTurn}
                 onReRecordPreview={handleReRecord}
               />

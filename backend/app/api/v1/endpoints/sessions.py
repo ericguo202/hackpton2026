@@ -321,6 +321,35 @@ async def create_session(
 
 # ── turn submission ───────────────────────────────────────────────────────────
 
+# Hard cap on the uploaded answer audio. A 5-minute Opus/WebM clip is well
+# under this (the frontend also auto-stops recording at the 5:00 mark), so the
+# cap only ever trips on a malformed or malicious upload. Read in 1 MiB chunks
+# and abort with 413 BEFORE the bytes can exhaust worker memory or get
+# forwarded to ElevenLabs STT (burning quota). Mirrors onboarding's bounded
+# résumé read (`_read_pdf_bounded`).
+_MAX_AUDIO_BYTES = 50 * 1024 * 1024
+_AUDIO_CHUNK_SIZE = 1024 * 1024
+
+
+async def _read_audio_bounded(audio: UploadFile) -> bytes:
+    """Read the full upload into memory, aborting with 413 past the cap."""
+    buf = bytearray()
+    while True:
+        chunk = await audio.read(_AUDIO_CHUNK_SIZE)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > _MAX_AUDIO_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"Audio exceeds the {_MAX_AUDIO_BYTES // (1024 * 1024)} MB "
+                    "limit. Please record a shorter answer."
+                ),
+            )
+    return bytes(buf)
+
+
 async def _insert_followup_turn(
     db: AsyncSession,
     session_id: UUID,
@@ -846,8 +875,9 @@ async def submit_turn(
     if current_turn is None:
         raise HTTPException(status_code=400, detail="No pending turn for this session")
 
-    # 3. Transcribe.
-    audio_bytes = await audio.read()
+    # 3. Transcribe. Bounded read so an oversized upload is rejected with 413
+    #    before it can OOM the worker or be sent to ElevenLabs STT.
+    audio_bytes = await _read_audio_bounded(audio)
     transcript = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
 
     # 3a. Moderation pre-check on the transcript. Running BEFORE we persist
