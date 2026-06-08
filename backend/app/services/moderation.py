@@ -23,11 +23,17 @@ Policy:
     blocked. Callers can inspect `categories` if they want to log or
     soft-warn, but the default is to only gate on the hard-block set.
 
-Failure mode: if the moderation call itself errors (timeout, network,
-misconfigured key), we FAIL OPEN — the check returns `flagged=False` and
-logs the exception. A demo that hard-fails every turn because of a
-moderation outage is worse than one that occasionally slips content the
-downstream models would have filtered anyway.
+Failure mode: moderation is a critical security step, so it FAILS CLOSED.
+If the moderation call itself errors (timeout, network, misconfigured key),
+`check_moderation` raises `ModerationUnavailableError` rather than returning a
+permissive verdict — content must never slip through unchecked just because the
+service is down. The error is also surfaced as an `error`-severity incident
+(`log_error`) so an outage is visible/alertable, not just logged. Endpoint
+callers map this to a 503 (via the handler in `main.py`); the autocomplete path
+catches it and fails soft to an empty suggestion list (no unmoderated input
+reaches the billed LLM). A missing `OPENAI_API_KEY` is caught even earlier:
+`ensure_moderation_configured()` runs at app startup and refuses to boot, so
+production can never run with the content-policy layer silently disabled.
 """
 
 from __future__ import annotations
@@ -43,6 +49,7 @@ from app.core.config import settings
 from app.services.incidents import (
     SEVERITY_INFO,
     SEVERITY_WARNING,
+    log_error,
     log_moderation_request,
 )
 
@@ -70,6 +77,31 @@ _HARD_BLOCK_CATEGORIES = frozenset({
 })
 
 _client: AsyncOpenAI | None = None
+
+
+class ModerationUnavailableError(Exception):
+    """Raised when a moderation verdict cannot be produced.
+
+    Covers a missing `OPENAI_API_KEY` (no client) and any transport/API error
+    from the moderation endpoint. Failing closed: callers must NOT treat this as
+    "allowed" — endpoints surface it as a 503, autocomplete falls back to no
+    suggestions.
+    """
+
+
+def ensure_moderation_configured() -> None:
+    """Fail closed at boot if moderation can't run.
+
+    Called from the app lifespan so production refuses to start when
+    `OPENAI_API_KEY` is unset, instead of silently disabling the content-policy
+    layer. Constructing the client here also warms the process-wide singleton.
+    """
+    try:
+        _get_client()
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Refusing to start: content moderation is not configured. {exc}"
+        ) from exc
 
 
 def _get_client() -> AsyncOpenAI:
@@ -122,8 +154,9 @@ async def check_moderation(
 
     Empty / whitespace-only input is short-circuited to `_SAFE` — there's
     nothing to moderate and we don't want to burn a network round-trip
-    on it. Transport or API errors also fall through to `_SAFE` per the
-    fail-open policy documented at the top of this module.
+    on it. Transport or API errors (including a missing API key) FAIL CLOSED:
+    they raise `ModerationUnavailableError` and emit an `error`-severity
+    incident, per the policy documented at the top of this module.
     """
     if not text or not text.strip():
         return _SAFE
@@ -135,28 +168,27 @@ async def check_moderation(
             input=text,
         )
     except Exception as exc:
-        # Fail open — a broken moderation service must not break the demo.
-        # The categories we care most about (hate, sexual/minors) are rare
-        # enough that occasional pass-through during an outage is
-        # acceptable; we still log loudly so it's visible in the journal.
-        logger.warning("Moderation call failed; allowing content: %s", exc)
-        await log_moderation_request(
-            text=text,
-            returned_content={
-                "provider": "openai",
-                "model": MODERATION_MODEL,
-                "flagged": False,
-                "categories": [],
-                "hard_block_categories": sorted(_HARD_BLOCK_CATEGORIES),
-                "error": str(exc),
-            },
+        # Fail CLOSED — a broken moderation service must not silently let
+        # content through. Surface the outage as an error incident (the
+        # alertable channel) and raise so the caller blocks (503) or, for
+        # autocomplete, falls back to no suggestions.
+        logger.error("Moderation call failed; blocking content: %s", exc)
+        await log_error(
+            exc,
             user=user,
             db=db,
-            session_id=session_id,
-            severity=SEVERITY_WARNING,
-            metadata=metadata,
+            metadata={
+                **(dict(metadata) if metadata else {}),
+                # Unambiguous tag for filtering moderation outages in the
+                # incident stream; `source` (from the caller) keeps the field
+                # origin (turn.transcript / sessions.company / onboarding.*).
+                "subsystem": "moderation",
+                "model": MODERATION_MODEL,
+            },
         )
-        return _SAFE
+        raise ModerationUnavailableError(
+            "Content moderation is temporarily unavailable."
+        ) from exc
 
     result = response.results[0]
     # The OpenAI SDK models `categories` as a pydantic object with one bool

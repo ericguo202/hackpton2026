@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 from app.core.config import settings
 from app.schemas.validation import SuggestionsOut
 from app.services._openrouter import extract_json_object, get_client
-from app.services.moderation import check_moderation
+from app.services.moderation import ModerationUnavailableError, check_moderation
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -219,12 +219,19 @@ async def _suggest(
     if len(user_input) < 2 or _looks_like_junk(user_input):
         return SuggestionsOut(suggestions=[])
 
-    moderation = await check_moderation(
-        user_input,
-        user=user,
-        db=db,
-        metadata={"source": source},
-    )
+    try:
+        moderation = await check_moderation(
+            user_input,
+            user=user,
+            db=db,
+            metadata={"source": source},
+        )
+    except ModerationUnavailableError:
+        # Fail closed for autocomplete = fail soft to no suggestions. We must
+        # not send unmoderated input to the billed LLM, but a moderation outage
+        # shouldn't surface as an error in a type-ahead box.
+        logger.warning("Moderation unavailable; returning no suggestions")
+        return SuggestionsOut(suggestions=[])
     if moderation.flagged:
         return SuggestionsOut(suggestions=[], flagged=True, message=_MODERATION_MESSAGE)
 

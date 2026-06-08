@@ -9,6 +9,10 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.session import check_db_connection
 from app.services.incidents import log_error
+from app.services.moderation import (
+    ModerationUnavailableError,
+    ensure_moderation_configured,
+)
 
 # Make app-level `logger.info(...)` calls visible in stdout. uvicorn's
 # --log-level only configures its own access/error loggers, so without
@@ -25,6 +29,9 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     # Startup
     await check_db_connection()
+    # Fail closed: refuse to boot if content moderation isn't configured, so
+    # production can never run with the content-policy layer silently disabled.
+    ensure_moderation_configured()
     yield
     # Shutdown (add cleanup here if needed)
 
@@ -70,6 +77,25 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         status_code=exc.status_code,
         content={"detail": exc.detail},
         headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(ModerationUnavailableError)
+async def moderation_unavailable_handler(
+    request: Request, exc: ModerationUnavailableError
+):
+    # Moderation failed closed — block the request with a retryable 503. The
+    # outage was already recorded as an error incident inside check_moderation,
+    # so we don't re-log here. A generic message avoids leaking internals.
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": (
+                "Content checks are temporarily unavailable. "
+                "Please try again in a moment."
+            )
+        },
+        headers={"Retry-After": "30"},
     )
 
 
