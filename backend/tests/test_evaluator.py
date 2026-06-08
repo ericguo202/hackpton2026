@@ -336,6 +336,50 @@ async def test_overlong_transcript_snippet_truncated_not_rejected(monkeypatch):
     assert "..." not in moments[0].transcript_snippet
 
 
+async def test_malformed_moment_dropped_not_whole_eval_rejected(monkeypatch):
+    """Regression: DeepSeek occasionally emits a feedback moment missing a
+    required sub-field (observed in prod: a positive_moment with no
+    `why_this_helped`). The pre-fix behavior raised a ValidationError for the
+    WHOLE EvaluatorOutput, which crashed `_run_background_finalize` and excluded
+    the turn from the session aggregate (NULL scores). The before-validator now
+    drops only the malformed moment and keeps the scores + valid moments.
+    """
+    payload = {
+        **_DEFAULT_PAYLOAD,
+        "feedback_detail": {
+            **_DEFAULT_PAYLOAD["feedback_detail"],
+            "positive_moments": [
+                {
+                    "transcript_snippet": "I led",
+                    "why_this_helped": "It makes your role clear.",
+                    "keep_doing": "Keep stating what you personally owned.",
+                },
+                {
+                    # Missing the required `why_this_helped` — the exact prod shape.
+                    "transcript_snippet": "I shipped it",
+                    "keep_doing": "Use concrete examples to illustrate your points.",
+                },
+            ],
+        },
+    }
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(payload),
+    )
+
+    transcript = "I led the team and I shipped it on time."
+    result = await evaluate_turn(question="q", transcript=transcript)
+
+    # The eval did not blow up — all five base scores are populated.
+    for field in _RUBRIC_FIELDS:
+        assert isinstance(getattr(result, field), int)
+
+    # Only the well-formed positive moment survived.
+    positives = result.feedback_detail.positive_moments
+    assert len(positives) == 1
+    assert positives[0].transcript_snippet == "I led"
+
+
 def test_feedback_detail_accepts_legacy_coaching_moments():
     legacy = {
         "main_takeaway": "Add a result.",

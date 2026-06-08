@@ -97,13 +97,22 @@ function formatTurnSubmitError(err: unknown): string {
   }
 
   const detail = extractApiErrorDetail(err);
-  if (
-    err.status === 422
-    && detail.toLowerCase().includes('violates our usage policy')
-  ) {
+  if (isUsagePolicyViolation(err)) {
     return 'This violates the usage policy. Please re-record and try again.';
   }
   return detail;
+}
+
+// A usage-policy 422 (moderation or prompt-injection gate) is NOT transient:
+// re-submitting the same audio yields the same transcript and fails again. The
+// only fix is to record a fresh answer, so the error UI offers "Restart turn"
+// instead of "Retry submission" for this case.
+function isUsagePolicyViolation(err: unknown): boolean {
+  return (
+    err instanceof ApiError
+    && err.status === 422
+    && extractApiErrorDetail(err).toLowerCase().includes('violates our usage policy')
+  );
 }
 
 /**
@@ -290,6 +299,9 @@ function PracticeSession({
   const [turnResults, setTurnResults] = useState<ReplayTurnResult[]>([]);
   const [submittingTurn, setSubmittingTurn] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
+  // True when `turnError` is a non-retryable usage-policy 422 — drives the error
+  // CTA to "Restart turn" (record fresh) rather than "Retry submission".
+  const [turnErrorIsPolicy, setTurnErrorIsPolicy] = useState(false);
   const [retryingTurn, setRetryingTurn] = useState(false);
   const [isDone, setIsDone] = useState(false);
   // Source of truth for the Results-phase panels. Populated by the final-turn
@@ -423,6 +435,7 @@ function PracticeSession({
     setSubmittingTurn(true);
     setEndingTurn(false);
     setTurnError(null);
+    setTurnErrorIsPolicy(false);
     try {
       const form = new FormData();
       form.append('audio', recorder.audioBlob, 'answer.webm');
@@ -530,7 +543,14 @@ function PracticeSession({
       });
       console.groupEnd();
 
-      if (autoSubmit && !autoRetriedRef.current && recorder.audioBlob) {
+      // A usage-policy 422 is not transient — re-submitting the same audio
+      // fails identically — so skip the one-shot auto-retry and go straight to
+      // the "Restart turn" CTA.
+      const policyViolation = isUsagePolicyViolation(err);
+      if (
+        autoSubmit && !autoRetriedRef.current && recorder.audioBlob
+        && !policyViolation
+      ) {
         autoRetriedRef.current = true;
         setRetryingTurn(true);
         window.setTimeout(() => {
@@ -541,6 +561,7 @@ function PracticeSession({
       }
 
       setTurnError(formatTurnSubmitError(err));
+      setTurnErrorIsPolicy(policyViolation);
     } finally {
       setSubmittingTurn(false);
     }
@@ -561,6 +582,7 @@ function PracticeSession({
     if (recorder.state !== 'idle') recorder.stop();
     recorder.reset();
     setTurnError(null);
+    setTurnErrorIsPolicy(false);
     setEndingTurn(false);
     setReplayKey((k) => k + 1);
   }
@@ -727,9 +749,17 @@ function PracticeSession({
                 </p>
                 {autoSubmit && recorder.audioBlob && (
                   <div className="mt-2">
-                    <FlowHoverButton type="button" onClick={() => { void handleSubmitTurn(); }}>
-                      Retry submission
-                    </FlowHoverButton>
+                    {turnErrorIsPolicy ? (
+                      // Re-submitting the same audio would fail the same policy
+                      // check — reset the turn so the user records a fresh answer.
+                      <FlowHoverButton type="button" onClick={handleRestart}>
+                        Restart turn
+                      </FlowHoverButton>
+                    ) : (
+                      <FlowHoverButton type="button" onClick={() => { void handleSubmitTurn(); }}>
+                        Retry submission
+                      </FlowHoverButton>
+                    )}
                   </div>
                 )}
               </div>

@@ -47,6 +47,8 @@ For displaying errors, prefer `extractApiErrorDetail(err)` over `err.message` (t
 
 `src/types/` manually mirrors `backend/app/schemas/` — **no codegen**. When a Pydantic schema changes, update the matching type by hand (and vice versa). Backend is `../backend` (sibling dir, not submodule) — read it for canonical shapes. Decimal scores arrive as **strings** on the wire — coerce with `parseFloat`/`num()`.
 
+Same hand-mirror discipline applies to `src/lib/contentPolicy.ts` — it mirrors the prompt-injection regex in `backend/app/services/_injection.py` (`CONTENT_INJECTION_RE`) for instant client-side validation of the bio + pasted-résumé fields (`OnboardingForm`, `Personalize`). The backend re-checks authoritatively (and is the only place PDF-extracted résumé text is inspected); keep the two patterns in sync.
+
 ### Routes wired (each behind a `useMe`-pattern hook — never inline `apiFetch` in components)
 
 `/me` + `/me/stats` (`useMe`), `/onboarding` (`OnboardingForm`), `/sessions` family (`useSessions`/`useSessionDetail`), `/saved-questions` family (`useSavedQuestions`/`useSavedQuestionDetail`), `/validation/industries` + `/validation/roles` (onboarding/Personalize comboboxes).

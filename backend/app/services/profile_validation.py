@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.schemas.validation import SuggestionsOut
+from app.services._injection import CONTENT_INJECTION_RE
 from app.services._openrouter import extract_json_object, get_client
 from app.services.moderation import ModerationUnavailableError, check_moderation
 
@@ -46,11 +47,12 @@ MAX_SUGGESTIONS = 5
 
 _MODERATION_MESSAGE = "That input can't be used here."
 
-_PROMPT_INJECTION_RE = re.compile(
-    r"\b(ignore previous|system prompt|you are now|developer message|"
-    r"jailbreak|act as|disregard instructions)\b",
-    re.IGNORECASE,
-)
+# These short structured fields (industry / role, ≤120 chars) get the shared
+# content regex PLUS a bare `act as` — in a two-word industry field "act as" is
+# itself suspicious, even though it's legitimate in free-prose answers (which is
+# why the shared `CONTENT_INJECTION_RE` omits it). This consumer fails soft to an
+# empty suggestion list, so the extra breadth here is cheap.
+_STRICT_EXTRA_RE = re.compile(r"\bact as\b", re.IGNORECASE)
 _DIRECT_REQUEST_RE = re.compile(
     r"^\s*(what is|how do|how to|tell me|write me|explain|teach me|"
     r"make me|generate|create)\b",
@@ -136,7 +138,11 @@ def _looks_like_junk(value: str) -> bool:
     text = value.strip()
     if not text or not _HAS_LETTER_RE.search(text):
         return True
-    if _PROMPT_INJECTION_RE.search(text) or _DIRECT_REQUEST_RE.search(text):
+    if (
+        CONTENT_INJECTION_RE.search(text)
+        or _STRICT_EXTRA_RE.search(text)
+        or _DIRECT_REQUEST_RE.search(text)
+    ):
         return True
     if len(text) > 120 or text.count(" ") > 10:
         return True

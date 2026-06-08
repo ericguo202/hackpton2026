@@ -44,6 +44,7 @@ from app.services.company_research import (
     research_company,
 )
 from app.services._field_prompts import FieldCategory
+from app.services._injection import contains_injection
 from app.services.daily_limit import (
     DAILY_LIMIT_FREE,
     check_and_reset as daily_check_and_reset,
@@ -879,6 +880,26 @@ async def submit_turn(
     #    before it can OOM the worker or be sent to ElevenLabs STT.
     audio_bytes = await _read_audio_bounded(audio)
     transcript = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+
+    # 3a-pre. Deterministic prompt-injection gate. Free (no network) so it runs
+    # BEFORE the billed moderation call: a transcript carrying an injection
+    # marker never reaches moderation, the evaluator, or the DB. The pending turn
+    # is left untouched (transcript still NULL) so the candidate simply
+    # re-records — same UX as the moderation reject below. "violates our usage
+    # policy" wording is load-bearing: the frontend maps it to the re-record
+    # message in `Practice.tsx`.
+    if contains_injection(transcript):
+        logger.info(
+            "Turn rejected by injection gate for session=%s turn=%s",
+            session_id, current_turn.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Your answer contains content that violates our usage policy. "
+                "Please re-record and try again."
+            ),
+        )
 
     # 3a. Moderation pre-check on the transcript. Running BEFORE we persist
     # the row or spawn any LLM call means flagged content never reaches

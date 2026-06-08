@@ -22,11 +22,19 @@ import logging
 import re
 from typing import Annotated, Any, Callable, Literal, TypeVar
 
-from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app.db.models.enums import ExperienceLevel
 from app.services._field_rubrics import build_system_instruction
 from app.services._field_prompts import FieldCategory
+from app.services._injection import CONTENT_INJECTION_RE
 from app.services._openrouter import extract_json_object, get_client
 
 logger = logging.getLogger(__name__)
@@ -71,18 +79,13 @@ _OWNERSHIP_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Deterministic prompt-injection gate on the candidate transcript. Mirrors
-# `profile_validation._PROMPT_INJECTION_RE`, with the `act as` alternative
-# DELIBERATELY DROPPED: a hit here scores the turn as a zeroed non-answer, and
-# "act as" appears legitimately in real answers ("I had to act as the team
-# lead"), so keeping it would tank genuine responses. Keep the two patterns in
-# sync when adding NEW unambiguous markers (this is the stricter, transcript-
-# safe subset).
-_INJECTION_RE = re.compile(
-    r"\b(ignore previous|system prompt|you are now|developer message|"
-    r"jailbreak|disregard instructions)\b",
-    re.IGNORECASE,
-)
+# Deterministic prompt-injection gate on the candidate transcript. Uses the
+# shared, precision-tuned content regex (see `app/services/_injection.py`), which
+# deliberately omits high-false-positive markers like bare "act as" / "system
+# update" — a hit here scores the turn as a zeroed non-answer, so a wrong match
+# would tank a genuine response. The `<candidate_answer>` delimiters + system
+# clause below are the recall layer for subtler attempts the regex won't risk.
+_INJECTION_RE = CONTENT_INJECTION_RE
 
 # Appended to the rubric system instruction. The candidate transcript is wrapped
 # in <candidate_answer> tags by `_build_prompt`; this clause tells the model to
@@ -190,10 +193,35 @@ class FeedbackDetail(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _legacy_coaching_moments(cls, data: object) -> object:
-        if isinstance(data, dict) and "improvement_moments" not in data:
+        if not isinstance(data, dict):
+            return data
+        if "improvement_moments" not in data:
             legacy = data.get("coaching_moments")
             if legacy is not None:
                 data = {**data, "improvement_moments": legacy}
+        # Drop individual malformed moments so one bad list item can't
+        # ValidationError the whole evaluation. The model (deepseek) occasionally
+        # emits a moment missing a required sub-field — observed: a
+        # positive_moment with no `why_this_helped`. Without this, that single
+        # item raised a ValidationError that crashed `evaluate_turn`, zeroing the
+        # turn out of the session aggregate. These lists are decorative and
+        # allowed to be empty (and `_drop_unanchored_moments` already tolerates
+        # short lists), so validating each item in isolation and keeping only the
+        # passers is the fail-soft move that preserves the scores + takeaway.
+        for key, model in (
+            ("positive_moments", PositiveMoment),
+            ("improvement_moments", ImprovementMoment),
+        ):
+            items = data.get(key)
+            if isinstance(items, list):
+                kept = []
+                for item in items:
+                    try:
+                        model.model_validate(item)
+                    except ValidationError:
+                        continue
+                    kept.append(item)
+                data = {**data, key: kept}
         return data
 
 

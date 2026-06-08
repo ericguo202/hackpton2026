@@ -20,7 +20,11 @@ from app.services._field_prompts import FieldCategory
 
 
 class SessionCreateIn(BaseModel):
-    company: str = Field(min_length=1, max_length=200)
+    # 60 mirrors the client-side cap in Home.tsx — long enough for real names
+    # ("New Jersey House of Representatives Internship Program"), short enough to
+    # block a direct-API paste of a large blob that would burn research/LLM
+    # tokens. A client maxLength alone is trivially bypassed, so enforce it here.
+    company: str = Field(min_length=1, max_length=60)
     job_title: str = Field(min_length=1, max_length=200)
     # Optional ElevenLabs voice ID picked from the start-form picker. The
     # endpoint validates this against `voice_pool.list_voices()` and
