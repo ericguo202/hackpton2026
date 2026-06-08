@@ -35,6 +35,7 @@ EVENT_USER_SIGNED_IN = "user_signed_in"
 EVENT_MODERATION_REQUEST = "moderation_request"
 EVENT_INTERVIEW_SESSION_STARTED = "interview_session_started"
 EVENT_SAVE_QUESTION = "save_question"
+EVENT_INJECTION_DETECTED = "injection_detected"
 EVENT_ERROR = "error"
 
 
@@ -205,6 +206,38 @@ async def log_save_question(
         session_id=session_id,
         sent_content=question_text,
         metadata=metadata,
+        db=db,
+    )
+
+
+async def log_injection_detected(
+    *,
+    source: str,
+    text: str | None = None,
+    user: User | None = None,
+    session_id: UUID | None = None,
+    db: AsyncSession | None = None,
+    metadata: Mapping[str, Any] | None = None,
+) -> None:
+    """Record a deterministic prompt-injection regex hit on user-supplied text.
+
+    Logged as a WARNING: `CONTENT_INJECTION_RE` is high-precision (safe to
+    hard-block on), so a hit is a strong signal of an intentional injection
+    attempt rather than incidental prose. `source` names the gate that fired
+    (e.g. ``"sessions.transcript"``, ``"sessions.company"``,
+    ``"opening_question.profile"``); `text` is the offending input (clipped by
+    `log_incident`). Best-effort like all incident logging — never raises.
+    """
+    meta = {"source": source}
+    if metadata:
+        meta.update(metadata)
+    await log_incident(
+        event_type=EVENT_INJECTION_DETECTED,
+        severity=SEVERITY_WARNING,
+        user=user,
+        session_id=session_id,
+        sent_content=text,
+        metadata=meta,
         db=db,
     )
 

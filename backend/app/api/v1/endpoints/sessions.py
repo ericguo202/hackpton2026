@@ -44,6 +44,7 @@ from app.services.company_research import (
     research_company,
 )
 from app.services._field_prompts import FieldCategory
+from app.services._injection import contains_injection
 from app.services.daily_limit import (
     DAILY_LIMIT_FREE,
     check_and_reset as daily_check_and_reset,
@@ -53,7 +54,11 @@ from app.services.coaching import generate_next_take
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
 from app.services.followup import generate_followup
-from app.services.incidents import log_error, log_interview_session_started
+from app.services.incidents import (
+    log_error,
+    log_injection_detected,
+    log_interview_session_started,
+)
 from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
@@ -216,6 +221,28 @@ async def create_session(
                 ),
             )
 
+    # Deterministic prompt-injection gate on the two user-authored inputs that
+    # feed company research + every downstream prompt. Free (no network) so it
+    # runs BEFORE the billed moderation call below — an injected company /
+    # job-title never reaches OpenAI moderation, Serper, OpenRouter, or
+    # ElevenLabs. The delimiters + untrusted-data clause in `research_company`
+    # are the recall layer for subtler attempts this high-precision regex skips.
+    if contains_injection(body.company) or contains_injection(body.job_title):
+        logger.info(
+            "Session-create rejected by injection gate clerk_user_id=%s",
+            user.clerk_user_id,
+        )
+        await log_injection_detected(
+            source="sessions.company",
+            text=f"company={body.company!r} job_title={body.job_title!r}",
+            user=user,
+            db=db,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Input contains content that violates our usage policy.",
+        )
+
     # Pre-flight moderation on the two user-authored string inputs that
     # feed downstream LLM prompts. Blocking HERE means the content never
     # reaches Serper, OpenRouter, or ElevenLabs — so a malicious company
@@ -320,6 +347,35 @@ async def create_session(
 
 
 # ── turn submission ───────────────────────────────────────────────────────────
+
+# Hard cap on the uploaded answer audio. A 5-minute Opus/WebM clip is well
+# under this (the frontend also auto-stops recording at the 5:00 mark), so the
+# cap only ever trips on a malformed or malicious upload. Read in 1 MiB chunks
+# and abort with 413 BEFORE the bytes can exhaust worker memory or get
+# forwarded to ElevenLabs STT (burning quota). Mirrors onboarding's bounded
+# résumé read (`_read_pdf_bounded`).
+_MAX_AUDIO_BYTES = 50 * 1024 * 1024
+_AUDIO_CHUNK_SIZE = 1024 * 1024
+
+
+async def _read_audio_bounded(audio: UploadFile) -> bytes:
+    """Read the full upload into memory, aborting with 413 past the cap."""
+    buf = bytearray()
+    while True:
+        chunk = await audio.read(_AUDIO_CHUNK_SIZE)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > _MAX_AUDIO_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"Audio exceeds the {_MAX_AUDIO_BYTES // (1024 * 1024)} MB "
+                    "limit. Please record a shorter answer."
+                ),
+            )
+    return bytes(buf)
+
 
 async def _insert_followup_turn(
     db: AsyncSession,
@@ -846,9 +902,38 @@ async def submit_turn(
     if current_turn is None:
         raise HTTPException(status_code=400, detail="No pending turn for this session")
 
-    # 3. Transcribe.
-    audio_bytes = await audio.read()
+    # 3. Transcribe. Bounded read so an oversized upload is rejected with 413
+    #    before it can OOM the worker or be sent to ElevenLabs STT.
+    audio_bytes = await _read_audio_bounded(audio)
     transcript = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+
+    # 3a-pre. Deterministic prompt-injection gate. Free (no network) so it runs
+    # BEFORE the billed moderation call: a transcript carrying an injection
+    # marker never reaches moderation, the evaluator, or the DB. The pending turn
+    # is left untouched (transcript still NULL) so the candidate simply
+    # re-records — same UX as the moderation reject below. "violates our usage
+    # policy" wording is load-bearing: the frontend maps it to the re-record
+    # message in `Practice.tsx`.
+    if contains_injection(transcript):
+        logger.info(
+            "Turn rejected by injection gate for session=%s turn=%s",
+            session_id, current_turn.id,
+        )
+        await log_injection_detected(
+            source="sessions.transcript",
+            text=transcript,
+            user=user,
+            session_id=session_id,
+            db=db,
+            metadata={"turn_id": current_turn.id},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Your answer contains content that violates our usage policy. "
+                "Please re-record and try again."
+            ),
+        )
 
     # 3a. Moderation pre-check on the transcript. Running BEFORE we persist
     # the row or spawn any LLM call means flagged content never reaches

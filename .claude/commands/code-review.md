@@ -1,0 +1,2 @@
+Please carry out a comprehensive code review of the entire repo, and write a report with actions to code_review.md in the root directory. Classify all issues as Critical, High, Moderate, and Low severity. When classifying an issue as Critical or High
+severity, make sure to walk through the entire flow of the code surrounding that issue. DO NOT make up a flow or use information solely from memory. While conducting this code review, focus especially on security vulnerabilities.
