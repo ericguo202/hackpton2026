@@ -115,10 +115,13 @@ async def test_injection_in_resume_still_returns_question(monkeypatch):
     raise — we still need an opening question, and the delimiters defend it."""
     incidents: list = []
 
-    async def _log_incident(**kwargs):
+    async def _log_injection_detected(**kwargs):
         incidents.append(kwargs)
 
-    monkeypatch.setattr("app.services.opening_question.log_incident", _log_incident)
+    monkeypatch.setattr(
+        "app.services.opening_question.log_injection_detected",
+        _log_injection_detected,
+    )
     monkeypatch.setattr(
         "app.services.opening_question.get_client",
         lambda: _make_fake_client("Tell me about a project you owned end to end."),
@@ -131,7 +134,7 @@ async def test_injection_in_resume_still_returns_question(monkeypatch):
 
     assert isinstance(q, str) and len(q) > 20
     assert len(incidents) == 1
-    assert incidents[0]["metadata"]["source"] == "opening_question.profile"
+    assert incidents[0]["source"] == "opening_question.profile"
 
 
 async def test_wrapping_quotes_stripped(monkeypatch):

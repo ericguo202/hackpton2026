@@ -54,7 +54,11 @@ from app.services.coaching import generate_next_take
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
 from app.services.followup import generate_followup
-from app.services.incidents import log_error, log_interview_session_started
+from app.services.incidents import (
+    log_error,
+    log_injection_detected,
+    log_interview_session_started,
+)
 from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
@@ -216,6 +220,28 @@ async def create_session(
                     "interviews. Come back tomorrow."
                 ),
             )
+
+    # Deterministic prompt-injection gate on the two user-authored inputs that
+    # feed company research + every downstream prompt. Free (no network) so it
+    # runs BEFORE the billed moderation call below — an injected company /
+    # job-title never reaches OpenAI moderation, Serper, OpenRouter, or
+    # ElevenLabs. The delimiters + untrusted-data clause in `research_company`
+    # are the recall layer for subtler attempts this high-precision regex skips.
+    if contains_injection(body.company) or contains_injection(body.job_title):
+        logger.info(
+            "Session-create rejected by injection gate clerk_user_id=%s",
+            user.clerk_user_id,
+        )
+        await log_injection_detected(
+            source="sessions.company",
+            text=f"company={body.company!r} job_title={body.job_title!r}",
+            user=user,
+            db=db,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Input contains content that violates our usage policy.",
+        )
 
     # Pre-flight moderation on the two user-authored string inputs that
     # feed downstream LLM prompts. Blocking HERE means the content never
@@ -892,6 +918,14 @@ async def submit_turn(
         logger.info(
             "Turn rejected by injection gate for session=%s turn=%s",
             session_id, current_turn.id,
+        )
+        await log_injection_detected(
+            source="sessions.transcript",
+            text=transcript,
+            user=user,
+            session_id=session_id,
+            db=db,
+            metadata={"turn_id": current_turn.id},
         )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

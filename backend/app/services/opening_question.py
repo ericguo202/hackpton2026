@@ -47,7 +47,7 @@ from app.services._field_prompts import (
 from app.services._injection import contains_injection
 from app.services._openrouter import get_client
 from app.services.company_research import CompanyBrief
-from app.services.incidents import EVENT_ERROR, SEVERITY_WARNING, log_incident
+from app.services.incidents import log_injection_detected
 
 logger = logging.getLogger(__name__)
 
@@ -202,28 +202,22 @@ async def generate_opening_question(
     # session-create. If one slips through, log a warning + best-effort incident
     # for visibility, then PROCEED: we must still produce an opening question, and
     # the <candidate_profile> delimiters + system clause are the active defense.
-    if contains_injection(
-        " ".join(
-            s for s in (
-                user.resume_text, user.short_bio, user.target_role,
-                user.industry, job_title,
-            ) if s
-        )
-    ):
+    profile_text = " ".join(
+        s for s in (
+            user.resume_text, user.short_bio, user.target_role,
+            user.industry, job_title,
+        ) if s
+    )
+    if contains_injection(profile_text):
         logger.warning(
             "Prompt-injection pattern in candidate profile during opening-"
             "question generation (user_id=%s); proceeding with delimiter defense",
             user.id,
         )
-        await log_incident(
-            event_type=EVENT_ERROR,
-            severity=SEVERITY_WARNING,
+        await log_injection_detected(
+            source="opening_question.profile",
+            text=profile_text,
             user=user,
-            error=(
-                "Prompt-injection pattern detected in candidate profile during "
-                "opening-question generation."
-            ),
-            metadata={"source": "opening_question.profile"},
         )
 
     system_prompt = build_field_system_prompt(
