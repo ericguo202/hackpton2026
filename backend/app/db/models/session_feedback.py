@@ -19,8 +19,8 @@ class SessionFeedback(Base):
             name="ck_session_feedback_overall_satisfaction_rating",
         ),
         CheckConstraint(
-            "ease_of_use_rating BETWEEN 1 AND 5",
-            name="ck_session_feedback_ease_of_use_rating",
+            "smoothness_rating BETWEEN 1 AND 5",
+            name="ck_session_feedback_smoothness_rating",
         ),
         CheckConstraint(
             "question_quality_rating BETWEEN 1 AND 5",
@@ -52,13 +52,13 @@ class SessionFeedback(Base):
         unique=True,
     )
 
-    smoothness_response: Mapped[str] = mapped_column(Text, nullable=False)
+    smoothness_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     desired_features: Mapped[str | None] = mapped_column(Text, nullable=True)
+    difficult_feature_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     question_relevance_response: Mapped[str] = mapped_column(Text, nullable=False)
     feedback_helpfulness_response: Mapped[str] = mapped_column(Text, nullable=False)
     bug_report: Mapped[str | None] = mapped_column(Text, nullable=True)
     overall_satisfaction_rating: Mapped[int] = mapped_column(Integer, nullable=False)
-    ease_of_use_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     question_quality_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     would_recommend_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     willing_to_pay: Mapped[bool] = mapped_column(Boolean, nullable=False)

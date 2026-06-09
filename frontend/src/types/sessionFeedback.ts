@@ -1,13 +1,13 @@
 export type SessionFeedbackPayload = {
   // null for voluntary (launcher) feedback not tied to a session.
   session_id: string | null;
-  smoothness_response: string;
+  smoothness_rating: number;
   desired_features: string | null;
+  difficult_feature_response: string | null;
   question_relevance_response: string;
   feedback_helpfulness_response: string;
   bug_report: string | null;
   overall_satisfaction_rating: number;
-  ease_of_use_rating: number;
   question_quality_rating: number;
   would_recommend_rating: number;
   willing_to_pay: boolean;

@@ -20,8 +20,8 @@ type Props = {
 };
 
 type RatingName =
+  | 'smoothness'
   | 'overallSatisfaction'
-  | 'easeOfUse'
   | 'questionQuality'
   | 'wouldRecommend';
 
@@ -36,13 +36,13 @@ export default function BetaFeedbackDialog({
   onClose,
 }: Props) {
   const formRef = useRef<HTMLFormElement | null>(null);
-  const [smoothnessResponse, setSmoothnessResponse] = useState('');
+  const [smoothnessRating, setSmoothnessRating] = useState(0);
   const [desiredFeatures, setDesiredFeatures] = useState('');
+  const [difficultFeature, setDifficultFeature] = useState('');
   const [questionRelevanceResponse, setQuestionRelevanceResponse] = useState('');
   const [feedbackHelpfulnessResponse, setFeedbackHelpfulnessResponse] = useState('');
   const [bugReport, setBugReport] = useState('');
   const [overallSatisfaction, setOverallSatisfaction] = useState(0);
-  const [easeOfUse, setEaseOfUse] = useState(0);
   const [questionQuality, setQuestionQuality] = useState(0);
   const [wouldRecommend, setWouldRecommend] = useState(0);
   const [willingToPay, setWillingToPay] = useState<boolean | null>(null);
@@ -52,13 +52,13 @@ export default function BetaFeedbackDialog({
   const [lastSessionId, setLastSessionId] = useState(sessionId);
   if (sessionId !== lastSessionId) {
     setLastSessionId(sessionId);
-    setSmoothnessResponse('');
+    setSmoothnessRating(0);
     setDesiredFeatures('');
+    setDifficultFeature('');
     setQuestionRelevanceResponse('');
     setFeedbackHelpfulnessResponse('');
     setBugReport('');
     setOverallSatisfaction(0);
-    setEaseOfUse(0);
     setQuestionQuality(0);
     setWouldRecommend(0);
     setWillingToPay(null);
@@ -133,11 +133,10 @@ export default function BetaFeedbackDialog({
       ? monthlyPrice.trim().length > 0
       : willingToPay === false && paidFeatureRequest.trim().length > 0;
   const canSubmit =
-    smoothnessResponse.trim().length > 0
+    smoothnessRating > 0
     && questionRelevanceResponse.trim().length > 0
     && feedbackHelpfulnessResponse.trim().length > 0
     && overallSatisfaction > 0
-    && easeOfUse > 0
     && questionQuality > 0
     && wouldRecommend > 0
     && branchAnswered
@@ -145,13 +144,13 @@ export default function BetaFeedbackDialog({
 
   const payload = useMemo<SessionFeedbackPayload>(() => ({
     session_id: sessionId,
-    smoothness_response: smoothnessResponse.trim(),
+    smoothness_rating: smoothnessRating,
     desired_features: cleanOptional(desiredFeatures),
+    difficult_feature_response: cleanOptional(difficultFeature),
     question_relevance_response: questionRelevanceResponse.trim(),
     feedback_helpfulness_response: feedbackHelpfulnessResponse.trim(),
     bug_report: cleanOptional(bugReport),
     overall_satisfaction_rating: overallSatisfaction,
-    ease_of_use_rating: easeOfUse,
     question_quality_rating: questionQuality,
     would_recommend_rating: wouldRecommend,
     willing_to_pay: willingToPay === true,
@@ -160,7 +159,7 @@ export default function BetaFeedbackDialog({
   }), [
     bugReport,
     desiredFeatures,
-    easeOfUse,
+    difficultFeature,
     feedbackHelpfulnessResponse,
     monthlyPrice,
     overallSatisfaction,
@@ -168,7 +167,7 @@ export default function BetaFeedbackDialog({
     questionQuality,
     questionRelevanceResponse,
     sessionId,
-    smoothnessResponse,
+    smoothnessRating,
     willingToPay,
     wouldRecommend,
   ]);
@@ -213,23 +212,17 @@ export default function BetaFeedbackDialog({
         </div>
 
         <div className="space-y-6 overflow-y-auto px-6 py-5">
-          <TextareaField
-            label="How smooth was your experience?"
-            value={smoothnessResponse}
-            onChange={setSmoothnessResponse}
-            required
+          <RatingField
+            label="How smooth was your experience using InterviewPie?"
+            name="smoothness"
+            value={smoothnessRating}
+            onChange={setSmoothnessRating}
           />
           <RatingField
-            label="Overall, how satisfied were you with this practice session?"
+            label="Overall, how satisfied are you with the practice session feature?"
             name="overallSatisfaction"
             value={overallSatisfaction}
             onChange={setOverallSatisfaction}
-          />
-          <RatingField
-            label="How easy was InterviewPie to use?"
-            name="easeOfUse"
-            value={easeOfUse}
-            onChange={setEaseOfUse}
           />
           <RatingField
             label="How strong was the question quality?"
@@ -259,6 +252,11 @@ export default function BetaFeedbackDialog({
             label="What features would you like to see on InterviewPie?"
             value={desiredFeatures}
             onChange={setDesiredFeatures}
+          />
+          <TextareaField
+            label="Was there any feature or flow that was difficult to use?"
+            value={difficultFeature}
+            onChange={setDifficultFeature}
           />
           <TextareaField
             label="Did any bugs come up during your testing of InterviewPie? If so, please explain what occurred and on which page."
@@ -313,12 +311,16 @@ export default function BetaFeedbackDialog({
             </p>
           )}
           <div className="flex justify-end">
-            <FlowHoverButton type="submit" disabled={!canSubmit}>
-              <span className="inline-flex items-center gap-2">
-                <Send className="h-4 w-4" aria-hidden="true" />
-                {submitting ? 'Submitting...' : 'Submit feedback'}
-              </span>
-            </FlowHoverButton>
+            {/* title lives on the wrapper so it surfaces on hover even while the
+                button is disabled (disabled buttons don't fire tooltips). */}
+            <span title={canSubmit ? undefined : 'Please fill out all required questions'}>
+              <FlowHoverButton type="submit" disabled={!canSubmit}>
+                <span className="inline-flex items-center gap-2">
+                  <Send className="h-4 w-4" aria-hidden="true" />
+                  {submitting ? 'Submitting...' : 'Submit feedback'}
+                </span>
+              </FlowHoverButton>
+            </span>
           </div>
         </div>
       </form>
@@ -340,7 +342,10 @@ function RatingField({
 }) {
   return (
     <fieldset className="space-y-3">
-      <legend className="text-sm font-semibold text-text">{label}</legend>
+      <legend className="text-sm font-semibold text-text">
+        {label}
+        <span className="text-red-600"> *</span>
+      </legend>
       <div className="grid grid-cols-5 gap-2">
         {RATINGS.map((rating) => (
           <label

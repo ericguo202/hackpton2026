@@ -10,13 +10,13 @@ class SessionFeedbackCreateIn(BaseModel):
     # None for voluntary feedback submitted via the floating launcher (not tied
     # to a session); the compulsory gate sends the latest completed session id.
     session_id: UUID | None = None
-    smoothness_response: str = Field(min_length=1, max_length=4000)
+    smoothness_rating: int = Field(ge=1, le=5)
     desired_features: str | None = Field(default=None, max_length=4000)
+    difficult_feature_response: str | None = Field(default=None, max_length=4000)
     question_relevance_response: str = Field(min_length=1, max_length=4000)
     feedback_helpfulness_response: str = Field(min_length=1, max_length=4000)
     bug_report: str | None = Field(default=None, max_length=4000)
     overall_satisfaction_rating: int = Field(ge=1, le=5)
-    ease_of_use_rating: int = Field(ge=1, le=5)
     question_quality_rating: int = Field(ge=1, le=5)
     would_recommend_rating: int = Field(ge=1, le=5)
     willing_to_pay: bool
@@ -26,7 +26,6 @@ class SessionFeedbackCreateIn(BaseModel):
     @model_validator(mode="after")
     def _validate_payment_branch(self) -> "SessionFeedbackCreateIn":
         required_text = {
-            "smoothness_response": self.smoothness_response,
             "question_relevance_response": self.question_relevance_response,
             "feedback_helpfulness_response": self.feedback_helpfulness_response,
         }
@@ -51,13 +50,13 @@ class SessionFeedbackOut(BaseModel):
     id: UUID
     user_id: UUID
     session_id: UUID | None
-    smoothness_response: str
+    smoothness_rating: int
     desired_features: str | None
+    difficult_feature_response: str | None
     question_relevance_response: str
     feedback_helpfulness_response: str
     bug_report: str | None
     overall_satisfaction_rating: int
-    ease_of_use_rating: int
     question_quality_rating: int
     would_recommend_rating: int
     willing_to_pay: bool
