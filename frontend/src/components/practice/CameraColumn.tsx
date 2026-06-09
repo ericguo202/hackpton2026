@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 import { CameraPreview } from '../CameraPreview';
 import { FlowHoverButton } from '../ui/flow-hover-button';
 import { cn } from '../../lib/utils';
@@ -30,6 +32,7 @@ interface Props {
       (turn 1, pre-recording) so the candidate knows the 5-minute cap before
       they start. Hidden once recording begins. */
   firstTurnHint: boolean;
+  deliveryConsentNotice?: ReactNode;
   onSubmitPreview: () => void;
   onReRecordPreview: () => void;
   className?: string;
@@ -45,6 +48,7 @@ export function CameraColumn({
   isFinalTurn,
   recordingNotice,
   firstTurnHint,
+  deliveryConsentNotice,
   onSubmitPreview,
   onReRecordPreview,
   className,
@@ -79,7 +83,7 @@ export function CameraColumn({
                   ? 'Evaluating your recording…'
                   : 'Audio/video recording will restart when the follow-up question finishes playing.'
                 : recorderState === 'idle'
-                  ? 'Camera will start once the question audio ends.'
+                  ? 'Recording will start once the question audio ends.'
                   : 'Webcam not enabled — audio recorded only.'}
             </p>
           </div>
@@ -93,6 +97,8 @@ export function CameraColumn({
           Each answer can be up to 5 minutes — recording stops automatically.
         </p>
       )}
+
+      {deliveryConsentNotice}
 
       {/* Recording-length notice — UNDER the box, matching its width, never
           overlaid. Only present while recording (Practice gates the value). */}

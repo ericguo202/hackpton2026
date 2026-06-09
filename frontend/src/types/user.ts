@@ -34,6 +34,9 @@ export type MeResponse = {
   // starts), so abandoning a session doesn't burn a slot.
   tier: UserTier;
   daily_session_count: number;
+  delivery_analytics_consent_at: string | null;
+  delivery_analytics_consent_version: number | null;
+  delivery_analytics_revoked_at: string | null;
   created_at: string;
   updated_at: string;
 };
