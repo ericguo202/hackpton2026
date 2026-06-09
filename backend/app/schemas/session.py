@@ -256,6 +256,10 @@ class SessionDetailOut(BaseModel):
     # re-practice attempt). Drives the Save button's "already saved" state so
     # the frontend doesn't need a separate lookup.
     saved_question_id: UUID | None = None
+    # True once the required beta survey has been submitted for this completed
+    # session. The Practice results screen uses this to avoid re-prompting on
+    # refresh or a later detail refetch.
+    feedback_submitted: bool = False
 
 
 class FillerWordStat(BaseModel):

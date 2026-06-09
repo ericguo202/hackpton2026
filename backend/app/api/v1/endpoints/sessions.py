@@ -23,6 +23,7 @@ from app.core.auth import get_current_user_db
 from app.db.models.enums import ExperienceLevel, SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
+from app.db.models.session_feedback import SessionFeedback
 from app.db.models.session_metrics import SessionMetrics
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal, get_db
@@ -1273,6 +1274,9 @@ async def get_session(
         select(SessionMetrics).where(SessionMetrics.session_id == session_id)
     )
     metrics = metrics_result.scalar_one_or_none()
+    feedback_id = await db.scalar(
+        select(SessionFeedback.id).where(SessionFeedback.session_id == session_id)
+    )
 
     turn_outs = [
         TurnOut(
@@ -1326,4 +1330,5 @@ async def get_session(
         ),
         turns_evaluated=metrics.turns_evaluated if metrics else 0,
         saved_question_id=session.saved_question_id,
+        feedback_submitted=feedback_id is not None,
     )

@@ -138,6 +138,8 @@ export type SessionDetail = {
    * Drives the Save button's "already saved" state.
    */
   saved_question_id: string | null;
+  /** True once the required beta survey has been submitted for this session. */
+  feedback_submitted: boolean;
 };
 
 /** One bar in the top-filler-words chart. `count` is an exact int. */
