@@ -70,7 +70,7 @@ export default function Hero() {
                 lineHeight: 1,
               }}
             >
-              LOGOS
+              SOCRATICVOICE
             </p>
 
             <h1
@@ -100,7 +100,7 @@ export default function Hero() {
               <GetStartedButton onClick={onSignInClick} />
 
               <p className="text-sm text-text-subtle">
-                λόγος (Logos)— Greek for word, speech, reason.
+                Guided interview practice rooted in questions, speech, and reason
               </p>
             </div>
           </div>

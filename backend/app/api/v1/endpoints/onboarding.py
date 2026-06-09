@@ -47,6 +47,7 @@ from app.db.models.enums import ExperienceLevel
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.user import UserOut
+from app.services._injection import contains_injection
 from app.services.moderation import check_moderation
 
 router = APIRouter()
@@ -147,6 +148,20 @@ async def onboarding(
         # so this branch is only reached from Personalize edits that don't
         # touch the résumé section.
         final_resume_text = user.resume_text or ""
+
+    # Deterministic prompt-injection gate on the two long free-text fields that
+    # later feed LLM prompts. Free (no network) so it runs BEFORE moderation.
+    # This is the AUTHORITATIVE check for PDF-extracted résumé text, which the
+    # client can't inspect to validate. bio + pasted résumé are also gated
+    # client-side for instant feedback.
+    if contains_injection(short_bio) or contains_injection(final_resume_text):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "One of your profile fields contains content that violates our "
+                "usage policy. Please revise and resubmit."
+            ),
+        )
 
     # Moderation pre-check on every free-text field that will later feed
     # an LLM prompt (opening question / evaluator / follow-up all consume

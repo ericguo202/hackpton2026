@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
+import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPolicy';
 import { joinSpoken } from '../lib/joinSpoken';
 import type { ExperienceLevel, MeResponse } from '../types/user';
 import IndustryAutocompleteField from './IndustryAutocompleteField';
@@ -105,6 +106,19 @@ export default function OnboardingForm() {
   ];
   const canAdvance = validators[step]();
 
+  // Deterministic content-policy check for the free-text steps (bio, pasted
+  // résumé). Returns a message to block + show, or null. Kept separate from
+  // `validators` so the Continue button stays enabled and the user sees WHY they
+  // were blocked rather than a silently-disabled button. The backend re-checks
+  // authoritatively (and is the only place PDF résumé text is inspected).
+  function stepPolicyError(s: number): string | null {
+    if (s === 3 && violatesContentPolicy(shortBio)) return CONTENT_POLICY_MESSAGE;
+    if (s === 4 && resumeMode === 'text' && violatesContentPolicy(resumeText)) {
+      return CONTENT_POLICY_MESSAGE;
+    }
+    return null;
+  }
+
   const progressPct = ((step + 1) / TOTAL_STEPS) * 100;
 
   function advanceToNext() {
@@ -117,6 +131,11 @@ export default function OnboardingForm() {
 
   function advance() {
     if (!canAdvance) return;
+    const policyError = stepPolicyError(step);
+    if (policyError) {
+      setError(policyError);
+      return;
+    }
     advanceToNext();
   }
 
@@ -143,6 +162,15 @@ export default function OnboardingForm() {
     }
     if (!email) {
       setError("Couldn't read your email from Clerk. Try reloading.");
+      return;
+    }
+    // Re-check bio + pasted résumé at submit so a back-navigated edit can't slip
+    // past the per-step gate. PDF résumé text is checked server-side.
+    if (
+      violatesContentPolicy(shortBio) ||
+      (resumeMode === 'text' && violatesContentPolicy(resumeText))
+    ) {
+      setError(CONTENT_POLICY_MESSAGE);
       return;
     }
 

@@ -70,10 +70,18 @@ class SavedQuestionAttempt(BaseModel):
     same-question comparison line. `evaluation_failed` is True when turn 1's
     eval never landed (null scores); the frontend shows a marker and drops the
     point from the trend rather than plotting a zero.
+
+    `status` is the session's lifecycle state (e.g. `in_progress` / `completed`).
+    Because evaluation finalizes in a background task, a freshly-created
+    re-practice attempt can be linked here while still scoring — in which case
+    `evaluation_failed` is True only because scores haven't landed YET. The
+    frontend uses `status` to show "Scoring in progress" instead of the
+    misleading "Evaluation failed" until the session completes.
     """
 
     session_id: UUID
     created_at: datetime
+    status: str
     overall_score: Decimal | None
     turn1_scores: ScoresOut | None
     evaluation_failed: bool

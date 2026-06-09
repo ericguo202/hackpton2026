@@ -2,11 +2,18 @@
  * Practice-only "Improve next" inner card. Lives on row 3, right column of
  * the Turn tab in the Results phase.
  *
- * Summarizes 2-4 bite-sized "where to focus" notes derived from a turn's
- * scores + filler counts + webcam analytics. Mirrors the legacy
- * `buildReplayInsights` derivations from `Practice.tsx`, minus the
- * "Main takeaway" item — that already lives in the Takeaway card on row 2
- * of `PracticeTurnPanel` and would be redundant here.
+ * A thin renderer over the evaluator's answer-grounded feedback — no local
+ * coaching generation. It surfaces:
+ *   1. "What to fix first" — the forward `next_take` (focus + approach)
+ *      produced by the separate coaching call (`backend/app/services/coaching.py`).
+ *   2. "Keep this part" — a condensed forward reminder from the top positive
+ *      moment (omitted for non-answers, which have no positive moments).
+ *   3. "Filler words" — the per-word distribution chart, accurate even before
+ *      scoring finishes.
+ * Each block is omitted when its data is absent, so a coaching failure or a
+ * non-answer just shows fewer blocks. The earlier `PLAYBOOKS` template machinery
+ * (question-kind regex + fill-in-the-blank scaffolds) was retired in favor of
+ * this; coaching now comes from the LLM that saw the answer.
  */
 
 import type { ReactNode } from 'react';
@@ -19,66 +26,71 @@ import {
   YAxis,
 } from 'recharts';
 
-import type { Scores } from '../../types/session';
-import type { InterviewSummary } from '../../lib/faceHeuristics';
-import type { AnalyzerDiagnostics } from '../../hooks/useFaceAnalyzer';
-import { Eyebrow, InnerCard } from '../session-detail/_turnInnerCards';
+import type { PositiveMoment, TurnDetail } from '../../types/history';
+import { EvalStatusNotice, Eyebrow, InnerCard } from '../session-detail/_turnInnerCards';
 
-type Insight = {
+type CoachingBlock = {
   title: string;
   detail: string;
-  // Optional supplementary block rendered below `detail`. Used for the
-  // "Trim filler words" insight to attach a per-word distribution chart.
+  // Optional highlighted box rendered below `detail` (the next-take approach,
+  // or the filler-words follow-up tip).
+  action?: string;
+  // Optional supplementary node (the filler distribution chart).
   extra?: ReactNode;
 };
 
-const SCORE_LABELS: Record<keyof Scores, string> = {
-  structure: 'Structure',
-  problem_solving: 'Problem Solving',
-  impact: 'Impact',
-  initiative: 'Initiative',
-  depth: 'Depth',
-  delivery: 'Delivery',
-};
-
 type Props = {
-  scores: Scores | null;
-  fillerWordCount: number;
-  fillerWordBreakdown: Record<string, number>;
-  cvSummary: InterviewSummary | null;
-  analyzerDiagnostics: AnalyzerDiagnostics;
+  turn: TurnDetail;
+  // While scoring is still running (pending) or after a completed session whose
+  // evaluation never returned (failed), the answer-grounded blocks aren't ready —
+  // show a status notice instead. The filler block stays (submit-time data).
+  evaluationPending: boolean;
+  evaluationFailed: boolean;
 };
 
 export function ImproveNextCard({
-  scores,
-  fillerWordCount,
-  fillerWordBreakdown,
-  cvSummary,
-  analyzerDiagnostics,
+  turn,
+  evaluationPending,
+  evaluationFailed,
 }: Props) {
-  const insights = buildInsights({
-    scores,
-    fillerWordCount,
-    fillerWordBreakdown,
-    cvSummary,
-    analyzerDiagnostics,
-  });
+  const gated = evaluationPending || evaluationFailed;
+  const blocks = gated
+    ? (() => {
+        const fillerBlock = buildFillerBlock(turn);
+        return fillerBlock ? [fillerBlock] : [];
+      })()
+    : buildCoachingBlocks(turn);
 
   return (
     <InnerCard>
       <Eyebrow>Improve next</Eyebrow>
       <div className="mt-3 flex-1 min-h-0 overflow-y-auto">
-        {insights.length === 0 ? (
-          <p className="text-sm text-text-subtle">
-            Nothing to prioritize from this turn.
-          </p>
+        {gated && (
+          <EvalStatusNotice
+            pending={evaluationPending}
+            className="mb-4"
+            pendingHint="Your focus areas will appear here once scoring finishes."
+            failedHint="Focus areas could not be generated because the evaluator did not return scores."
+          />
+        )}
+        {blocks.length === 0 ? (
+          gated ? null : (
+            <p className="text-sm text-text-subtle">
+              Nothing to prioritize from this turn.
+            </p>
+          )
         ) : (
           <ul className="flex flex-col gap-5">
-            {insights.map((insight) => (
-              <li key={insight.title} className="border-l-2 border-accent/45 pl-4">
-                <p className="mb-1 text-sm font-medium text-text">{insight.title}</p>
-                <p className="text-sm leading-6 text-text-muted">{insight.detail}</p>
-                {insight.extra}
+            {blocks.map((block) => (
+              <li key={block.title} className="border-l-2 border-accent/45 pl-4">
+                <p className="mb-1 text-sm font-medium text-text">{block.title}</p>
+                <p className="text-sm leading-6 text-text-muted">{block.detail}</p>
+                {block.action && (
+                  <p className="mt-3 rounded-md bg-surface px-3 py-2 text-sm leading-6 text-text">
+                    {block.action}
+                  </p>
+                )}
+                {block.extra}
               </li>
             ))}
           </ul>
@@ -88,101 +100,76 @@ export function ImproveNextCard({
   );
 }
 
-function buildInsights({
-  scores,
-  fillerWordCount,
-  fillerWordBreakdown,
-  cvSummary,
-  analyzerDiagnostics,
-}: Props): Insight[] {
-  const insights: Insight[] = [];
+function buildCoachingBlocks(turn: TurnDetail): CoachingBlock[] {
+  const blocks: CoachingBlock[] = [];
 
-  if (scores == null) {
-    insights.push({
-      title: 'Scores unavailable',
-      detail:
-        'The evaluator did not complete in time for this turn. Re-run the session to score this answer.',
-    });
-    return insights;
-  }
+  const nextTake = buildNextTakeBlock(turn);
+  if (nextTake) blocks.push(nextTake);
 
-  const entries = (Object.entries(scores) as Array<[keyof Scores, number | null]>)
-    .filter(([, value]) => value != null)
-    .map(([key, value]) => ({
-      key,
-      label: SCORE_LABELS[key],
-      value: value as number,
-    }));
+  // Grounded in the evaluator's real positive moments, so a non-answer
+  // (positive_moments: []) gets no invented praise — the block is omitted.
+  const keepThis = buildKeepThisBlock(turn);
+  if (keepThis) blocks.push(keepThis);
 
-  const weakest = [...entries].sort((a, b) => a.value - b.value)[0];
-  const strongest = [...entries].sort((a, b) => b.value - a.value)[0];
+  const fillerBlock = buildFillerBlock(turn);
+  if (fillerBlock) blocks.push(fillerBlock);
 
-  if (weakest) {
-    insights.push({
-      title: `Most room to improve: ${weakest.label}`,
-      detail: `${weakest.value}/10. Tighten this dimension first on your next take.`,
-    });
-  }
+  return blocks;
+}
 
-  if (strongest) {
-    insights.push({
-      title: `Keep this strength: ${strongest.label}`,
-      detail: `${strongest.value}/10. This is the part of your answer style worth preserving.`,
-    });
-  }
+function buildNextTakeBlock(turn: TurnDetail): CoachingBlock | null {
+  const nextTake = turn.feedback_detail?.next_take;
+  const focus = nextTake?.focus?.trim();
+  if (!focus) return null;
+  const approach = nextTake?.approach?.trim();
+  return {
+    title: 'What to fix first',
+    detail: focus,
+    action: approach || undefined,
+  };
+}
 
-  if (fillerWordCount > 0) {
-    const breakdownEntries = sortedBreakdown(fillerWordBreakdown);
-    insights.push({
-      title: 'Trim filler words',
-      detail: `${fillerWordCount} filler words showed up in this turn. Check the highlighted spans in your transcript.`,
-      extra:
-        breakdownEntries.length > 0 ? (
-          <FillerBreakdownChart entries={breakdownEntries} />
-        ) : undefined,
-    });
-  }
+function buildKeepThisBlock(turn: TurnDetail): CoachingBlock | null {
+  const top = positiveMoments(turn)[0];
+  if (!top) return null;
 
-  if (cvSummary) {
-    if (cvSummary.face_visible_pct < 85) {
-      insights.push({
-        title: 'Fix camera alignment',
-        detail: `Face visibility was ${cvSummary.face_visible_pct}%. Keep your head centered so delivery scoring has a stable read.`,
-      });
-    }
-    if (cvSummary.eye_contact_score < 60 || cvSummary.looked_away_pct >= 20) {
-      insights.push({
-        title: 'Hold eye contact longer',
-        detail: `Eye contact landed at ${cvSummary.eye_contact_score}/100, with ${cvSummary.looked_away_pct}% looked-away frames. Pick one spot near the camera and return to it between phrases.`,
-      });
-    }
-    if (cvSummary.expression_score < 50) {
-      insights.push({
-        title: 'Add more facial energy',
-        detail: `Expression scored ${cvSummary.expression_score}/100. A small smile and slightly more open eyes will read as more engaged.`,
-      });
-    }
-    if (
-      cvSummary.posture_score < 68 ||
-      cvSummary.bad_posture_pct >= 12 ||
-      cvSummary.tilted_pct >= 12
-    ) {
-      insights.push({
-        title: 'Fix posture and head alignment',
-        detail: `Posture scored ${cvSummary.posture_score}/100 with ${cvSummary.bad_posture_pct}% bad-posture frames and ${cvSummary.tilted_pct}% tilted frames. Sit upright and keep your head level with the camera.`,
-      });
-    }
-  } else {
-    insights.push({
-      title: 'Delivery score unavailable',
-      detail:
-        analyzerDiagnostics.framesProcessed > 0
-          ? 'The browser captured camera frames, but no usable summary was produced before submit.'
-          : 'No analyzer frames were processed for this turn, so delivery could not be scored.',
-    });
-  }
+  const reinforcement = top.keep_doing?.trim() || top.why_this_helped?.trim();
+  if (!reinforcement) return null;
 
-  return insights.slice(0, 7);
+  const snippet = top.transcript_snippet?.trim();
+  return {
+    title: 'Keep this part',
+    detail: snippet
+      ? `Carry forward what worked when you said "${snippet}" — ${reinforcement}`
+      : `Carry this forward into the next take: ${reinforcement}`,
+  };
+}
+
+function buildFillerBlock(turn: TurnDetail): CoachingBlock | null {
+  if (turn.filler_word_count <= 0) return null;
+
+  const breakdownEntries = sortedBreakdown(turn.filler_word_breakdown);
+  const topFiller = breakdownEntries[0];
+  const rate = numericRate(turn.filler_word_rate);
+  const rateText =
+    rate == null
+      ? `${turn.filler_word_count} filler word${turn.filler_word_count === 1 ? '' : 's'} showed up.`
+      : `Your filler rate was ${rate.toFixed(1)}%, with ${turn.filler_word_count} filler word${turn.filler_word_count === 1 ? '' : 's'} total.`;
+  const polishText = fillerRateGuidance(rate);
+
+  return {
+    title: 'Filler words',
+    detail:
+      `${rateText} ${
+        topFiller ? `The main one was "${topFiller.word}" (${topFiller.count}x). ` : ''
+      }${polishText}`,
+    action:
+      'After the story is stronger, use the transcript highlights to replace repeated fillers with a short pause.',
+    extra:
+      breakdownEntries.length > 0 ? (
+        <FillerBreakdownChart entries={breakdownEntries} />
+      ) : undefined,
+  };
 }
 
 type FillerEntry = { word: string; count: number };
@@ -193,6 +180,23 @@ function sortedBreakdown(breakdown: Record<string, number>): FillerEntry[] {
     .map(([word, count]) => ({ word, count }))
     .sort((a, b) => b.count - a.count || a.word.localeCompare(b.word))
     .slice(0, 6);
+}
+
+function positiveMoments(turn: TurnDetail): PositiveMoment[] {
+  return turn.feedback_detail?.positive_moments ?? [];
+}
+
+function numericRate(rate: string | null): number | null {
+  if (!rate) return null;
+  const value = Number.parseFloat(rate);
+  return Number.isFinite(value) ? value : null;
+}
+
+function fillerRateGuidance(rate: number | null): string {
+  if (rate == null) return 'Use this as delivery polish after the content fix.';
+  if (rate <= 5) return 'That is low, so treat this as polish rather than the main content fix.';
+  if (rate <= 10) return 'That is moderate. Tighten it after the content fix.';
+  return 'That is high enough to distract, but still fix the story substance first.';
 }
 
 function FillerBreakdownChart({ entries }: { entries: FillerEntry[] }) {

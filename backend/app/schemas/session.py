@@ -20,7 +20,11 @@ from app.services._field_prompts import FieldCategory
 
 
 class SessionCreateIn(BaseModel):
-    company: str = Field(min_length=1, max_length=200)
+    # 60 mirrors the client-side cap in Home.tsx — long enough for real names
+    # ("New Jersey House of Representatives Internship Program"), short enough to
+    # block a direct-API paste of a large blob that would burn research/LLM
+    # tokens. A client maxLength alone is trivially bypassed, so enforce it here.
+    company: str = Field(min_length=1, max_length=60)
     job_title: str = Field(min_length=1, max_length=200)
     # Optional ElevenLabs voice ID picked from the start-form picker. The
     # endpoint validates this against `voice_pool.list_voices()` and
@@ -104,12 +108,20 @@ class DeliveryFeedbackOut(BaseModel):
     expression: str | None = None
 
 
+class NextTakeOut(BaseModel):
+    focus: str
+    approach: str
+
+
 class FeedbackDetailOut(BaseModel):
     main_takeaway: str
     positive_moments: list[PositiveMomentOut] = Field(default_factory=list)
     improvement_moments: list[ImprovementMomentOut] = Field(default_factory=list)
     quick_wins: list[str] = Field(default_factory=list)
     delivery_feedback: DeliveryFeedbackOut | None = None
+    # Forward coaching from the separate coaching call; null on legacy turns or
+    # when the coaching call failed (it's best-effort).
+    next_take: NextTakeOut | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -124,22 +136,17 @@ class FeedbackDetailOut(BaseModel):
 class TurnSubmitOut(BaseModel):
     """Response shape for `POST /sessions/{id}/turns`.
 
-    On a non-final turn, Gemma 4 evaluation runs in the background so the
-    candidate can move to the next question without waiting ~30-40s for
-    scoring. In that case `scores` and `feedback` come back as `null` and
-    `evaluation_pending` is `true`; the frontend skips rendering them and
-    re-fetches the full session via `GET /sessions/{id}` at finalization
-    once the background task has finished writing scores to the DB.
-
-    On the final turn, evaluation is awaited inline (we need the scores
-    for aggregation), so `scores`, `feedback` and `evaluation_pending=false`
-    are populated as before.
+    Evaluation runs in the background for every turn. Non-final turns return
+    the next question immediately after STT + follow-up/TTS. Final turns return
+    immediately after transcript persistence, then a background finalizer writes
+    scores, aggregates, and flips the session to completed. Clients should poll
+    `GET /sessions/{id}` while `evaluation_pending` is true.
     """
 
     transcript: str
     # Scores/feedback are only present once the evaluator has actually run.
-    # Nullable so the turn-1 response can return immediately after STT +
-    # follow-up generation without waiting on Gemma 4.
+    # Nullable so turn responses can return immediately while background
+    # evaluation writes the canonical scores.
     scores: ScoresOut | None = None
     feedback: str | None = None
     feedback_detail: FeedbackDetailOut | None = None
@@ -187,6 +194,10 @@ class SessionListItem(BaseModel):
     created_at: datetime
     turns_evaluated: int
     total_filler_word_count: int | None
+    # Filler words as a percent of total words for this session (1 decimal).
+    # Null for legacy rows with no cached word total. Drives the filler-rate
+    # trend chart on the history page.
+    filler_word_rate: Decimal | None = None
     averages: DimensionAverages
 
 
@@ -209,6 +220,10 @@ class TurnOut(BaseModel):
     feedback_detail: FeedbackDetailOut | None = None
     filler_word_count: int
     filler_word_breakdown: dict[str, int]
+    # Filler words as a percent of this turn's words (1 decimal). Null when
+    # the turn has no transcript. Transcript-derived, so present even when the
+    # LLM evaluation failed.
+    filler_word_rate: Decimal | None = None
     evaluated_at: datetime | None
     created_at: datetime
 
@@ -232,12 +247,22 @@ class SessionDetailOut(BaseModel):
     turns: list[TurnOut]
     averages: DimensionAverages
     total_filler_word_count: int | None
+    # Session-level filler rate (filler words / total words, percent), shown
+    # on the Overview scores card. Null on legacy rows with no cached word total.
+    filler_word_rate: Decimal | None = None
     turns_evaluated: int
     # Non-null when this session's opening question has been saved for
     # re-practice (either this is the baseline session that was saved, or a
     # re-practice attempt). Drives the Save button's "already saved" state so
     # the frontend doesn't need a separate lookup.
     saved_question_id: UUID | None = None
+
+
+class FillerWordStat(BaseModel):
+    """One row of the top-N filler-word leaderboard. Counts are exact ints."""
+
+    word: str
+    count: int
 
 
 class MeStatsOut(BaseModel):
@@ -251,7 +276,20 @@ class MeStatsOut(BaseModel):
     completed_sessions: int
     total_turns_evaluated: int
     total_filler_word_count: int
+    # Lifetime total spoken word count across completed sessions — the
+    # denominator behind `filler_word_rate`.
+    total_word_count: int
+    # Lifetime filler rate (filler words / total words, percent, 1 decimal),
+    # word-weighted across all completed sessions. Null until the user has
+    # logged any words. The history page shows this as the headline filler
+    # stat with the raw count as the secondary hint.
+    filler_word_rate: Decimal | None
     averages: DimensionAverages
     # Average of the per-session `overall_score` (0-100 scale) across all
     # completed sessions. Null until the user finishes their first session.
     average_overall_score: Decimal | None
+    # Top-5 most-used filler words across the caller's completed sessions,
+    # aggregated at query time from per-turn interview_turns.filler_word_breakdown.
+    # Ordered count-desc, then word-asc for stable ties. Empty until the user
+    # logs at least one filler word.
+    top_filler_words: list[FillerWordStat] = []

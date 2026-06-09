@@ -23,7 +23,8 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import type { TurnDetail } from '../../types/history';
 import { tokenizeTranscript } from '../../lib/fillerWords';
-import { SCORE_COLOR_MAP, SCORE_KEYS, formatIssueType } from './_helpers';
+import FillerRateBar from './FillerRateBar';
+import { SCORE_COLOR_MAP, SCORE_KEYS, formatIssueType, num } from './_helpers';
 
 /* ------------------------------------------------------------------ */
 /* Primitives                                                         */
@@ -150,13 +151,69 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
   );
 }
 
-export function WhatWorkedCard({ turn }: { turn: TurnDetail }) {
+/**
+ * Pending/failed status box shared by the score + feedback cards so they all
+ * flip to the same state together while the final-turn evaluation finishes.
+ * `pending` true → spinner + "Scoring in progress"; false → "Evaluation failed".
+ * Callers pass card-specific `pendingHint`/`failedHint` copy.
+ */
+export function EvalStatusNotice({
+  pending,
+  pendingHint = 'Feedback is still being generated for this turn.',
+  failedHint = 'The evaluator did not return scores for this turn.',
+  className = 'mt-3',
+}: {
+  pending: boolean;
+  pendingHint?: string;
+  failedHint?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`${className} rounded-md border border-border-strong p-3`}>
+      {pending ? (
+        <>
+          <div className="flex items-center gap-2">
+            <span
+              role="status"
+              aria-label="Loading"
+              className="inline-block size-4 animate-spin rounded-full border-2 border-current border-t-transparent text-text"
+            />
+            <p className="text-sm text-text">Scoring in progress</p>
+          </div>
+          <p className="mt-1 text-xs text-text-muted">{pendingHint}</p>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-text">Evaluation failed</p>
+          <p className="mt-1 text-xs text-text-muted">{failedHint}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function WhatWorkedCard({
+  turn,
+  evaluationPending = false,
+  evaluationFailed = false,
+}: {
+  turn: TurnDetail;
+  evaluationPending?: boolean;
+  evaluationFailed?: boolean;
+}) {
   const moments = turn.feedback_detail?.positive_moments ?? [];
   return (
     <InnerCard>
       <Eyebrow>What worked</Eyebrow>
       <div className="mt-3 flex-1 min-h-0 overflow-y-auto">
-        {moments.length === 0 ? (
+        {evaluationPending || evaluationFailed ? (
+          <EvalStatusNotice
+            pending={evaluationPending}
+            className="mt-0"
+            pendingHint="Highlights of what worked will appear once scoring finishes."
+            failedHint="What worked could not be generated because the evaluator did not return scores."
+          />
+        ) : moments.length === 0 ? (
           <p className="text-sm text-text-subtle">
             Nothing notable flagged from this turn.
           </p>
@@ -189,7 +246,15 @@ export function WhatWorkedCard({ turn }: { turn: TurnDetail }) {
   );
 }
 
-export function ImprovementMomentsCard({ turn }: { turn: TurnDetail }) {
+export function ImprovementMomentsCard({
+  turn,
+  evaluationPending = false,
+  evaluationFailed = false,
+}: {
+  turn: TurnDetail;
+  evaluationPending?: boolean;
+  evaluationFailed?: boolean;
+}) {
   const moments =
     turn.feedback_detail?.improvement_moments ??
     turn.feedback_detail?.coaching_moments ??
@@ -204,7 +269,14 @@ export function ImprovementMomentsCard({ turn }: { turn: TurnDetail }) {
         Improvement moments
       </p>
       <div className="mt-3 flex-1 min-h-0 overflow-y-auto">
-        {moments.length === 0 ? (
+        {evaluationPending || evaluationFailed ? (
+          <EvalStatusNotice
+            pending={evaluationPending}
+            className="mt-0"
+            pendingHint="Improvement moments will appear once scoring finishes."
+            failedHint="Improvement moments could not be generated because the evaluator did not return scores."
+          />
+        ) : moments.length === 0 ? (
           <p className="text-sm text-text-subtle">No improvement moments flagged.</p>
         ) : (
           <ul className="flex flex-col gap-5" aria-labelledby={headingId}>
@@ -244,20 +316,17 @@ export function ImprovementMomentsCard({ turn }: { turn: TurnDetail }) {
 export function ScoresSection({
   turn,
   evaluationFailed,
+  evaluationPending = false,
 }: {
   turn: TurnDetail;
   evaluationFailed: boolean;
+  evaluationPending?: boolean;
 }) {
   return (
     <div>
       <Eyebrow>Scores</Eyebrow>
-      {evaluationFailed ? (
-        <div className="mt-3 rounded-md border border-border-strong p-3">
-          <p className="text-sm text-text">Evaluation failed</p>
-          <p className="mt-1 text-xs text-text-muted">
-            The evaluator did not return scores for this turn.
-          </p>
-        </div>
+      {evaluationPending || evaluationFailed ? (
+        <EvalStatusNotice pending={evaluationPending} />
       ) : (
         <div className="mt-3 flex flex-col gap-2">
           {SCORE_KEYS.map(([key, label]) => {
@@ -269,6 +338,11 @@ export function ScoresSection({
           })}
         </div>
       )}
+      {/* Filler rate sits under the score stack. Transcript-derived, so it
+          shows even when the evaluation failed (no scores above). */}
+      <div className="mt-2">
+        <FillerRateBar rate={num(turn.filler_word_rate)} variant="row" />
+      </div>
     </div>
   );
 }

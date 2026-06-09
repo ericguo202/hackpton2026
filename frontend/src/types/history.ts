@@ -45,6 +45,13 @@ export type DeliveryFeedback = {
   expression?: string | null;
 };
 
+/** Forward "do this next time" coaching from the separate coaching call.
+ *  Null on legacy turns or when the best-effort coaching call failed. */
+export type NextTake = {
+  focus: string;
+  approach: string;
+};
+
 export type FeedbackDetail = {
   main_takeaway: string;
   positive_moments?: PositiveMoment[];
@@ -53,6 +60,7 @@ export type FeedbackDetail = {
   coaching_moments?: ImprovementMoment[];
   quick_wins: string[];
   delivery_feedback?: DeliveryFeedback | null;
+  next_take?: NextTake | null;
 };
 
 export type SessionListItem = {
@@ -67,6 +75,8 @@ export type SessionListItem = {
   created_at: string;
   turns_evaluated: number;
   total_filler_word_count: number | null;
+  /** Filler words ÷ total words, percent (Decimal-as-string). Null on legacy rows. */
+  filler_word_rate: string | null;
   averages: DimensionAverages;
 };
 
@@ -91,6 +101,8 @@ export type TurnDetail = {
   feedback_detail: FeedbackDetail | null;
   filler_word_count: number;
   filler_word_breakdown: Record<string, number>;
+  /** Filler words ÷ this turn's words, percent (Decimal-as-string). Null when no transcript. */
+  filler_word_rate: string | null;
   evaluated_at: string | null;
   created_at: string;
 };
@@ -117,6 +129,8 @@ export type SessionDetail = {
   turns: TurnDetail[];
   averages: DimensionAverages;
   total_filler_word_count: number | null;
+  /** Session-level filler rate, percent (Decimal-as-string). Null on legacy rows. */
+  filler_word_rate: string | null;
   turns_evaluated: number;
   /**
    * Non-null when this session's opening question has been saved for
@@ -126,12 +140,24 @@ export type SessionDetail = {
   saved_question_id: string | null;
 };
 
+/** One bar in the top-filler-words chart. `count` is an exact int. */
+export type FillerWordStat = {
+  word: string;
+  count: number;
+};
+
 export type MeStats = {
   total_sessions: number;
   completed_sessions: number;
   total_turns_evaluated: number;
   total_filler_word_count: number;
+  /** Lifetime total spoken words — denominator behind `filler_word_rate`. */
+  total_word_count: number;
+  /** Lifetime filler rate (filler words ÷ total words, percent, Decimal-as-string). Null until any words logged. */
+  filler_word_rate: string | null;
   averages: DimensionAverages;
   /** 0-100 scale, averaged across completed sessions. */
   average_overall_score: string | null;
+  /** Top-5 filler words, count-desc. Empty until the user logs a filler word. */
+  top_filler_words: FillerWordStat[];
 };
