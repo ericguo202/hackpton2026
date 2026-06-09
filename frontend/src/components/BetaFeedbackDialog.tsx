@@ -15,10 +15,11 @@ type Props = {
 };
 
 type RatingName =
-  | 'smoothness'
-  | 'questionRelevance'
-  | 'feedbackHelpfulness'
-  | 'payLikelihood';
+  | 'overallSatisfaction'
+  | 'easeOfUse'
+  | 'questionQuality'
+  | 'feedbackActionability'
+  | 'wouldRecommend';
 
 const RATINGS = [1, 2, 3, 4, 5] as const;
 
@@ -30,13 +31,18 @@ export default function BetaFeedbackDialog({
   onSubmit,
 }: Props) {
   const formRef = useRef<HTMLFormElement | null>(null);
-  const [smoothness, setSmoothness] = useState(0);
+  const [smoothnessResponse, setSmoothnessResponse] = useState('');
   const [desiredFeatures, setDesiredFeatures] = useState('');
-  const [questionRelevance, setQuestionRelevance] = useState(0);
-  const [feedbackHelpfulness, setFeedbackHelpfulness] = useState(0);
-  const [feedbackSpecificity, setFeedbackSpecificity] = useState('');
+  const [questionRelevanceResponse, setQuestionRelevanceResponse] = useState('');
+  const [feedbackHelpfulnessResponse, setFeedbackHelpfulnessResponse] = useState('');
+  const [feedbackSpecificityResponse, setFeedbackSpecificityResponse] = useState('');
   const [bugReport, setBugReport] = useState('');
-  const [payLikelihood, setPayLikelihood] = useState(0);
+  const [payLikelihoodResponse, setPayLikelihoodResponse] = useState('');
+  const [overallSatisfaction, setOverallSatisfaction] = useState(0);
+  const [easeOfUse, setEaseOfUse] = useState(0);
+  const [questionQuality, setQuestionQuality] = useState(0);
+  const [feedbackActionability, setFeedbackActionability] = useState(0);
+  const [wouldRecommend, setWouldRecommend] = useState(0);
   const [willingToPay, setWillingToPay] = useState<boolean | null>(null);
   const [monthlyPrice, setMonthlyPrice] = useState('');
   const [paidFeatureRequest, setPaidFeatureRequest] = useState('');
@@ -44,13 +50,18 @@ export default function BetaFeedbackDialog({
   const [lastSessionId, setLastSessionId] = useState(sessionId);
   if (sessionId !== lastSessionId) {
     setLastSessionId(sessionId);
-    setSmoothness(0);
+    setSmoothnessResponse('');
     setDesiredFeatures('');
-    setQuestionRelevance(0);
-    setFeedbackHelpfulness(0);
-    setFeedbackSpecificity('');
+    setQuestionRelevanceResponse('');
+    setFeedbackHelpfulnessResponse('');
+    setFeedbackSpecificityResponse('');
     setBugReport('');
-    setPayLikelihood(0);
+    setPayLikelihoodResponse('');
+    setOverallSatisfaction(0);
+    setEaseOfUse(0);
+    setQuestionQuality(0);
+    setFeedbackActionability(0);
+    setWouldRecommend(0);
     setWillingToPay(null);
     setMonthlyPrice('');
     setPaidFeatureRequest('');
@@ -114,37 +125,52 @@ export default function BetaFeedbackDialog({
       ? monthlyPrice.trim().length > 0
       : willingToPay === false && paidFeatureRequest.trim().length > 0;
   const canSubmit =
-    smoothness > 0
-    && questionRelevance > 0
-    && feedbackHelpfulness > 0
-    && payLikelihood > 0
+    smoothnessResponse.trim().length > 0
+    && questionRelevanceResponse.trim().length > 0
+    && feedbackHelpfulnessResponse.trim().length > 0
+    && payLikelihoodResponse.trim().length > 0
+    && overallSatisfaction > 0
+    && easeOfUse > 0
+    && questionQuality > 0
+    && feedbackActionability > 0
+    && wouldRecommend > 0
     && branchAnswered
     && !submitting;
 
   const payload = useMemo<SessionFeedbackPayload>(() => ({
     session_id: sessionId,
-    smoothness_rating: smoothness,
+    smoothness_response: smoothnessResponse.trim(),
     desired_features: cleanOptional(desiredFeatures),
-    question_relevance_rating: questionRelevance,
-    feedback_helpfulness_rating: feedbackHelpfulness,
-    feedback_specificity: cleanOptional(feedbackSpecificity),
+    question_relevance_response: questionRelevanceResponse.trim(),
+    feedback_helpfulness_response: feedbackHelpfulnessResponse.trim(),
+    feedback_specificity_response: cleanOptional(feedbackSpecificityResponse),
     bug_report: cleanOptional(bugReport),
-    pay_likelihood_rating: payLikelihood,
+    pay_likelihood_response: payLikelihoodResponse.trim(),
+    overall_satisfaction_rating: overallSatisfaction,
+    ease_of_use_rating: easeOfUse,
+    question_quality_rating: questionQuality,
+    feedback_actionability_rating: feedbackActionability,
+    would_recommend_rating: wouldRecommend,
     willing_to_pay: willingToPay === true,
     monthly_price: willingToPay === true ? cleanOptional(monthlyPrice) : null,
     paid_feature_request: willingToPay === false ? cleanOptional(paidFeatureRequest) : null,
   }), [
     bugReport,
     desiredFeatures,
-    feedbackHelpfulness,
-    feedbackSpecificity,
+    easeOfUse,
+    feedbackActionability,
+    feedbackHelpfulnessResponse,
+    feedbackSpecificityResponse,
     monthlyPrice,
+    overallSatisfaction,
     paidFeatureRequest,
-    payLikelihood,
-    questionRelevance,
+    payLikelihoodResponse,
+    questionQuality,
+    questionRelevanceResponse,
     sessionId,
-    smoothness,
+    smoothnessResponse,
     willingToPay,
+    wouldRecommend,
   ]);
 
   if (!open) return null;
@@ -169,16 +195,16 @@ export default function BetaFeedbackDialog({
             Beta feedback
           </p>
           <h2 id="beta-feedback-title" className="mt-2 font-display text-2xl text-text">
-            Tell us how the interview felt
+            Tell us what to improve
           </h2>
         </div>
 
         <div className="space-y-6 overflow-y-auto px-6 py-5">
-          <RatingField
+          <TextareaField
             label="How smooth was your experience?"
-            name="smoothness"
-            value={smoothness}
-            onChange={setSmoothness}
+            value={smoothnessResponse}
+            onChange={setSmoothnessResponse}
+            required
           />
           <TextareaField
             label="What features would you like to see on InterviewPie?"
@@ -186,32 +212,62 @@ export default function BetaFeedbackDialog({
             onChange={setDesiredFeatures}
           />
           <RatingField
-            label="How relevant were the questions to your use case?"
-            name="questionRelevance"
-            value={questionRelevance}
-            onChange={setQuestionRelevance}
+            label="Overall, how satisfied were you with this practice session?"
+            name="overallSatisfaction"
+            value={overallSatisfaction}
+            onChange={setOverallSatisfaction}
           />
           <RatingField
+            label="How easy was InterviewPie to use?"
+            name="easeOfUse"
+            value={easeOfUse}
+            onChange={setEaseOfUse}
+          />
+          <RatingField
+            label="How strong was the question quality?"
+            name="questionQuality"
+            value={questionQuality}
+            onChange={setQuestionQuality}
+          />
+          <RatingField
+            label="How actionable was the feedback?"
+            name="feedbackActionability"
+            value={feedbackActionability}
+            onChange={setFeedbackActionability}
+          />
+          <RatingField
+            label="How likely are you to recommend InterviewPie to a friend?"
+            name="wouldRecommend"
+            value={wouldRecommend}
+            onChange={setWouldRecommend}
+          />
+          <TextareaField
+            label="How relevant were the questions to your use case?"
+            value={questionRelevanceResponse}
+            onChange={setQuestionRelevanceResponse}
+            required
+          />
+          <TextareaField
             label="How helpful was the feedback in guiding your next preparation steps?"
-            name="feedbackHelpfulness"
-            value={feedbackHelpfulness}
-            onChange={setFeedbackHelpfulness}
+            value={feedbackHelpfulnessResponse}
+            onChange={setFeedbackHelpfulnessResponse}
+            required
           />
           <TextareaField
             label="Should the feedback be more specific, or cover any additional aspects?"
-            value={feedbackSpecificity}
-            onChange={setFeedbackSpecificity}
+            value={feedbackSpecificityResponse}
+            onChange={setFeedbackSpecificityResponse}
           />
           <TextareaField
             label="Did any bugs come up during your testing of InterviewPie? If so, please explain what occurred and on which page."
             value={bugReport}
             onChange={setBugReport}
           />
-          <RatingField
+          <TextareaField
             label="How likely are you to pay for this product?"
-            name="payLikelihood"
-            value={payLikelihood}
-            onChange={setPayLikelihood}
+            value={payLikelihoodResponse}
+            onChange={setPayLikelihoodResponse}
+            required
           />
 
           <fieldset className="space-y-3">

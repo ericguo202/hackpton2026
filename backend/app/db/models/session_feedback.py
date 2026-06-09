@@ -15,20 +15,24 @@ class SessionFeedback(Base):
     __tablename__ = "session_feedback"
     __table_args__ = (
         CheckConstraint(
-            "smoothness_rating BETWEEN 1 AND 5",
-            name="ck_session_feedback_smoothness_rating",
+            "overall_satisfaction_rating BETWEEN 1 AND 5",
+            name="ck_session_feedback_overall_satisfaction_rating",
         ),
         CheckConstraint(
-            "question_relevance_rating BETWEEN 1 AND 5",
-            name="ck_session_feedback_question_relevance_rating",
+            "ease_of_use_rating BETWEEN 1 AND 5",
+            name="ck_session_feedback_ease_of_use_rating",
         ),
         CheckConstraint(
-            "feedback_helpfulness_rating BETWEEN 1 AND 5",
-            name="ck_session_feedback_feedback_helpfulness_rating",
+            "question_quality_rating BETWEEN 1 AND 5",
+            name="ck_session_feedback_question_quality_rating",
         ),
         CheckConstraint(
-            "pay_likelihood_rating BETWEEN 1 AND 5",
-            name="ck_session_feedback_pay_likelihood_rating",
+            "feedback_actionability_rating BETWEEN 1 AND 5",
+            name="ck_session_feedback_feedback_actionability_rating",
+        ),
+        CheckConstraint(
+            "would_recommend_rating BETWEEN 1 AND 5",
+            name="ck_session_feedback_would_recommend_rating",
         ),
     )
 
@@ -49,13 +53,22 @@ class SessionFeedback(Base):
         unique=True,
     )
 
-    smoothness_rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    smoothness_response: Mapped[str] = mapped_column(Text, nullable=False)
     desired_features: Mapped[str | None] = mapped_column(Text, nullable=True)
-    question_relevance_rating: Mapped[int] = mapped_column(Integer, nullable=False)
-    feedback_helpfulness_rating: Mapped[int] = mapped_column(Integer, nullable=False)
-    feedback_specificity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    question_relevance_response: Mapped[str] = mapped_column(Text, nullable=False)
+    feedback_helpfulness_response: Mapped[str] = mapped_column(Text, nullable=False)
+    feedback_specificity_response: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
     bug_report: Mapped[str | None] = mapped_column(Text, nullable=True)
-    pay_likelihood_rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    pay_likelihood_response: Mapped[str] = mapped_column(Text, nullable=False)
+    overall_satisfaction_rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    ease_of_use_rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    question_quality_rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    feedback_actionability_rating: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+    would_recommend_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     willing_to_pay: Mapped[bool] = mapped_column(Boolean, nullable=False)
     monthly_price: Mapped[str | None] = mapped_column(Text, nullable=True)
     paid_feature_request: Mapped[str | None] = mapped_column(Text, nullable=True)

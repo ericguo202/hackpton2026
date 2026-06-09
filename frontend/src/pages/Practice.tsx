@@ -24,6 +24,7 @@ import { UserButton } from '@clerk/react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 
 import BetaFeedbackDialog from '../components/BetaFeedbackDialog';
+import BetaFeedbackReviewDialog from '../components/BetaFeedbackReviewDialog';
 import PageMorphTransition from '../components/PageMorphTransition';
 import { PracticeFooter } from '../components/PracticeFooter';
 import { QuitConfirmDialog } from '../components/QuitConfirmDialog';
@@ -318,6 +319,8 @@ function PracticeSession({
   );
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [showFeedbackReviewConfirm, setShowFeedbackReviewConfirm] = useState(false);
+  const [showLockedFeedback, setShowLockedFeedback] = useState(false);
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [endingTurn, setEndingTurn] = useState(false);
   const [replayKey, setReplayKey] = useState(0);
@@ -631,6 +634,7 @@ function PracticeSession({
           ? { ...prev, feedback_submitted: true }
           : prev
       ));
+      setShowLockedFeedback(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setFeedbackSubmittedSessionIds((prev) => {
@@ -643,6 +647,7 @@ function PracticeSession({
             ? { ...prev, feedback_submitted: true }
             : prev
         ));
+        setShowLockedFeedback(false);
         return;
       }
       setFeedbackError(
@@ -860,6 +865,9 @@ function PracticeSession({
             && sessionDetail != null
             && !sessionDetail.feedback_submitted
             && !feedbackSubmittedSessionIds.has(sessionId);
+          const feedbackSubmitted =
+            Boolean(sessionDetail?.feedback_submitted)
+            || feedbackSubmittedSessionIds.has(sessionId);
 
           const tabs: FolderTab[] = [
             { label: 'Overview', tabId: 'pr-tab-overview', panelId: 'pr-panel-overview' },
@@ -921,6 +929,9 @@ function PracticeSession({
                         averages={effectiveAverages}
                         turns={effectiveTurns}
                         sessionCompleted={sessionCompleted}
+                        feedbackSubmitted={feedbackSubmitted}
+                        feedbackDisabled={!showFeedbackDialog}
+                        onStartFeedback={() => setShowFeedbackReviewConfirm(true)}
                       />
                     ) : (
                       <PracticeTurnPanel
@@ -960,11 +971,20 @@ function PracticeSession({
                 </div>
 
                 <BetaFeedbackDialog
-                  open={showFeedbackDialog}
+                  open={showLockedFeedback && showFeedbackDialog}
                   sessionId={sessionId}
                   submitting={submittingFeedback}
                   error={feedbackError}
                   onSubmit={handleSubmitBetaFeedback}
+                />
+
+                <BetaFeedbackReviewDialog
+                  open={showFeedbackReviewConfirm && showFeedbackDialog}
+                  onCancel={() => setShowFeedbackReviewConfirm(false)}
+                  onConfirm={() => {
+                    setShowFeedbackReviewConfirm(false);
+                    setShowLockedFeedback(true);
+                  }}
                 />
 
                 <div className="hidden min-[900px]:flex items-start">

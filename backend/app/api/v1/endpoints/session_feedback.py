@@ -53,13 +53,20 @@ async def create_session_feedback(
     feedback = SessionFeedback(
         user_id=user.id,
         session_id=body.session_id,
-        smoothness_rating=body.smoothness_rating,
+        smoothness_response=body.smoothness_response.strip(),
         desired_features=_clean_optional(body.desired_features),
-        question_relevance_rating=body.question_relevance_rating,
-        feedback_helpfulness_rating=body.feedback_helpfulness_rating,
-        feedback_specificity=_clean_optional(body.feedback_specificity),
+        question_relevance_response=body.question_relevance_response.strip(),
+        feedback_helpfulness_response=body.feedback_helpfulness_response.strip(),
+        feedback_specificity_response=_clean_optional(
+            body.feedback_specificity_response
+        ),
         bug_report=_clean_optional(body.bug_report),
-        pay_likelihood_rating=body.pay_likelihood_rating,
+        pay_likelihood_response=body.pay_likelihood_response.strip(),
+        overall_satisfaction_rating=body.overall_satisfaction_rating,
+        ease_of_use_rating=body.ease_of_use_rating,
+        question_quality_rating=body.question_quality_rating,
+        feedback_actionability_rating=body.feedback_actionability_rating,
+        would_recommend_rating=body.would_recommend_rating,
         willing_to_pay=body.willing_to_pay,
         monthly_price=(
             _clean_optional(body.monthly_price) if body.willing_to_pay else None
