@@ -27,10 +27,6 @@ class SessionFeedback(Base):
             name="ck_session_feedback_question_quality_rating",
         ),
         CheckConstraint(
-            "feedback_actionability_rating BETWEEN 1 AND 5",
-            name="ck_session_feedback_feedback_actionability_rating",
-        ),
-        CheckConstraint(
             "would_recommend_rating BETWEEN 1 AND 5",
             name="ck_session_feedback_would_recommend_rating",
         ),
@@ -57,17 +53,10 @@ class SessionFeedback(Base):
     desired_features: Mapped[str | None] = mapped_column(Text, nullable=True)
     question_relevance_response: Mapped[str] = mapped_column(Text, nullable=False)
     feedback_helpfulness_response: Mapped[str] = mapped_column(Text, nullable=False)
-    feedback_specificity_response: Mapped[str | None] = mapped_column(
-        Text, nullable=True
-    )
     bug_report: Mapped[str | None] = mapped_column(Text, nullable=True)
-    pay_likelihood_response: Mapped[str] = mapped_column(Text, nullable=False)
     overall_satisfaction_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     ease_of_use_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     question_quality_rating: Mapped[int] = mapped_column(Integer, nullable=False)
-    feedback_actionability_rating: Mapped[int] = mapped_column(
-        Integer, nullable=False
-    )
     would_recommend_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     willing_to_pay: Mapped[bool] = mapped_column(Boolean, nullable=False)
     monthly_price: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -44,13 +44,10 @@ def upgrade() -> None:
         sa.Column("desired_features", sa.Text(), nullable=True),
         sa.Column("question_relevance_response", sa.Text(), nullable=False),
         sa.Column("feedback_helpfulness_response", sa.Text(), nullable=False),
-        sa.Column("feedback_specificity_response", sa.Text(), nullable=True),
         sa.Column("bug_report", sa.Text(), nullable=True),
-        sa.Column("pay_likelihood_response", sa.Text(), nullable=False),
         sa.Column("overall_satisfaction_rating", sa.Integer(), nullable=False),
         sa.Column("ease_of_use_rating", sa.Integer(), nullable=False),
         sa.Column("question_quality_rating", sa.Integer(), nullable=False),
-        sa.Column("feedback_actionability_rating", sa.Integer(), nullable=False),
         sa.Column("would_recommend_rating", sa.Integer(), nullable=False),
         sa.Column("willing_to_pay", sa.Boolean(), nullable=False),
         sa.Column("monthly_price", sa.Text(), nullable=True),
@@ -72,10 +69,6 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "question_quality_rating BETWEEN 1 AND 5",
             name="ck_session_feedback_question_quality_rating",
-        ),
-        sa.CheckConstraint(
-            "feedback_actionability_rating BETWEEN 1 AND 5",
-            name="ck_session_feedback_feedback_actionability_rating",
         ),
         sa.CheckConstraint(
             "would_recommend_rating BETWEEN 1 AND 5",

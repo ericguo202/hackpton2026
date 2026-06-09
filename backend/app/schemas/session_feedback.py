@@ -12,13 +12,10 @@ class SessionFeedbackCreateIn(BaseModel):
     desired_features: str | None = Field(default=None, max_length=4000)
     question_relevance_response: str = Field(min_length=1, max_length=4000)
     feedback_helpfulness_response: str = Field(min_length=1, max_length=4000)
-    feedback_specificity_response: str | None = Field(default=None, max_length=4000)
     bug_report: str | None = Field(default=None, max_length=4000)
-    pay_likelihood_response: str = Field(min_length=1, max_length=4000)
     overall_satisfaction_rating: int = Field(ge=1, le=5)
     ease_of_use_rating: int = Field(ge=1, le=5)
     question_quality_rating: int = Field(ge=1, le=5)
-    feedback_actionability_rating: int = Field(ge=1, le=5)
     would_recommend_rating: int = Field(ge=1, le=5)
     willing_to_pay: bool
     monthly_price: str | None = Field(default=None, max_length=500)
@@ -30,7 +27,6 @@ class SessionFeedbackCreateIn(BaseModel):
             "smoothness_response": self.smoothness_response,
             "question_relevance_response": self.question_relevance_response,
             "feedback_helpfulness_response": self.feedback_helpfulness_response,
-            "pay_likelihood_response": self.pay_likelihood_response,
         }
         for field_name, value in required_text.items():
             if not value.strip():
@@ -57,13 +53,10 @@ class SessionFeedbackOut(BaseModel):
     desired_features: str | None
     question_relevance_response: str
     feedback_helpfulness_response: str
-    feedback_specificity_response: str | None
     bug_report: str | None
-    pay_likelihood_response: str
     overall_satisfaction_rating: int
     ease_of_use_rating: int
     question_quality_rating: int
-    feedback_actionability_rating: int
     would_recommend_rating: int
     willing_to_pay: bool
     monthly_price: str | None
