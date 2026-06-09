@@ -42,10 +42,13 @@ class SessionFeedback(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
-    session_id: Mapped[UUID] = mapped_column(
+    # Nullable for voluntary (launcher) feedback not tied to a session; UNIQUE
+    # still binds non-NULL ids (Postgres exempts NULLs), so the compulsory gate
+    # keeps one-feedback-per-session while voluntary rows accumulate over time.
+    session_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("interview_sessions.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         unique=True,
     )
 

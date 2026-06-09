@@ -32,30 +32,35 @@ async def create_session_feedback(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> SessionFeedback:
-    session = await db.scalar(
-        select(InterviewSession).where(
-            InterviewSession.id == body.session_id,
-            InterviewSession.user_id == user.id,
+    # Voluntary feedback (launcher) carries no session_id and skips the session
+    # checks — it accumulates as a standalone, repeatable row. The compulsory
+    # gate sends a session_id and goes through ownership / completed / one-per-
+    # session validation below.
+    if body.session_id is not None:
+        session = await db.scalar(
+            select(InterviewSession).where(
+                InterviewSession.id == body.session_id,
+                InterviewSession.user_id == user.id,
+            )
         )
-    )
-    if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
-    if session.status != SessionStatus.completed:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Feedback can only be submitted for completed sessions.",
-        )
+        if session is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        if session.status != SessionStatus.completed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Feedback can only be submitted for completed sessions.",
+            )
 
-    existing_id = await db.scalar(
-        select(SessionFeedback.id).where(
-            SessionFeedback.session_id == body.session_id,
+        existing_id = await db.scalar(
+            select(SessionFeedback.id).where(
+                SessionFeedback.session_id == body.session_id,
+            )
         )
-    )
-    if existing_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Feedback has already been submitted for this session.",
-        )
+        if existing_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Feedback has already been submitted for this session.",
+            )
 
     feedback = SessionFeedback(
         user_id=user.id,

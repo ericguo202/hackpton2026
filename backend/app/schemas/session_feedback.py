@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SessionFeedbackCreateIn(BaseModel):
-    session_id: UUID
+    # None for voluntary feedback submitted via the floating launcher (not tied
+    # to a session); the compulsory gate sends the latest completed session id.
+    session_id: UUID | None = None
     smoothness_response: str = Field(min_length=1, max_length=4000)
     desired_features: str | None = Field(default=None, max_length=4000)
     question_relevance_response: str = Field(min_length=1, max_length=4000)
@@ -48,7 +50,7 @@ class SessionFeedbackOut(BaseModel):
 
     id: UUID
     user_id: UUID
-    session_id: UUID
+    session_id: UUID | None
     smoothness_response: str
     desired_features: str | None
     question_relevance_response: str

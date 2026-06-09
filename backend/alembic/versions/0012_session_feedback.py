@@ -33,11 +33,14 @@ def upgrade() -> None:
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
+        # Nullable: voluntary feedback (submitted via the floating launcher) is
+        # not tied to a session. UNIQUE still applies to non-NULL ids (Postgres
+        # exempts NULLs), so the compulsory gate's session attach stays unique.
         sa.Column(
             "session_id",
             postgresql.UUID(as_uuid=True),
             sa.ForeignKey("interview_sessions.id", ondelete="CASCADE"),
-            nullable=False,
+            nullable=True,
             unique=True,
         ),
         sa.Column("smoothness_response", sa.Text(), nullable=False),

@@ -2,6 +2,7 @@ import { Show } from '@clerk/react';
 import { Navigate, Route, Routes } from 'react-router';
 
 import BetaFeedbackGate from './components/BetaFeedbackGate';
+import BetaFeedbackLauncher from './components/BetaFeedbackLauncher';
 import EmailConflictNotice from './components/EmailConflictNotice';
 import OnboardingForm from './components/OnboardingForm';
 import {
@@ -88,6 +89,7 @@ function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <BetaFeedbackGate />
+      <BetaFeedbackLauncher />
     </>
   );
 }

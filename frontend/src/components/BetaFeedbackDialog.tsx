@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Send } from 'lucide-react';
+import { Send, X } from 'lucide-react';
 
 import { cn } from '../lib/utils';
 import type { SessionFeedbackPayload } from '../types/sessionFeedback';
@@ -8,10 +8,15 @@ import { FlowHoverButton } from './ui/flow-hover-button';
 
 type Props = {
   open: boolean;
-  sessionId: string;
+  // null for voluntary (launcher) feedback not tied to a session.
+  sessionId: string | null;
   submitting: boolean;
   error: string | null;
   onSubmit: (payload: SessionFeedbackPayload) => void;
+  // Present only for the voluntary launcher: makes the dialog dismissable (X
+  // button, Escape, backdrop click). Absent for the compulsory gate, which
+  // stays locked (no exit, blocks Escape / back-button / unload).
+  onClose?: () => void;
 };
 
 type RatingName =
@@ -28,6 +33,7 @@ export default function BetaFeedbackDialog({
   submitting,
   error,
   onSubmit,
+  onClose,
 }: Props) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const [smoothnessResponse, setSmoothnessResponse] = useState('');
@@ -60,6 +66,11 @@ export default function BetaFeedbackDialog({
     setPaidFeatureRequest('');
   }
 
+  // `dismissable` (voluntary launcher) → Escape closes, no back-button/unload
+  // trapping. Locked (compulsory gate, no onClose) → swallow Escape, block
+  // back-button + unload so the only way out is submitting.
+  const dismissable = Boolean(onClose);
+
   useEffect(() => {
     if (!open) return;
 
@@ -79,6 +90,7 @@ export default function BetaFeedbackDialog({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        if (dismissable) onClose?.();
         return;
       }
       if (event.key !== 'Tab' || !formRef.current) return;
@@ -102,16 +114,19 @@ export default function BetaFeedbackDialog({
     };
 
     focusFirstControl();
-    window.history.pushState(null, '', window.location.href);
-    window.addEventListener('beforeunload', onBeforeUnload);
-    window.addEventListener('popstate', onPopState);
     window.addEventListener('keydown', onKeyDown);
+    // Back-button / unload trapping is locked-mode only.
+    if (!dismissable) {
+      window.history.pushState(null, '', window.location.href);
+      window.addEventListener('beforeunload', onBeforeUnload);
+      window.addEventListener('popstate', onPopState);
+    }
     return () => {
+      window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('beforeunload', onBeforeUnload);
       window.removeEventListener('popstate', onPopState);
-      window.removeEventListener('keydown', onKeyDown);
     };
-  }, [open]);
+  }, [open, dismissable, onClose]);
 
   const branchAnswered =
     willingToPay === true
@@ -166,22 +181,35 @@ export default function BetaFeedbackDialog({
       aria-modal="true"
       aria-labelledby="beta-feedback-title"
       className="anim-crossfade fixed inset-0 z-[70] flex items-center justify-center bg-text/55 p-4 backdrop-blur-sm"
+      onClick={dismissable ? onClose : undefined}
     >
       <form
         ref={formRef}
         className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault();
           if (canSubmit) onSubmit(payload);
         }}
       >
-        <div className="border-b border-border px-6 py-5">
+        <div className="relative border-b border-border px-6 py-5">
           <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
             Beta feedback
           </p>
           <h2 id="beta-feedback-title" className="mt-2 font-display text-2xl text-text">
             Tell us what to improve
           </h2>
+          {dismissable && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close feedback form"
+              title="Close"
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full text-text-muted transition hover:bg-surface-sunken hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </button>
+          )}
         </div>
 
         <div className="space-y-6 overflow-y-auto px-6 py-5">

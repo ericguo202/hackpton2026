@@ -1,5 +1,6 @@
 export type SessionFeedbackPayload = {
-  session_id: string;
+  // null for voluntary (launcher) feedback not tied to a session.
+  session_id: string | null;
   smoothness_response: string;
   desired_features: string | null;
   question_relevance_response: string;
