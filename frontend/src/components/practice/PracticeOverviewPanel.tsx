@@ -14,10 +14,7 @@
  * surfaces this; SessionDetail omits it.
  */
 
-import { MessageSquareText } from 'lucide-react';
-
 import type { DimensionAverages, TurnDetail } from '../../types/history';
-import { FlowHoverButton } from '../ui/flow-hover-button';
 import { ScoresOverviewColumn } from '../session-detail/OverviewPanel';
 import { turnAverage } from '../session-detail/_helpers';
 
@@ -27,9 +24,6 @@ type Props = {
   averages: DimensionAverages;
   turns: TurnDetail[];
   sessionCompleted: boolean;
-  feedbackSubmitted: boolean;
-  feedbackDisabled: boolean;
-  onStartFeedback: () => void;
 };
 
 export function PracticeOverviewPanel({
@@ -38,9 +32,6 @@ export function PracticeOverviewPanel({
   averages,
   turns,
   sessionCompleted,
-  feedbackSubmitted,
-  feedbackDisabled,
-  onStartFeedback,
 }: Props) {
   const evaluatedAverages = turns
     .map((t) => turnAverageOrNull(t))
@@ -61,13 +52,7 @@ export function PracticeOverviewPanel({
 
   return (
     <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-6 min-[900px]:gap-8 p-6 min-[900px]:p-8">
-      <IntroColumn
-        company={company}
-        jobTitle={jobTitle}
-        feedbackSubmitted={feedbackSubmitted}
-        feedbackDisabled={feedbackDisabled}
-        onStartFeedback={onStartFeedback}
-      />
+      <IntroColumn company={company} jobTitle={jobTitle} />
       <ScoresOverviewColumn
         averages={averages}
         caption={caption}
@@ -93,19 +78,7 @@ function sessionFillerRate(turns: TurnDetail[]): number | null {
   return words > 0 ? (fillers / words) * 100 : null;
 }
 
-function IntroColumn({
-  company,
-  jobTitle,
-  feedbackSubmitted,
-  feedbackDisabled,
-  onStartFeedback,
-}: {
-  company: string;
-  jobTitle: string;
-  feedbackSubmitted: boolean;
-  feedbackDisabled: boolean;
-  onStartFeedback: () => void;
-}) {
+function IntroColumn({ company, jobTitle }: { company: string; jobTitle: string }) {
   return (
     <section className="flex flex-col">
       <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted mb-3">
@@ -126,34 +99,6 @@ function IntroColumn({
         next run instead of guessing.
         <span className="min-[900px]:hidden"> Swipe left or right to move between turns.</span>
       </p>
-
-      <div className="mt-8 rounded-lg border border-border-strong bg-surface-raised p-5">
-        <p className="text-sm font-semibold text-text">
-          Beta testers: share your product feedback after reviewing this session.
-        </p>
-        {feedbackSubmitted ? (
-          <p className="mt-3 text-sm text-text-muted">Beta feedback submitted.</p>
-        ) : (
-          <>
-            {feedbackDisabled && (
-              <p className="mt-3 text-sm text-text-muted">
-                The feedback form unlocks when scoring finishes.
-              </p>
-            )}
-            <FlowHoverButton
-              type="button"
-              onClick={onStartFeedback}
-              disabled={feedbackDisabled}
-              className="mt-4 w-full sm:w-auto"
-            >
-              <span className="inline-flex items-center gap-2">
-                <MessageSquareText className="h-4 w-4" aria-hidden="true" />
-                Give beta feedback
-              </span>
-            </FlowHoverButton>
-          </>
-        )}
-      </div>
     </section>
   );
 }

@@ -23,8 +23,6 @@ import { useEffect, useRef, useState } from 'react';
 import { UserButton } from '@clerk/react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 
-import BetaFeedbackDialog from '../components/BetaFeedbackDialog';
-import BetaFeedbackReviewDialog from '../components/BetaFeedbackReviewDialog';
 import PageMorphTransition from '../components/PageMorphTransition';
 import { PracticeFooter } from '../components/PracticeFooter';
 import { QuitConfirmDialog } from '../components/QuitConfirmDialog';
@@ -50,10 +48,6 @@ import { cn } from '../lib/utils';
 import type { InterviewSummary } from '../lib/faceHeuristics';
 import type { DimensionAverages, SessionDetail, TurnDetail } from '../types/history';
 import type { Scores, TurnResult } from '../types/session';
-import type {
-  SessionFeedbackPayload,
-  SessionFeedbackResponse,
-} from '../types/sessionFeedback';
 
 export type PracticeLocationState = {
   sessionId: string;
@@ -314,13 +308,6 @@ function PracticeSession({
   // refetch in handleSubmitTurn. If the refetch fails, falls back to a
   // synthesized session built from local `turnResults` via `replayToTurnDetail`.
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
-  const [feedbackSubmittedSessionIds, setFeedbackSubmittedSessionIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [submittingFeedback, setSubmittingFeedback] = useState(false);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
-  const [showFeedbackReviewConfirm, setShowFeedbackReviewConfirm] = useState(false);
-  const [showLockedFeedback, setShowLockedFeedback] = useState(false);
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [endingTurn, setEndingTurn] = useState(false);
   const [replayKey, setReplayKey] = useState(0);
@@ -616,52 +603,6 @@ function PracticeSession({
     navigate('/');
   }
 
-  async function handleSubmitBetaFeedback(payload: SessionFeedbackPayload) {
-    setSubmittingFeedback(true);
-    setFeedbackError(null);
-    try {
-      await apiFetch<SessionFeedbackResponse>('/api/v1/session-feedback', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      setFeedbackSubmittedSessionIds((prev) => {
-        const next = new Set(prev);
-        next.add(payload.session_id);
-        return next;
-      });
-      setSessionDetail((prev) => (
-        prev && prev.id === payload.session_id
-          ? { ...prev, feedback_submitted: true }
-          : prev
-      ));
-      setShowLockedFeedback(false);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setFeedbackSubmittedSessionIds((prev) => {
-          const next = new Set(prev);
-          next.add(payload.session_id);
-          return next;
-        });
-        setSessionDetail((prev) => (
-          prev && prev.id === payload.session_id
-            ? { ...prev, feedback_submitted: true }
-            : prev
-        ));
-        setShowLockedFeedback(false);
-        return;
-      }
-      setFeedbackError(
-        err instanceof ApiError
-          ? extractApiErrorDetail(err)
-          : err instanceof Error
-            ? err.message
-            : 'Could not submit feedback. Please try again.',
-      );
-    } finally {
-      setSubmittingFeedback(false);
-    }
-  }
-
   // Touch-swipe to switch tabs on mobile in the Results phase. Commit a
   // tab change only when the horizontal delta dominates and exceeds the
   // threshold so a normal vertical scroll inside an inner card doesn't
@@ -860,14 +801,6 @@ function PracticeSession({
           const effectiveAverages: DimensionAverages = sessionCompleted && sessionDetail
             ? sessionDetail.averages
             : turnDetailAverages(effectiveTurns);
-          const showFeedbackDialog =
-            sessionCompleted
-            && sessionDetail != null
-            && !sessionDetail.feedback_submitted
-            && !feedbackSubmittedSessionIds.has(sessionId);
-          const feedbackSubmitted =
-            Boolean(sessionDetail?.feedback_submitted)
-            || feedbackSubmittedSessionIds.has(sessionId);
 
           const tabs: FolderTab[] = [
             { label: 'Overview', tabId: 'pr-tab-overview', panelId: 'pr-panel-overview' },
@@ -929,9 +862,6 @@ function PracticeSession({
                         averages={effectiveAverages}
                         turns={effectiveTurns}
                         sessionCompleted={sessionCompleted}
-                        feedbackSubmitted={feedbackSubmitted}
-                        feedbackDisabled={!showFeedbackDialog}
-                        onStartFeedback={() => setShowFeedbackReviewConfirm(true)}
                       />
                     ) : (
                       <PracticeTurnPanel
@@ -969,23 +899,6 @@ function PracticeSession({
                     )}
                   </div>
                 </div>
-
-                <BetaFeedbackDialog
-                  open={showLockedFeedback && showFeedbackDialog}
-                  sessionId={sessionId}
-                  submitting={submittingFeedback}
-                  error={feedbackError}
-                  onSubmit={handleSubmitBetaFeedback}
-                />
-
-                <BetaFeedbackReviewDialog
-                  open={showFeedbackReviewConfirm && showFeedbackDialog}
-                  onCancel={() => setShowFeedbackReviewConfirm(false)}
-                  onConfirm={() => {
-                    setShowFeedbackReviewConfirm(false);
-                    setShowLockedFeedback(true);
-                  }}
-                />
 
                 <div className="hidden min-[900px]:flex items-start">
                   <div className="sticky top-[50vh] -translate-y-1/2">

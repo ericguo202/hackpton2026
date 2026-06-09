@@ -19,3 +19,13 @@ export type SessionFeedbackResponse = SessionFeedbackPayload & {
   user_id: string;
   created_at: string;
 };
+
+/**
+ * Gate status for the forced beta-feedback modal (GET /session-feedback/required).
+ * `session_id` is the completed session the forced submission attaches to;
+ * null when feedback isn't required.
+ */
+export type FeedbackRequiredResponse = {
+  required: boolean;
+  session_id: string | null;
+};

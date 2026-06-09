@@ -1,7 +1,7 @@
 """Required beta feedback submissions for completed sessions."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,11 +12,18 @@ from app.db.models.session_feedback import SessionFeedback
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.session_feedback import (
+    FeedbackRequiredOut,
     SessionFeedbackCreateIn,
     SessionFeedbackOut,
 )
 
 router = APIRouter()
+
+# Once a user crosses this many lifetime completed sessions and still hasn't
+# submitted beta feedback, the frontend forces the feedback modal on the main
+# authenticated routes. A `session_feedback` row existing for the user is the
+# sole "survey done" signal (the forced modal is the only producer of rows).
+BETA_FEEDBACK_SESSION_THRESHOLD = 3
 
 
 @router.post("", response_model=SessionFeedbackOut, status_code=status.HTTP_201_CREATED)
@@ -83,6 +90,47 @@ async def create_session_feedback(
         ) from exc
     await db.refresh(feedback)
     return feedback
+
+
+@router.get("/required", response_model=FeedbackRequiredOut)
+async def get_feedback_required(
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> FeedbackRequiredOut:
+    """Whether the caller must submit beta feedback before proceeding.
+
+    Required once the user has crossed BETA_FEEDBACK_SESSION_THRESHOLD lifetime
+    completed sessions and has no `session_feedback` row yet. The returned
+    `session_id` is the most-recent completed session — the forced submission
+    attaches to it (the table keeps its NOT-NULL UNIQUE `session_id`; a row
+    existing already short-circuits this to `required=False`, so there's no
+    UNIQUE collision). Read-only; the frontend polls it on navigation.
+    """
+    completed = await db.scalar(
+        select(func.count(InterviewSession.id)).where(
+            InterviewSession.user_id == user.id,
+            InterviewSession.status == SessionStatus.completed,
+        )
+    )
+    if (completed or 0) < BETA_FEEDBACK_SESSION_THRESHOLD:
+        return FeedbackRequiredOut(required=False, session_id=None)
+
+    already = await db.scalar(
+        select(SessionFeedback.id).where(SessionFeedback.user_id == user.id)
+    )
+    if already is not None:
+        return FeedbackRequiredOut(required=False, session_id=None)
+
+    latest_id = await db.scalar(
+        select(InterviewSession.id)
+        .where(
+            InterviewSession.user_id == user.id,
+            InterviewSession.status == SessionStatus.completed,
+        )
+        .order_by(InterviewSession.created_at.desc())
+        .limit(1)
+    )
+    return FeedbackRequiredOut(required=latest_id is not None, session_id=latest_id)
 
 
 def _clean_optional(value: str | None) -> str | None:

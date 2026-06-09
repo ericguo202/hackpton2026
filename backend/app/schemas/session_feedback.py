@@ -62,3 +62,14 @@ class SessionFeedbackOut(BaseModel):
     monthly_price: str | None
     paid_feature_request: str | None
     created_at: datetime
+
+
+class FeedbackRequiredOut(BaseModel):
+    """Gate status for the forced beta-feedback modal.
+
+    `session_id` is the completed session the forced submission attaches to;
+    null when feedback isn't required.
+    """
+
+    required: bool
+    session_id: UUID | None = None
