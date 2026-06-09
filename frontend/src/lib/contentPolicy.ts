@@ -8,7 +8,8 @@
  * (`CONTENT_INJECTION_RE`). Same manual-sync discipline as `src/types/`: when one
  * side changes, change the other. Precision-tuned — deliberately omits
  * false-positive-prone markers (bare "DAN", "system update", "act as <role>",
- * "no restrictions"); those are left to the backend delimiter/clause layer.
+ * "no restrictions", bare "system prompt", "jailbreak"); those are left to the
+ * backend delimiter/clause layer.
  */
 
 const PATTERNS = [
@@ -22,10 +23,11 @@ const PATTERNS = [
   "\\byou\\s+are\\s+now\\b",
   "\\b(?:act\\s+as|pretend\\s+(?:to\\s+be|you(?:'re|\\s+are)))\\s+(?:an?\\s+)?" +
     "(?:ai|a\\.i\\.|assistant|language\\s+model|chat\\s?bot|chatgpt|llm)\\b",
-  // System / developer channel spoofing.
-  "\\bsystem\\s+prompt\\b",
+  // System / developer channel spoofing. "system prompt" only when an
+  // exfiltration/override verb targets it (bare "system prompt" is legit tech talk).
+  "\\b(?:reveal|leak|print|repeat|show|expose|dump|disclose|output|disregard|ignore|override|bypass)\\b" +
+    "(?:\\s+\\w+){0,3}?\\s+(?:the\\s+|your\\s+|its\\s+|my\\s+)?system\\s+prompt\\b",
   "\\bdeveloper\\s+(?:message|mode)\\b",
-  "\\bjailbreak",
   "\\bdo\\s+anything\\s+now\\b",
   // Fake task / instruction handoff.
   "\\b(?:here(?:'s| is)|this is)\\s+your\\s+(?:next|new)\\s+(?:task|instruction|prompt)\\b",

@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     me,
     onboarding,
     saved_questions,
+    session_feedback,
     sessions,
     validation,
     webhooks,
@@ -44,6 +45,13 @@ api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"]
 # Protected. Save & re-practice opening questions.
 api_router.include_router(
     saved_questions.router, prefix="/saved-questions", tags=["saved-questions"]
+)
+
+# Protected. Required beta feedback after completed sessions.
+api_router.include_router(
+    session_feedback.router,
+    prefix="/session-feedback",
+    tags=["session-feedback"],
 )
 
 # Protected. GET /api/v1/validation/{roles,industries} validates profile inputs.
