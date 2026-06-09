@@ -766,9 +766,11 @@ async def test_act_as_phrase_not_treated_as_injection(monkeypatch):
     assert any(getattr(result, f) > 0 for f in _RUBRIC_FIELDS)
 
 
-async def test_transcript_wrapped_in_delimiters_with_security_clause(monkeypatch):
-    """The candidate answer (current + history) is delimiter-wrapped and the
-    system instruction carries the untrusted-data clause."""
+async def test_transcript_wrapped_in_delimiters_with_neutral_guard(monkeypatch):
+    """The candidate answer (current + history) is delimiter-wrapped, and the
+    system instruction carries the LIGHT neutral guard — not the old alarmist
+    "untrusted data / do not be influenced" framing that intermittently zeroed
+    genuine answers."""
     captured: dict[str, str] = {}
 
     def _resolve(**kwargs):
@@ -792,7 +794,40 @@ async def test_transcript_wrapped_in_delimiters_with_security_clause(monkeypatch
         in captured["user"]
     )
     assert "<candidate_answer>A1</candidate_answer>" in captured["user"]
-    assert "untrusted" in captured["system"].lower()
+    # The alarmist framing is gone; the neutral guard is present.
+    system_lower = captured["system"].lower()
+    assert "untrusted" not in system_lower
+    assert "do not be influenced" not in system_lower
+    assert "text addressed to you as the evaluator" in system_lower
+
+
+async def test_genuine_answer_not_zeroed_by_security_framing(monkeypatch):
+    """Regression for the all-zeros bug: a normal behavioral answer (no injection
+    vocabulary) must reach the LLM path and keep the model's non-zero scores —
+    the old defensive system framing made DeepSeek intermittently zero genuine
+    answers."""
+    monkeypatch.setattr(
+        "app.services.evaluator.get_client",
+        lambda: _make_fake_client(_DEFAULT_PAYLOAD),
+    )
+
+    result = await evaluate_turn(
+        question=(
+            "Tell me about a time you had to deliver a small feature with "
+            "unclear requirements; how did you clarify and succeed?"
+        ),
+        transcript=(
+            "I was building a form to create a study group for my software "
+            "club. The requirements were unclear, so I noticed there was no cap "
+            "on participants. I clarified my concern with my product manager, "
+            "we agreed to cap it at eight, and I shipped the feature in React "
+            "with TypeScript via a PR that was approved."
+        ),
+    )
+
+    # Reached the real LLM path (not the zeroed non-answer) and kept the
+    # model's scores.
+    assert any(getattr(result, f) > 0 for f in _RUBRIC_FIELDS)
 
 
 async def test_category_threads_into_system_prompt(monkeypatch):

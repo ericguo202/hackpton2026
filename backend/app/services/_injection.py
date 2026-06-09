@@ -26,6 +26,12 @@ What we DON'T match (false-positive traps — left to the delimiter/clause layer
   * bare "act as" / "pretend to be" (non-AI target) — "act as the team lead",
                             "pretend to be confident" are normal behavioral
                             answers; only the AI-targeted forms are matched here.
+  * bare "system prompt"  — "I tuned the system prompt for our GPT-4o agent" is
+                            normal technical work; only exfiltration/override-
+                            framed forms ("reveal/ignore your system prompt") match.
+  * "jailbreak"           — genuinely dual-use; red-teamers / AI-safety
+                            candidates legitimately discuss "jailbreak testing /
+                            resistance". Left to the recall layer.
 """
 
 from __future__ import annotations
@@ -50,10 +56,13 @@ _PATTERNS = [
     r"\b(?:act\s+as|pretend\s+(?:to\s+be|you(?:'re|\s+are)))\s+(?:an?\s+)?"
     r"(?:ai|a\.i\.|assistant|language\s+model|chat\s?bot|chatgpt|llm)\b",
 
-    # System / developer channel spoofing.
-    r"\bsystem\s+prompt\b",
+    # System / developer channel spoofing. "system prompt" only counts when an
+    # exfiltration/override verb targets it ("reveal/ignore your system prompt")
+    # — bare "system prompt" is a normal technical phrase ("I tuned the system
+    # prompt"), see the docstring.
+    r"\b(?:reveal|leak|print|repeat|show|expose|dump|disclose|output|disregard|ignore|override|bypass)\b"
+    r"(?:\s+\w+){0,3}?\s+(?:the\s+|your\s+|its\s+|my\s+)?system\s+prompt\b",
     r"\bdeveloper\s+(?:message|mode)\b",
-    r"\bjailbreak",
     r"\bdo\s+anything\s+now\b",
 
     # Fake task / instruction handoff.
