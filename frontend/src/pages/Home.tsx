@@ -315,6 +315,7 @@ export default function Home() {
                     placeholder="Stripe, Figma, OpenAI..."
                     autoComplete="off"
                     autoFocus
+                    maxLength={60}
                     disabled={submitting}
                     className={companyInputClass}
                   />
@@ -384,6 +385,7 @@ export default function Home() {
                           onChange={(e) => setCompany(e.target.value)}
                           placeholder="Stripe, Figma, OpenAI..."
                           autoComplete="off"
+                          maxLength={60}
                           disabled={submitting}
                           className={companyInputClass}
                         />

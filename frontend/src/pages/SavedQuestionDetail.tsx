@@ -28,6 +28,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import DimensionMenu from '../components/DimensionMenu';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
@@ -339,7 +340,8 @@ export default function SavedQuestionDetail() {
                   </p>
                 ) : (
                   <>
-                    <div className="mb-6 flex flex-wrap gap-2">
+                    {/* Desktop (≥900px): inline pills. */}
+                    <div className="mb-6 hidden min-[900px]:flex flex-wrap gap-2">
                       <ToggleChip
                         active={showOverall}
                         onClick={() => setShowOverall((v) => !v)}
@@ -355,6 +357,19 @@ export default function SavedQuestionDetail() {
                           label={d.label}
                         />
                       ))}
+                    </div>
+                    {/* Mobile (<900px): the same toggles collapse into a dropdown
+                        checklist so they don't wrap into a tall pill block. */}
+                    <div className="mb-6 min-[900px]:hidden">
+                      <DimensionMenu
+                        showOverall={showOverall}
+                        onToggleOverall={() => setShowOverall((v) => !v)}
+                        dimensions={DIMENSIONS}
+                        activeDims={activeDims}
+                        onToggleDim={(key) =>
+                          setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
+                        }
+                      />
                     </div>
 
                     <div className="w-full" style={{ height: 320 }}>
@@ -455,6 +470,10 @@ function AttemptRow({
   onClick: () => void;
 }) {
   const date = new Date(attempt.created_at);
+  // A still-finalizing attempt reports `evaluation_failed` only because its
+  // scores haven't landed yet — surface that as pending, not a failure.
+  const pending =
+    attempt.status === 'in_progress' || attempt.status === 'pending';
   return (
     <button
       type="button"
@@ -468,7 +487,9 @@ function AttemptRow({
         {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
       </span>
       <span className="col-span-5 text-right text-sm tabular-nums">
-        {attempt.evaluation_failed ? (
+        {pending ? (
+          <span className="text-text-subtle">Scoring in progress</span>
+        ) : attempt.evaluation_failed ? (
           <span className="text-text-subtle">Evaluation failed</span>
         ) : (
           <>

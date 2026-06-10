@@ -48,6 +48,7 @@ type Props = {
   turn: TurnDetail;
   turnNum: number;
   replay: PracticeTurnReplay;
+  sessionCompleted: boolean;
   /** Present once the session is persisted (final-turn refetch). Enables Save. */
   sessionId?: string;
   savedQuestionId?: string | null;
@@ -57,10 +58,12 @@ export function PracticeTurnPanel({
   turn,
   turnNum,
   replay,
+  sessionCompleted,
   sessionId,
   savedQuestionId,
 }: Props) {
   const evaluationFailed = turn.scores.structure === null;
+  const evaluationPending = evaluationFailed && !sessionCompleted;
   const isOpeningTurn = turnNum === 1 && !turn.is_followup;
 
   return (
@@ -71,6 +74,7 @@ export function PracticeTurnPanel({
             sessionId={sessionId}
             alreadySaved={savedQuestionId != null}
             evaluated={!evaluationFailed}
+            sessionCompleted={sessionCompleted}
           />
         </div>
       )}
@@ -89,24 +93,34 @@ export function PracticeTurnPanel({
       <div className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-2">
         <InnerCard>
           <div className="flex flex-col gap-5 flex-1 min-h-0 overflow-y-auto">
-            <ScoresSection turn={turn} evaluationFailed={evaluationFailed} />
+            <ScoresSection
+              turn={turn}
+              evaluationFailed={evaluationFailed}
+              evaluationPending={evaluationPending}
+            />
             <MainTakeawaySection turn={turn} />
             <DeliveryFeedbackSection turn={turn} />
             <QuickWinsSection turn={turn} />
           </div>
         </InnerCard>
-        <WhatWorkedCard turn={turn} />
+        <WhatWorkedCard
+          turn={turn}
+          evaluationPending={evaluationPending}
+          evaluationFailed={evaluationFailed}
+        />
       </div>
 
       {/* Row 3 — Improvement moments | Improve next. */}
       <div className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-2">
-        <ImprovementMomentsCard turn={turn} />
+        <ImprovementMomentsCard
+          turn={turn}
+          evaluationPending={evaluationPending}
+          evaluationFailed={evaluationFailed}
+        />
         <ImproveNextCard
-          scores={turn.scores}
-          fillerWordCount={turn.filler_word_count}
-          fillerWordBreakdown={turn.filler_word_breakdown}
-          cvSummary={replay.cvSummary}
-          analyzerDiagnostics={replay.analyzerDiagnostics}
+          turn={turn}
+          evaluationPending={evaluationPending}
+          evaluationFailed={evaluationFailed}
         />
       </div>
     </div>

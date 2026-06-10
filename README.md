@@ -1,6 +1,8 @@
-# Logos
+# SocraticVoice
 
-> _λόγος — Greek for word, speech, reason._
+> _Guided interview practice rooted in questions, speech, and reason_
+
+[SocraticVoice](https://socraticvoice.com)
 
 An AI-powered behavioral interview coach. Speak your answer, get a tailored
 follow-up question and rubric-based scoring in the same flow you'd get from a
@@ -19,7 +21,7 @@ simulate a stranger pushing back with a sharp follow-up, mock-interview
 platforms skew technical, and recording yourself gives you a tape without
 coaching — you hear the rambling but not which part is hurting you.
 
-Logos closes that gap: speak your answer to a real interviewer voice, get a
+SocraticVoice closes that gap: speak your answer to a real interviewer voice, get a
 follow-up question that references what you actually said, and receive
 six-dimension scoring grounded in your industry plus a delivery grade pulled
 from your webcam. It's built for college undergraduates preparing for their
@@ -33,7 +35,7 @@ maps to what gets people hired.
 
 ### Industry-specific questions and rubric — not a generic checklist
 
-Logos classifies every session into one of **15 field/industry buckets**
+SocraticVoice classifies every session into one of **15 field/industry buckets**
 (Tech, Finance, Healthcare, Legal, Consulting, Sales, Ops, Nonprofit,
 Education, Government, and more) using both the company and target job title,
 so cross-functional roles land in the right place — a healthcare counsel role
@@ -49,7 +51,7 @@ actually walking into.
 ### Research-inspired opening questions
 
 The first question of every session is shaped by live research, not pulled
-from a static bank. When a session starts, Logos fires two parallel Google
+from a static bank. When a session starts, SocraticVoice fires two parallel Google
 searches via Serper — one for the company in general, and one specifically
 for its **behavioral interview style and culture** for the candidate's
 target role (the generic "interview questions" corpus was deliberately
@@ -76,7 +78,7 @@ as bullets in the Company brief card, so the candidate can see what shaped
 the questions they were just asked.
 
 To stop the same opening question recurring across back-to-back sessions,
-Logos caches each candidate's three most recent opening questions and feeds
+SocraticVoice caches each candidate's three most recent opening questions and feeds
 them back into the generator as an explicit avoid-list, so the next question
 has to take a distinct angle. The cache is scoped to the candidate (not the
 company), since opening questions track role and seniority more than which
@@ -100,7 +102,7 @@ the product into a full answer generator.
 
 Every answer is scanned for the usual verbal crutches — _um, uh, like, you
 know, basically, actually_ — but a raw tally is misleading: a longer, better
-answer almost always contains more of them. So Logos reports the **filler-word
+answer almost always contains more of them. So SocraticVoice reports the **filler-word
 rate**: the percentage of your words that were fillers. A four-minute answer
 with twelve "likes" can be _cleaner_ than a thirty-second one with four, and
 the rate is what tells you that. It shows up as a color-graded bar — green
@@ -118,7 +120,7 @@ you're answering, tracking eye contact, gaze stability, head pose, expression,
 and face visibility. Those signals roll into the **Delivery** score and into
 the structured feedback — so you'll get pointed feedback like _"Eye contact landed
 at 47/100; pick a spot near the camera and return to it between phrases."_
-This is the part of Logos we lean on hardest: rather than a single averaged
+This is the part of SocraticVoice we lean on hardest: rather than a single averaged
 number, the Delivery score is computed deterministically from those signals,
 weighting the cues recruiters actually react to — eye contact and staying
 on-camera — far above softer ones, so you're never docked for a calm, even
@@ -168,7 +170,7 @@ your own answer next to the score that explains why.
 ### Save a question and re-practice it over time
 
 Most prep tools are one-and-done: you answer a question once and never see it
-again. Logos lets you **save an opening question** straight from the results
+again. SocraticVoice lets you **save an opening question** straight from the results
 screen and come back to it later, so you can drill the same scenario until the
 answer is sharp. Each saved question keeps its own progress chart — every
 re-practice is one point, oldest to newest, plotting the opening answer's
@@ -190,7 +192,7 @@ it — they stay in your history.
 
 ### Free tier with daily session limits
 
-Logos currently ships a single **Free** tier, capped at **5 completed
+SocraticVoice currently ships a single **Free** tier, capped at **5 completed
 interview sessions per day**. The counter resets at midnight in your own
 local timezone (not server time), and only ticks up when a session
 actually finishes — abandoning mid-session doesn't burn a slot. A **Pro**

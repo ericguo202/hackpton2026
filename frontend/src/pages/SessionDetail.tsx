@@ -177,10 +177,14 @@ export default function SessionDetail() {
                     className="anim-crossfade rounded-lg border border-border-strong bg-tertiary-200 min-[900px]:rounded-tl-none"
                   >
                     {safeIndex === 0 ? (
-                      <OverviewPanel session={session} />
+                      <OverviewPanel
+                        session={session}
+                        sessionCompleted={session.status === 'completed'}
+                      />
                     ) : (
                       <TurnPanel
                         turn={session.turns[safeIndex - 1]}
+                        sessionCompleted={session.status === 'completed'}
                         sessionId={session.id}
                         savedQuestionId={session.saved_question_id}
                       />

@@ -8,9 +8,10 @@ to boot if they're missing, which is what we want for secrets/URLs we can't
 sensibly guess a default for.
 """
 
+from typing import List
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
-from typing import List
 
 
 class Settings(BaseSettings):
@@ -28,8 +29,11 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:4173",
         "http://localhost:5173",
+        "http://localhost:5174",
         "http://localhost:8080",
         "https://hackpton2026.vercel.app",
+        "https://socraticvoice.com",
+        "https://interviewpie.com"
     ]
 
     # Regex matched against the request Origin header. Vercel mints a unique

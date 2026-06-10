@@ -21,13 +21,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { UserButton } from '@clerk/react';
+import { ShieldCheck, VideoOff } from 'lucide-react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 
 import PageMorphTransition from '../components/PageMorphTransition';
 import { PracticeFooter } from '../components/PracticeFooter';
 import { QuitConfirmDialog } from '../components/QuitConfirmDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import { CameraColumn } from '../components/practice/CameraColumn';
+import { CameraColumn, type RecordingNotice } from '../components/practice/CameraColumn';
 import { QuestionColumn } from '../components/practice/QuestionColumn';
 import { TranscriptColumn } from '../components/practice/TranscriptColumn';
 import { PracticeOverviewPanel } from '../components/practice/PracticeOverviewPanel';
@@ -41,13 +42,19 @@ import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnalyzer';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
+import { useMe } from '../hooks/useMe';
 import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
+import {
+  DELIVERY_ANALYTICS_NOTICE_VERSION,
+  hasActiveDeliveryAnalyticsConsent,
+} from '../lib/deliveryAnalyticsConsent';
 import { cn } from '../lib/utils';
 import type { InterviewSummary } from '../lib/faceHeuristics';
 import type { DimensionAverages, SessionDetail, TurnDetail } from '../types/history';
 import type { Scores, TurnResult } from '../types/session';
+import type { MeResponse } from '../types/user';
 
 export type PracticeLocationState = {
   sessionId: string;
@@ -84,19 +91,35 @@ const SCORE_DIM_KEYS: ReadonlyArray<keyof Scores> = [
   'delivery',
 ];
 
+// Recording-length guardrails (seconds of actual recording, not question
+// playback). Keeps a normal answer well under the backend's 50 MB audio cap
+// and nudges the candidate to stay concise. warn → countdown → auto-stop.
+const RECORDING_WARNING_SECONDS = 240;   // 4:00 — gentle heads-up appears
+const RECORDING_COUNTDOWN_SECONDS = 270; // 4:30 — live countdown begins
+const RECORDING_MAX_SECONDS = 300;       // 5:00 — recording auto-stops
+
 function formatTurnSubmitError(err: unknown): string {
   if (!(err instanceof ApiError)) {
     return err instanceof Error ? err.message : 'Something went wrong. Please try again.';
   }
 
   const detail = extractApiErrorDetail(err);
-  if (
-    err.status === 422
-    && detail.toLowerCase().includes('violates our usage policy')
-  ) {
+  if (isUsagePolicyViolation(err)) {
     return 'This violates the usage policy. Please re-record and try again.';
   }
   return detail;
+}
+
+// A usage-policy 422 (moderation or prompt-injection gate) is NOT transient:
+// re-submitting the same audio yields the same transcript and fails again. The
+// only fix is to record a fresh answer, so the error UI offers "Restart turn"
+// instead of "Retry submission" for this case.
+function isUsagePolicyViolation(err: unknown): boolean {
+  return (
+    err instanceof ApiError
+    && err.status === 422
+    && extractApiErrorDetail(err).toLowerCase().includes('violates our usage policy')
+  );
 }
 
 /**
@@ -139,11 +162,17 @@ function replayToTurnDetail(replay: ReplayTurnResult, idx: number): TurnDetail {
  * backend's `DimensionAverages` shape) from the locally-captured turn
  * results. Used only on the refetch-failed fallback path.
  */
-function localAverages(turns: ReplayTurnResult[]): DimensionAverages {
+function turnDetailAverages(turns: TurnDetail[]): DimensionAverages {
+  return averagesFromScoreSources(turns.map((t) => t.scores));
+}
+
+function averagesFromScoreSources(
+  scoresList: Array<Partial<Record<keyof Scores, number | null>> | null>,
+): DimensionAverages {
   const out: Partial<Record<keyof Scores, string | null>> = {};
   for (const key of SCORE_DIM_KEYS) {
-    const vals = turns
-      .map((t) => t.scores?.[key])
+    const vals = scoresList
+      .map((scores) => scores?.[key])
       .filter((v): v is number => typeof v === 'number');
     out[key] = vals.length === 0
       ? null
@@ -222,6 +251,83 @@ function SessionInfoPanel({
   );
 }
 
+function DeliveryAnalyticsConsentNotice({
+  checked,
+  error,
+  submitting,
+  onAccept,
+  onCheckedChange,
+  onDecline,
+}: {
+  checked: boolean;
+  error: string | null;
+  submitting: boolean;
+  onAccept: () => void;
+  onCheckedChange: (checked: boolean) => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div className="w-full rounded-lg border border-border bg-surface-raised p-4 text-left shadow-sm min-[900px]:w-[45vw]">
+      <div className="flex items-start gap-3">
+        <ShieldCheck
+          className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
+          aria-hidden
+        />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-text">
+            Optional delivery analytics
+          </p>
+          <p className="mt-2 text-xs leading-5 text-text-subtle">
+            If enabled, your browser analyzes webcam frames while you answer.
+            Raw video, images, and face landmarks are not uploaded. We store
+            only a numeric delivery summary with each answer for interview
+            coaching; it is not used to identify you or make hiring decisions.
+          </p>
+        </div>
+      </div>
+
+      <label className="mt-3 flex cursor-pointer items-start gap-3 rounded border border-border bg-surface-sunken px-3 py-3 text-xs leading-5 text-text-subtle">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onCheckedChange(event.currentTarget.checked)}
+          className="mt-1 h-4 w-4 accent-[var(--color-accent)]"
+        />
+        <span>
+          I am authorized to consent and agree to camera-based delivery
+          analytics and storage of numeric delivery summaries for coaching.
+        </span>
+      </label>
+
+      {error && (
+        <p role="alert" className="mt-3 text-xs leading-5 text-text">
+          {error}
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <FlowHoverButton
+          type="button"
+          variant="dark"
+          disabled={!checked || submitting}
+          onClick={onAccept}
+          icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
+        >
+          Enable delivery scoring
+        </FlowHoverButton>
+        <FlowHoverButton
+          type="button"
+          disabled={submitting}
+          onClick={onDecline}
+          icon={<VideoOff className="h-4 w-4" aria-hidden />}
+        >
+          Continue audio only
+        </FlowHoverButton>
+      </div>
+    </div>
+  );
+}
+
 function revokeReplayUrls(turns: ReplayTurnResult[]) {
   for (const turn of turns) {
     if (turn.replayUrl) URL.revokeObjectURL(turn.replayUrl);
@@ -251,6 +357,7 @@ function PracticeSession({
   navigate: ReturnType<typeof useNavigate>;
 }) {
   const { apiFetch } = useApi();
+  const { me, refetch: refetchMe } = useMe();
   const recorder = useRecorder();
   const analyzer = useFaceAnalyzer(
     recorder.videoStream,
@@ -277,6 +384,9 @@ function PracticeSession({
   const [turnResults, setTurnResults] = useState<ReplayTurnResult[]>([]);
   const [submittingTurn, setSubmittingTurn] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
+  // True when `turnError` is a non-retryable usage-policy 422 — drives the error
+  // CTA to "Restart turn" (record fresh) rather than "Retry submission".
+  const [turnErrorIsPolicy, setTurnErrorIsPolicy] = useState(false);
   const [retryingTurn, setRetryingTurn] = useState(false);
   const [isDone, setIsDone] = useState(false);
   // Source of truth for the Results-phase panels. Populated by the final-turn
@@ -288,6 +398,15 @@ function PracticeSession({
   const [replayKey, setReplayKey] = useState(0);
   const [showTranscript, setShowTranscript] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  const [deliveryConsentChecked, setDeliveryConsentChecked] = useState(false);
+  const [deliveryConsentDismissed, setDeliveryConsentDismissed] = useState(false);
+  const [deliveryConsentAcceptedThisSession, setDeliveryConsentAcceptedThisSession] = useState(false);
+  const [deliveryConsentSubmitting, setDeliveryConsentSubmitting] = useState(false);
+  const [deliveryConsentError, setDeliveryConsentError] = useState<string | null>(null);
+  // Seconds of the current recording. Driven by the interval effect below;
+  // reset to 0 in `handleAudioEnded` (the sole recording-start path) so it
+  // never carries a stale value into a new turn.
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
     turnResultsRef.current = turnResults;
@@ -338,19 +457,86 @@ function PracticeSession({
     autoRetriedRef.current = false;
   }, [recorder.audioBlob]);
 
+  // Recording-length cap. While recording, tick a local elapsed clock (drives
+  // the under-camera warning/countdown) and auto-end the turn at
+  // RECORDING_MAX_SECONDS via the SAME path as tapping "End recording" — so
+  // auto-submit vs. manual-preview behavior is preserved at the cap.
+  // `handleEndRef` mirrors the latest `handleEnd` closure (it's declared later)
+  // so the interval always calls the current one without re-subscribing.
+  const recordingStartRef = useRef<number | null>(null);
+  const handleEndRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    handleEndRef.current = handleEnd;
+  });
+  useEffect(() => {
+    if (recorder.state !== 'recording') {
+      // Ref-only writes here (no setState) keep this lint-clean; `elapsedSeconds`
+      // is reset on the next recording start in `handleAudioEnded`, and the
+      // notice below is gated on `recorder.state` so a stale value never shows.
+      recordingStartRef.current = null;
+      return;
+    }
+    recordingStartRef.current = Date.now();
+    let autoStopped = false;
+    const id = window.setInterval(() => {
+      if (recordingStartRef.current == null) return;
+      const secs = Math.floor((Date.now() - recordingStartRef.current) / 1000);
+      setElapsedSeconds(secs);
+      if (secs >= RECORDING_MAX_SECONDS && !autoStopped) {
+        autoStopped = true;
+        handleEndRef.current();
+      }
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [recorder.state]);
+
+  useEffect(() => {
+    if (!isDone || !sessionId || sessionDetail?.status === 'completed') return;
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    async function pollSessionDetail() {
+      try {
+        const detail = await apiFetch<SessionDetail>(
+          `/api/v1/sessions/${sessionId}`,
+        );
+        if (cancelled) return;
+        setSessionDetail(detail);
+        if (detail.status === 'completed') return;
+      } catch (err) {
+        console.warn('[Practice] session detail polling failed', err);
+      }
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollSessionDetail, 2000);
+      }
+    }
+
+    void pollSessionDetail();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [apiFetch, isDone, sessionDetail?.status, sessionId]);
+
+  const deliveryAnalyticsEnabled =
+    deliveryConsentAcceptedThisSession || hasActiveDeliveryAnalyticsConsent(me);
+
   async function handleSubmitTurn() {
     if (!recorder.audioBlob || !sessionId || !currentQ) return;
     setSubmittingTurn(true);
     setEndingTurn(false);
     setTurnError(null);
+    setTurnErrorIsPolicy(false);
     try {
       const form = new FormData();
       form.append('audio', recorder.audioBlob, 'answer.webm');
 
-      const cvSummary = analyzer.buildSummary();
+      const cvSummary = deliveryAnalyticsEnabled ? analyzer.buildSummary() : null;
       if (cvSummary) {
         form.append('cv_summary', JSON.stringify(cvSummary));
-      } else {
+      } else if (deliveryAnalyticsEnabled) {
         console.warn('[Practice] cv_summary missing on submit', analyzer.diagnostics);
       }
 
@@ -426,24 +612,9 @@ function PracticeSession({
       setTurnResults((prev) => [...prev, enriched]);
 
       if (result.is_final) {
-        // Pull the full session payload — it carries the canonical scores
-        // for turn 1 (which POSTed back null while the evaluator ran in the
-        // background) plus the company brief shown on the Overview tab.
-        // If the refetch fails, the Results phase still renders from the
-        // locally-captured `turnResults` via the `replayToTurnDetail`
-        // adapter — turn 1 will show "Evaluation failed" in that case.
-        try {
-          const detail = await apiFetch<SessionDetail>(
-            `/api/v1/sessions/${sessionId}`,
-          );
-          setSessionDetail(detail);
-        } catch (err) {
-          console.warn(
-            '[Practice] post-finalize session detail refetch failed; '
-            + 'Results panels will render from local turn data only.',
-            err,
-          );
-        }
+        // Enter Results immediately. The final-turn endpoint now completes
+        // scoring in the background; the polling effect above replaces local
+        // replay data with canonical session detail once it is available.
         triggerMorph(() => {
           setIsDone(true);
           setCurrentQ(null);
@@ -465,7 +636,14 @@ function PracticeSession({
       });
       console.groupEnd();
 
-      if (autoSubmit && !autoRetriedRef.current && recorder.audioBlob) {
+      // A usage-policy 422 is not transient — re-submitting the same audio
+      // fails identically — so skip the one-shot auto-retry and go straight to
+      // the "Restart turn" CTA.
+      const policyViolation = isUsagePolicyViolation(err);
+      if (
+        autoSubmit && !autoRetriedRef.current && recorder.audioBlob
+        && !policyViolation
+      ) {
         autoRetriedRef.current = true;
         setRetryingTurn(true);
         window.setTimeout(() => {
@@ -476,6 +654,7 @@ function PracticeSession({
       }
 
       setTurnError(formatTurnSubmitError(err));
+      setTurnErrorIsPolicy(policyViolation);
     } finally {
       setSubmittingTurn(false);
     }
@@ -492,17 +671,52 @@ function PracticeSession({
     recorder.stop();
   }
 
+  async function handleAcceptDeliveryConsent() {
+    setDeliveryConsentSubmitting(true);
+    setDeliveryConsentError(null);
+    try {
+      const updated = await apiFetch<MeResponse>(
+        '/api/v1/me/delivery-analytics-consent',
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            notice_version: DELIVERY_ANALYTICS_NOTICE_VERSION,
+            accepted: true,
+          }),
+        },
+      );
+      setDeliveryConsentAcceptedThisSession(
+        hasActiveDeliveryAnalyticsConsent(updated),
+      );
+      setDeliveryConsentDismissed(false);
+      setDeliveryConsentChecked(false);
+      void refetchMe();
+    } catch (err) {
+      setDeliveryConsentError(
+        err instanceof ApiError
+          ? extractApiErrorDetail(err)
+          : 'Could not save delivery analytics consent.',
+      );
+    } finally {
+      setDeliveryConsentSubmitting(false);
+    }
+  }
+
   function handleRestart() {
     if (recorder.state !== 'idle') recorder.stop();
     recorder.reset();
     setTurnError(null);
+    setTurnErrorIsPolicy(false);
     setEndingTurn(false);
     setReplayKey((k) => k + 1);
   }
 
   function handleAudioEnded() {
     if (recorder.state !== 'idle') return;
-    recorder.start().catch((err: Error) => {
+    // Zero the clock here (the only place recording begins) so the timer
+    // effect starts from 0 with no synchronous setState inside the effect.
+    setElapsedSeconds(0);
+    recorder.start({ video: deliveryAnalyticsEnabled }).catch((err: Error) => {
       setTurnError(`Could not start recording: ${err.message}`);
     });
   }
@@ -546,10 +760,53 @@ function PracticeSession({
   const spinnerMessage = retryingTurn
     ? 'Retrying…'
     : currentQ && currentQ.num >= 2
-      ? 'Scoring — up to 40 seconds'
+      ? 'Feedback will appear shortly.'
       : 'Analyzing — 5–10 seconds';
   const showPreview =
     !autoSubmit && recorder.state === 'stopped' && recorder.audioUrl != null;
+  // Recording-length notice rendered UNDER the camera box. Warning from 4:00,
+  // live countdown from 4:30 to the 5:00 auto-stop. Countdown wording differs
+  // by mode: auto-submit "submits", manual "ends" (drops into the preview).
+  const secondsRemaining = Math.max(0, RECORDING_MAX_SECONDS - elapsedSeconds);
+  let recordingNotice: RecordingNotice | null = null;
+  if (recorder.state === 'recording') {
+    if (elapsedSeconds >= RECORDING_COUNTDOWN_SECONDS) {
+      recordingNotice = {
+        tone: 'countdown',
+        text: autoSubmit
+          ? `Recording automatically submits in ${secondsRemaining}s`
+          : `Recording automatically ends in ${secondsRemaining}s`,
+      };
+    } else if (elapsedSeconds >= RECORDING_WARNING_SECONDS) {
+      recordingNotice = {
+        tone: 'warning',
+        text: 'Heads up — recording auto-stops at the 5-minute limit.',
+      };
+    }
+  }
+  // Pre-start heads-up under the camera box while the FIRST question plays, so
+  // the candidate learns the 5-minute cap before recording begins. Turn 1 only
+  // (the in-recording RecordingNotice covers later turns); hidden once recording
+  // starts (state leaves 'idle').
+  const showFirstTurnHint = recorder.state === 'idle' && currentQ?.num === 1;
+  const showDeliveryConsentNotice =
+    recorder.state === 'idle'
+    && currentQ?.num === 1
+    && !deliveryAnalyticsEnabled
+    && !deliveryConsentDismissed;
+  const deliveryConsentNotice = showDeliveryConsentNotice ? (
+    <DeliveryAnalyticsConsentNotice
+      checked={deliveryConsentChecked}
+      error={deliveryConsentError}
+      submitting={deliveryConsentSubmitting}
+      onAccept={() => { void handleAcceptDeliveryConsent(); }}
+      onCheckedChange={setDeliveryConsentChecked}
+      onDecline={() => {
+        setDeliveryConsentDismissed(true);
+        setDeliveryConsentError(null);
+      }}
+    />
+  ) : null;
   const previousTurn = turnResults.length > 0 ? turnResults[0] : null;
   const showTranscriptPanel = showTranscript && previousTurn;
   const showQuestionDuringSession = showQuestionText;
@@ -612,6 +869,9 @@ function PracticeSession({
                 showPreview={showPreview}
                 submitting={submitting}
                 isFinalTurn={currentQ.num >= 2}
+                recordingNotice={recordingNotice}
+                firstTurnHint={showFirstTurnHint}
+                deliveryConsentNotice={deliveryConsentNotice}
                 onSubmitPreview={handleSubmitTurn}
                 onReRecordPreview={handleReRecord}
               />
@@ -632,9 +892,17 @@ function PracticeSession({
                 </p>
                 {autoSubmit && recorder.audioBlob && (
                   <div className="mt-2">
-                    <FlowHoverButton type="button" onClick={() => { void handleSubmitTurn(); }}>
-                      Retry submission
-                    </FlowHoverButton>
+                    {turnErrorIsPolicy ? (
+                      // Re-submitting the same audio would fail the same policy
+                      // check — reset the turn so the user records a fresh answer.
+                      <FlowHoverButton type="button" onClick={handleRestart}>
+                        Restart turn
+                      </FlowHoverButton>
+                    ) : (
+                      <FlowHoverButton type="button" onClick={() => { void handleSubmitTurn(); }}>
+                        Retry submission
+                      </FlowHoverButton>
+                    )}
                   </div>
                 )}
               </div>
@@ -670,11 +938,12 @@ function PracticeSession({
           const effectiveTurns: TurnDetail[] = sessionDetail
             ? sessionDetail.turns
             : turnResults.map(replayToTurnDetail);
-          const effectiveAverages: DimensionAverages = sessionDetail
-            ? sessionDetail.averages
-            : localAverages(turnResults);
           const effectiveCompany = sessionDetail?.company ?? initial.company;
           const effectiveJobTitle = sessionDetail?.job_title ?? initial.jobTitle;
+          const sessionCompleted = sessionDetail?.status === 'completed';
+          const effectiveAverages: DimensionAverages = sessionCompleted && sessionDetail
+            ? sessionDetail.averages
+            : turnDetailAverages(effectiveTurns);
 
           const tabs: FolderTab[] = [
             { label: 'Overview', tabId: 'pr-tab-overview', panelId: 'pr-panel-overview' },
@@ -735,12 +1004,14 @@ function PracticeSession({
                         jobTitle={effectiveJobTitle}
                         averages={effectiveAverages}
                         turns={effectiveTurns}
+                        sessionCompleted={sessionCompleted}
                       />
                     ) : (
                       <PracticeTurnPanel
                         turn={effectiveTurns[safeIndex - 1]}
                         turnNum={safeIndex}
                         replay={replayFor(turnResults[safeIndex - 1])}
+                        sessionCompleted={sessionCompleted}
                         sessionId={sessionId}
                         savedQuestionId={sessionDetail?.saved_question_id ?? null}
                       />

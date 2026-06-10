@@ -570,8 +570,7 @@ function summaryGuidance(
 // ── summary accumulator ───────────────────────────────────────────────────────
 
 /** Shape matches `backend/interview_feedback_latest.json`. Keep the keys
- *  stable — `backend/app/services/evaluator._format_cv_block` reads them
- *  by name. */
+ *  stable — the backend's deterministic delivery scorer reads them by name. */
 export interface InterviewSummary {
   calibration_applied: boolean;
   calibration_version: number | null;

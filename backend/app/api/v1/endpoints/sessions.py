@@ -11,7 +11,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -44,15 +44,22 @@ from app.services.company_research import (
     research_company,
 )
 from app.services._field_prompts import FieldCategory
+from app.services._injection import contains_injection
 from app.services.daily_limit import (
     DAILY_LIMIT_FREE,
     check_and_reset as daily_check_and_reset,
     increment as daily_increment,
 )
+from app.services.coaching import generate_next_take
+from app.services.delivery_consent import has_active_delivery_analytics_consent
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
 from app.services.followup import generate_followup
-from app.services.incidents import log_error, log_interview_session_started
+from app.services.incidents import (
+    log_error,
+    log_injection_detected,
+    log_interview_session_started,
+)
 from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
@@ -62,6 +69,50 @@ from app.services.voice_pool import is_valid_voice_id, voice_for_session
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_finalize_tasks: set[asyncio.Task[None]] = set()
+_finalizing_sessions: set[UUID] = set()
+
+# How long after the final answer was persisted we wait before the lazy
+# reaper in `get_session` is allowed to re-spawn finalization. Comfortably
+# longer than a normal finalize (turn-1 drain + ~30-40s evaluator) so a
+# still-running finalizer is never raced; the per-session dedup set below is
+# the primary guard within a process, this grace covers the multi-worker case.
+_FINALIZE_REAP_AFTER = timedelta(seconds=90)
+
+
+def _spawn_finalize(
+    *,
+    session_id: UUID,
+    final_turn_id: UUID,
+    category: FieldCategory | None,
+    experience_level: ExperienceLevel | None,
+) -> None:
+    """Spawn background finalization, deduped per session within this process.
+
+    Holds a strong reference to the task (so it isn't GC'd mid-flight) and
+    records the session id so the lazy reaper in `get_session` won't start a
+    second, concurrent finalizer for a session this worker is already
+    finishing — which would otherwise double the free-tier daily increment.
+    """
+    if session_id in _finalizing_sessions:
+        return
+    _finalizing_sessions.add(session_id)
+    task = asyncio.create_task(
+        _run_background_finalize(
+            session_id=session_id,
+            final_turn_id=final_turn_id,
+            category=category,
+            experience_level=experience_level,
+        ),
+        name=f"finalize-session-{session_id}",
+    )
+    _finalize_tasks.add(task)
+
+    def _done(t: asyncio.Task[None]) -> None:
+        _finalize_tasks.discard(t)
+        _finalizing_sessions.discard(session_id)
+
+    task.add_done_callback(_done)
 
 
 # ── session creation ──────────────────────────────────────────────────────────
@@ -171,6 +222,28 @@ async def create_session(
                 ),
             )
 
+    # Deterministic prompt-injection gate on the two user-authored inputs that
+    # feed company research + every downstream prompt. Free (no network) so it
+    # runs BEFORE the billed moderation call below — an injected company /
+    # job-title never reaches OpenAI moderation, Serper, OpenRouter, or
+    # ElevenLabs. The delimiters + untrusted-data clause in `research_company`
+    # are the recall layer for subtler attempts this high-precision regex skips.
+    if contains_injection(body.company) or contains_injection(body.job_title):
+        logger.info(
+            "Session-create rejected by injection gate clerk_user_id=%s",
+            user.clerk_user_id,
+        )
+        await log_injection_detected(
+            source="sessions.company",
+            text=f"company={body.company!r} job_title={body.job_title!r}",
+            user=user,
+            db=db,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Input contains content that violates our usage policy.",
+        )
+
     # Pre-flight moderation on the two user-authored string inputs that
     # feed downstream LLM prompts. Blocking HERE means the content never
     # reaches Serper, OpenRouter, or ElevenLabs — so a malicious company
@@ -276,6 +349,35 @@ async def create_session(
 
 # ── turn submission ───────────────────────────────────────────────────────────
 
+# Hard cap on the uploaded answer audio. A 5-minute Opus/WebM clip is well
+# under this (the frontend also auto-stops recording at the 5:00 mark), so the
+# cap only ever trips on a malformed or malicious upload. Read in 1 MiB chunks
+# and abort with 413 BEFORE the bytes can exhaust worker memory or get
+# forwarded to ElevenLabs STT (burning quota). Mirrors onboarding's bounded
+# résumé read (`_read_pdf_bounded`).
+_MAX_AUDIO_BYTES = 50 * 1024 * 1024
+_AUDIO_CHUNK_SIZE = 1024 * 1024
+
+
+async def _read_audio_bounded(audio: UploadFile) -> bytes:
+    """Read the full upload into memory, aborting with 413 past the cap."""
+    buf = bytearray()
+    while True:
+        chunk = await audio.read(_AUDIO_CHUNK_SIZE)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > _MAX_AUDIO_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"Audio exceeds the {_MAX_AUDIO_BYTES // (1024 * 1024)} MB "
+                    "limit. Please record a shorter answer."
+                ),
+            )
+    return bytes(buf)
+
+
 async def _insert_followup_turn(
     db: AsyncSession,
     session_id: UUID,
@@ -302,7 +404,7 @@ async def _followup_and_tts(
     sample_question_themes: list[str] | None = None,
     experience_level: ExperienceLevel | None = None,
 ) -> tuple[str, str]:
-    """Generate follow-up via Flash then TTS — runs in parallel with Gemma 4 eval.
+    """Generate follow-up via Flash then TTS — runs before background eval.
 
     `voice_id` is the per-session voice from `voice_for_session(session.id)`
     — passed in (rather than recomputed here) to keep this helper a pure
@@ -361,6 +463,32 @@ def _apply_eval_to_turn(turn: InterviewTurn, eval_out: EvaluatorOutput) -> None:
     turn.evaluated_at          = datetime.utcnow()
 
 
+async def _attach_next_take(
+    eval_out: EvaluatorOutput,
+    question: str,
+    transcript: str,
+    category: FieldCategory | None,
+    experience_level: ExperienceLevel | None,
+) -> None:
+    """Run the focused coaching call and merge `next_take` into `eval_out`.
+
+    Best-effort and grounded in the evaluator output that just landed. The
+    coaching service already fails soft (returns None on any error), but we
+    still guard here so a coaching problem can never block scoring/finalization.
+    Mutates `eval_out.feedback_detail` in place so the downstream
+    `_apply_eval_to_turn` persists it with the rest of the feedback.
+    """
+    try:
+        next_take = await generate_next_take(
+            question, transcript, eval_out,
+            category=category, experience_level=experience_level,
+        )
+        if next_take is not None:
+            eval_out.feedback_detail.next_take = next_take
+    except Exception:  # noqa: BLE001
+        logger.exception("next_take generation failed; leaving it unset")
+
+
 async def _run_background_eval(
     session_id: UUID,
     turn_id: UUID,
@@ -395,6 +523,9 @@ async def _run_background_eval(
                     experience_level=experience_level,
                 )
                 _log_eval_scores(session_id, turn_id, category, eval_out)
+                await _attach_next_take(
+                    eval_out, question, transcript, category, experience_level,
+                )
                 turn = await db.get(InterviewTurn, turn_id)
                 if turn is None:
                     logger.warning(
@@ -539,6 +670,192 @@ async def _upsert_session_metrics(
     await db.flush()
 
 
+async def _complete_session_from_turns(
+    db: AsyncSession,
+    *,
+    session: InterviewSession,
+    user: User,
+    turns: list[InterviewTurn],
+) -> None:
+    """Aggregate evaluated turns and mark the session completed.
+
+    Turns whose evaluator failed keep nullable score columns and are excluded
+    from the relevant averages, matching the existing finalization policy.
+    """
+    all_turn_scores: list[_TurnScores] = [
+        (
+            float(t.structure_score)       if t.structure_score       is not None else None,
+            float(t.problem_solving_score) if t.problem_solving_score is not None else None,
+            float(t.impact_score)          if t.impact_score          is not None else None,
+            float(t.initiative_score)      if t.initiative_score      is not None else None,
+            float(t.depth_score)           if t.depth_score           is not None else None,
+            float(t.delivery_score)        if t.delivery_score        is not None else None,
+            int(t.filler_word_count or 0),
+        )
+        for t in turns
+        if t.transcript_text is not None
+    ]
+    per_dim_avgs = _per_dimension_averages(all_turn_scores)
+    total_fillers = sum(t[6] for t in all_turn_scores)
+    total_words = sum(int(t.word_count or 0) for t in turns)
+    flat_scores = [
+        v for t in all_turn_scores for v in t[:6] if v is not None
+    ]
+    overall: float | None
+    if flat_scores:
+        overall = min(99.99, round(sum(flat_scores) / len(flat_scores) * 10, 2))
+    else:
+        overall = None
+
+    turns_evaluated = sum(
+        1 for t in all_turn_scores if any(v is not None for v in t[:6])
+    )
+
+    session.status        = SessionStatus.completed
+    session.ended_at      = func.now()
+    session.overall_score = overall
+
+    await _upsert_session_metrics(
+        db,
+        session_id=session.id,
+        averages=per_dim_avgs,
+        total_filler_word_count=total_fillers,
+        total_word_count=total_words,
+        overall_score=overall,
+        turns_evaluated=turns_evaluated,
+    )
+
+    if user.tier == UserTier.free:
+        await daily_increment(db, user)
+
+
+async def _run_background_finalize(
+    session_id: UUID,
+    final_turn_id: UUID,
+    category: FieldCategory | None,
+    experience_level: ExperienceLevel | None = None,
+) -> None:
+    """Evaluate the final turn and complete the session after the request returns."""
+    try:
+        async with AsyncSessionLocal() as db:
+            session = await db.get(InterviewSession, session_id)
+            if session is None:
+                logger.warning(
+                    "Background finalize: session %s vanished before completion",
+                    session_id,
+                )
+                return
+            if session.status == SessionStatus.completed:
+                return
+            if session.status != SessionStatus.in_progress:
+                logger.warning(
+                    "Background finalize: session=%s status=%s; skipping",
+                    session_id,
+                    session.status,
+                )
+                return
+
+            user = await db.get(User, session.user_id)
+            if user is None:
+                logger.warning(
+                    "Background finalize: user %s vanished for session=%s",
+                    session.user_id,
+                    session_id,
+                )
+                return
+
+            # Let turn 1's detached eval finish if this worker still knows
+            # about it. Missing/stale registry entries are handled by the
+            # inline fallback below.
+            await _await_background_eval(session_id)
+
+            turns_result = await db.execute(
+                select(InterviewTurn)
+                .where(InterviewTurn.session_id == session_id)
+                .order_by(InterviewTurn.turn_number)
+            )
+            turns = list(turns_result.scalars().all())
+
+            for turn in turns:
+                if turn.transcript_text is None or turn.structure_score is not None:
+                    continue
+
+                if turn.id != final_turn_id:
+                    logger.warning(
+                        "Background finalize inline-eval fallback for "
+                        "session=%s turn=%s",
+                        session_id,
+                        turn.id,
+                    )
+
+                history = [
+                    {"question": t.question_text, "transcript": t.transcript_text}
+                    for t in turns
+                    if (
+                        t.id != turn.id
+                        and t.transcript_text is not None
+                        and t.turn_number < turn.turn_number
+                    )
+                ]
+                inline_cv = turn.cv_summary if isinstance(turn.cv_summary, dict) else None
+                try:
+                    eval_out = await evaluate_turn(
+                        turn.question_text,
+                        turn.transcript_text,
+                        history,
+                        cv_summary=inline_cv,
+                        category=category,
+                        experience_level=experience_level,
+                    )
+                    _log_eval_scores(session_id, turn.id, category, eval_out)
+                    await _attach_next_take(
+                        eval_out,
+                        turn.question_text,
+                        turn.transcript_text,
+                        category,
+                        experience_level,
+                    )
+                    _apply_eval_to_turn(turn, eval_out)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "Background finalize eval failed for session=%s turn=%s; "
+                        "this turn will be excluded from the session aggregate.",
+                        session_id,
+                        turn.id,
+                    )
+                    await log_error(
+                        exc,
+                        user=user,
+                        db=db,
+                        metadata={
+                            "source": "background_finalize",
+                            "session_id": session_id,
+                            "turn_id": turn.id,
+                        },
+                    )
+
+            await _complete_session_from_turns(
+                db,
+                session=session,
+                user=user,
+                turns=turns,
+            )
+            await db.commit()
+            logger.info("Background finalize complete for session=%s", session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "Background finalize failed for session=%s; session remains in_progress.",
+            session_id,
+        )
+        await log_error(
+            exc,
+            metadata={
+                "source": "background_finalize",
+                "session_id": session_id,
+            },
+        )
+
+
 @router.post("/{session_id}/turns", response_model=TurnSubmitOut)
 async def submit_turn(
     session_id: UUID,
@@ -556,6 +873,15 @@ async def submit_turn(
         raise HTTPException(status_code=404, detail="Session not found")
     if session.status != SessionStatus.in_progress:
         raise HTTPException(status_code=400, detail="Session is not in progress")
+
+    if cv_summary and not has_active_delivery_analytics_consent(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Delivery analytics consent is required before camera-derived "
+                "delivery summaries can be submitted."
+            ),
+        )
 
     # 1a. Pull the persisted brief's category so we can hand it to the
     # evaluator and get field-tailored scoring. Legacy sessions persisted
@@ -586,9 +912,38 @@ async def submit_turn(
     if current_turn is None:
         raise HTTPException(status_code=400, detail="No pending turn for this session")
 
-    # 3. Transcribe.
-    audio_bytes = await audio.read()
+    # 3. Transcribe. Bounded read so an oversized upload is rejected with 413
+    #    before it can OOM the worker or be sent to ElevenLabs STT.
+    audio_bytes = await _read_audio_bounded(audio)
     transcript = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+
+    # 3a-pre. Deterministic prompt-injection gate. Free (no network) so it runs
+    # BEFORE the billed moderation call: a transcript carrying an injection
+    # marker never reaches moderation, the evaluator, or the DB. The pending turn
+    # is left untouched (transcript still NULL) so the candidate simply
+    # re-records — same UX as the moderation reject below. "violates our usage
+    # policy" wording is load-bearing: the frontend maps it to the re-record
+    # message in `Practice.tsx`.
+    if contains_injection(transcript):
+        logger.info(
+            "Turn rejected by injection gate for session=%s turn=%s",
+            session_id, current_turn.id,
+        )
+        await log_injection_detected(
+            source="sessions.transcript",
+            text=transcript,
+            user=user,
+            session_id=session_id,
+            db=db,
+            metadata={"turn_id": current_turn.id},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Your answer contains content that violates our usage policy. "
+                "Please re-record and try again."
+            ),
+        )
 
     # 3a. Moderation pre-check on the transcript. Running BEFORE we persist
     # the row or spawn any LLM call means flagged content never reaches
@@ -655,21 +1010,21 @@ async def submit_turn(
     # 7. Hardcoded 2-turn rule (CLAUDE.md): turn 2 is always final.
     is_final = current_turn.turn_number >= 2
 
-    # 8a. Persist transcript + filler counts BEFORE doing any LLM work.
-    #     For non-final turns the eval moves to a background task that
-    #     mutates this same row; persisting now means it always finds a
-    #     transcript to evaluate against and the row is durable even if
-    #     the bg task crashes.
+    # 8a. Persist transcript + filler counts BEFORE doing evaluator work.
+    #     Background tasks mutate this same row; persisting now means they
+    #     always find a transcript to evaluate against and the row is durable
+    #     even if a task crashes.
     current_turn.transcript_text       = transcript
     current_turn.cv_summary            = parsed_cv_summary
     current_turn.filler_word_count     = filler_count
     current_turn.filler_word_breakdown = filler_breakdown
     current_turn.word_count            = word_count
 
-    # 8b. Branch: non-final ⇒ scoring goes to background; final ⇒ inline.
+    # 8b. Branch: non-final returns the follow-up; final returns immediately
+    #     after spawning session finalization below.
     if not is_final:
-        # Only wait for follow-up + TTS (~1-3s). Gemma 4 (~30-40s) is
-        # spawned as a detached task that writes scores to the DB later.
+        # Only wait for follow-up + TTS. Evaluation is spawned as a detached
+        # task that writes scores to the DB later.
         # Voice was resolved at session-create time and persisted on
         # `session.voice_id`, so turn 2's audio always sounds like the
         # same interviewer who asked turn 1 even after a refresh.
@@ -724,164 +1079,34 @@ async def submit_turn(
             evaluation_pending=True,
         )
 
-    # 8c. Final turn: evaluation must complete inline because we need its
-    #     scores for the session aggregate. We also drain any pending
-    #     background eval (turn 1's) before reading prior_turns so the
-    #     aggregator sees the latest scores.
-    eval_out = await evaluate_turn(
-        current_turn.question_text, transcript, history,
-        cv_summary=parsed_cv_summary, category=category,
+    # 8c. Final turn: persist immediately, then complete scoring/aggregation
+    #     in the background so the user can enter Results without waiting on
+    #     the evaluator. The session remains `in_progress` until the task
+    #     writes metrics and flips it to `completed`. `updated_at` is stamped
+    #     here as the "final answer committed" clock the lazy reaper in
+    #     `get_session` measures its grace period against (the column has no
+    #     onupdate, so nothing else moves it between create and now).
+    session.updated_at = datetime.utcnow()
+    await db.commit()
+
+    _spawn_finalize(
+        session_id=session_id,
+        final_turn_id=current_turn.id,
+        category=category,
         experience_level=experience_level,
     )
-    _log_eval_scores(session_id, current_turn.id, category, eval_out)
-    _apply_eval_to_turn(current_turn, eval_out)
-
-    # Drain turn 1's background eval (if any). Idempotent — no-op when
-    # the bg task already completed and unregistered itself.
-    await _await_background_eval(session_id)
-
-    # Re-fetch prior turns AFTER awaiting the bg eval so we read its
-    # newly-committed scores. Refresh through the ORM rather than
-    # re-querying so identity-mapped rows already in this session pick
-    # up the bg task's writes.
-    for t in prior_turns:
-        await db.refresh(t)
-
-    # Inline fallback: if any prior turn still has no scores (e.g. the
-    # bg task failed and we logged the error, OR the worker restarted
-    # between turns and the task vanished), evaluate that turn here so
-    # the session can still finalize. Per "skip_and_log" policy we don't
-    # block finalization on a re-failure — we just log and move on.
-    for t in prior_turns:
-        if t.structure_score is not None:
-            continue
-        if t.transcript_text is None:
-            continue
-        logger.warning(
-            "Inline-eval fallback for session=%s turn=%s "
-            "(background eval missing or failed)",
-            session_id, t.id,
-        )
-        try:
-            inline_history = [
-                {"question": p.question_text, "transcript": p.transcript_text}
-                for p in prior_turns
-                if p.id != t.id and p.transcript_text is not None
-            ]
-            inline_cv = t.cv_summary if isinstance(t.cv_summary, dict) else None
-            inline_eval = await evaluate_turn(
-                t.question_text, t.transcript_text, inline_history,
-                cv_summary=inline_cv, category=category,
-                experience_level=experience_level,
-            )
-            _log_eval_scores(session_id, t.id, category, inline_eval)
-            _apply_eval_to_turn(t, inline_eval)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception(
-                "Inline-eval fallback also failed for session=%s turn=%s; "
-                "this turn will be excluded from the session aggregate.",
-                session_id, t.id,
-            )
-            await log_error(
-                exc,
-                user=user,
-                db=db,
-                metadata={
-                    "source": "inline_eval_fallback",
-                    "session_id": session_id,
-                    "turn_id": t.id,
-                },
-            )
-
-    # 9. Aggregate every turn that produced scores. Turns whose eval
-    #    failed contribute None per dim and naturally drop out via
-    #    `_per_dimension_averages`.
-    all_turn_scores: list[_TurnScores] = [
-        (
-            float(t.structure_score)       if t.structure_score       is not None else None,
-            float(t.problem_solving_score) if t.problem_solving_score is not None else None,
-            float(t.impact_score)          if t.impact_score          is not None else None,
-            float(t.initiative_score)      if t.initiative_score      is not None else None,
-            float(t.depth_score)           if t.depth_score           is not None else None,
-            float(t.delivery_score)        if t.delivery_score        is not None else None,
-            int(t.filler_word_count or 0),
-        )
-        for t in prior_turns
-    ] + [(
-        float(eval_out.structure),
-        float(eval_out.problem_solving),
-        float(eval_out.impact),
-        float(eval_out.initiative),
-        float(eval_out.depth),
-        float(eval_out.delivery) if eval_out.delivery is not None else None,
-        filler_count,
-    )]
-    per_dim_avgs = _per_dimension_averages(all_turn_scores)
-    total_fillers = sum(t[6] for t in all_turn_scores)
-    # Sum word counts across every turn (prior turns read their stored
-    # `word_count`; the current turn uses the value just computed) — the
-    # session-level denominator for the filler rate.
-    total_words = sum(int(t.word_count or 0) for t in prior_turns) + word_count
-    # Overall: average of every populated dimension score across every
-    # turn, scaled 0-10 → 0-100. Matches the prior behavior so existing
-    # rows in `interview_sessions.overall_score` remain comparable.
-    flat_scores = [
-        v for t in all_turn_scores for v in t[:6] if v is not None
-    ]
-    # If literally every dim across every turn is null (catastrophic eval
-    # failure on every turn), keep overall_score null rather than write
-    # 0.0 — the history chart already handles null by dropping the point.
-    overall: float | None
-    if flat_scores:
-        overall = min(99.99, round(sum(flat_scores) / len(flat_scores) * 10, 2))
-    else:
-        overall = None
-
-    turns_evaluated = sum(
-        1 for t in all_turn_scores if any(v is not None for v in t[:6])
-    )
-
-    session.status        = SessionStatus.completed
-    session.ended_at      = func.now()
-    session.overall_score = overall
-
-    await _upsert_session_metrics(
-        db,
-        session_id=session_id,
-        averages=per_dim_avgs,
-        total_filler_word_count=total_fillers,
-        total_word_count=total_words,
-        overall_score=overall,
-        turns_evaluated=turns_evaluated,
-    )
-
-    # Free-tier daily counter: bump on FINALIZATION (not session-create) so
-    # a user who abandons mid-session isn't charged a slot. `daily_increment`
-    # is part of the same transaction as the session-completion commit
-    # below — if the commit fails, the counter doesn't advance either.
-    if user.tier == UserTier.free:
-        await daily_increment(db, user)
-
-    await db.commit()
 
     return TurnSubmitOut(
         transcript=transcript,
-        scores=ScoresOut(
-            structure=eval_out.structure,
-            problem_solving=eval_out.problem_solving,
-            impact=eval_out.impact,
-            initiative=eval_out.initiative,
-            depth=eval_out.depth,
-            delivery=eval_out.delivery,
-        ),
-        feedback=eval_out.notes,
-        feedback_detail=eval_out.feedback_detail.model_dump(),
+        scores=None,
+        feedback=None,
+        feedback_detail=None,
         filler_word_count=filler_count,
         filler_word_breakdown=filler_breakdown,
         next_question=None,
         next_question_audio_url=None,
         is_final=True,
-        evaluation_pending=False,
+        evaluation_pending=True,
     )
 
 
@@ -971,6 +1196,61 @@ async def list_sessions(
     return rows
 
 
+def _maybe_reap_stuck_session(
+    session: InterviewSession,
+    turns: list[InterviewTurn],
+) -> None:
+    """Lazily recover a session left `in_progress` by a dead finalizer.
+
+    The final-turn POST persists the transcript and hands scoring to a
+    detached `_run_background_finalize` task. If the worker that spawned it
+    dies before it commits (deploy, crash, OOM) — or the task itself raised
+    and left the session un-finalized — the row stays `in_progress` forever:
+    there is no cron sweeper. Recover opportunistically on read.
+
+    Only fires once the final answer is durably persisted and the grace
+    window has elapsed, and re-uses `_spawn_finalize`'s per-session dedup so
+    it can never run alongside a finalizer this worker is already driving.
+    `_run_background_finalize` is itself idempotent — it no-ops on a session
+    that's since completed and only evaluates still-unscored turns — so a
+    spurious re-spawn is harmless.
+    """
+    if session.status != SessionStatus.in_progress:
+        return
+    # Final answer committed? (2-turn rule: turn 2 carries the last answer.)
+    final_turn = max(turns, key=lambda t: t.turn_number, default=None)
+    if (
+        final_turn is None
+        or final_turn.turn_number < 2
+        or final_turn.transcript_text is None
+    ):
+        return
+    # Still within the window where a normal finalizer is expected to finish.
+    # `updated_at` comes back tz-aware from Postgres (timestamptz); normalize to
+    # naive UTC so it subtracts cleanly against naive `utcnow()`.
+    last_activity = session.updated_at
+    if last_activity.tzinfo is not None:
+        last_activity = last_activity.astimezone(timezone.utc).replace(tzinfo=None)
+    if datetime.utcnow() - last_activity < _FINALIZE_REAP_AFTER:
+        return
+    if session.id in _finalizing_sessions:
+        return
+
+    logger.warning(
+        "Lazy-reaping stuck session=%s (in_progress, last activity %s); "
+        "re-spawning finalization.",
+        session.id,
+        session.updated_at,
+    )
+    brief = _parse_company_summary(session.company_summary)
+    _spawn_finalize(
+        session_id=session.id,
+        final_turn_id=final_turn.id,
+        category=brief.category if brief else None,
+        experience_level=session.experience_level,
+    )
+
+
 @router.get("/{session_id}", response_model=SessionDetailOut)
 async def get_session(
     session_id: UUID,
@@ -991,7 +1271,13 @@ async def get_session(
         .where(InterviewTurn.session_id == session_id)
         .order_by(InterviewTurn.turn_number)
     )
-    turns = turns_result.scalars().all()
+    turns = list(turns_result.scalars().all())
+
+    # Self-heal a session whose background finalizer never completed. This
+    # read returns the still-`in_progress` payload as usual; the re-spawned
+    # task flips it to `completed` out of band, and the client's poll picks
+    # up the scores on a subsequent fetch.
+    _maybe_reap_stuck_session(session, turns)
 
     metrics_result = await db.execute(
         select(SessionMetrics).where(SessionMetrics.session_id == session_id)

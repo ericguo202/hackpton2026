@@ -20,7 +20,11 @@ from app.services._field_prompts import FieldCategory
 
 
 class SessionCreateIn(BaseModel):
-    company: str = Field(min_length=1, max_length=200)
+    # 60 mirrors the client-side cap in Home.tsx — long enough for real names
+    # ("New Jersey House of Representatives Internship Program"), short enough to
+    # block a direct-API paste of a large blob that would burn research/LLM
+    # tokens. A client maxLength alone is trivially bypassed, so enforce it here.
+    company: str = Field(min_length=1, max_length=60)
     job_title: str = Field(min_length=1, max_length=200)
     # Optional ElevenLabs voice ID picked from the start-form picker. The
     # endpoint validates this against `voice_pool.list_voices()` and
@@ -104,12 +108,20 @@ class DeliveryFeedbackOut(BaseModel):
     expression: str | None = None
 
 
+class NextTakeOut(BaseModel):
+    focus: str
+    approach: str
+
+
 class FeedbackDetailOut(BaseModel):
     main_takeaway: str
     positive_moments: list[PositiveMomentOut] = Field(default_factory=list)
     improvement_moments: list[ImprovementMomentOut] = Field(default_factory=list)
     quick_wins: list[str] = Field(default_factory=list)
     delivery_feedback: DeliveryFeedbackOut | None = None
+    # Forward coaching from the separate coaching call; null on legacy turns or
+    # when the coaching call failed (it's best-effort).
+    next_take: NextTakeOut | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -124,22 +136,17 @@ class FeedbackDetailOut(BaseModel):
 class TurnSubmitOut(BaseModel):
     """Response shape for `POST /sessions/{id}/turns`.
 
-    On a non-final turn, Gemma 4 evaluation runs in the background so the
-    candidate can move to the next question without waiting ~30-40s for
-    scoring. In that case `scores` and `feedback` come back as `null` and
-    `evaluation_pending` is `true`; the frontend skips rendering them and
-    re-fetches the full session via `GET /sessions/{id}` at finalization
-    once the background task has finished writing scores to the DB.
-
-    On the final turn, evaluation is awaited inline (we need the scores
-    for aggregation), so `scores`, `feedback` and `evaluation_pending=false`
-    are populated as before.
+    Evaluation runs in the background for every turn. Non-final turns return
+    the next question immediately after STT + follow-up/TTS. Final turns return
+    immediately after transcript persistence, then a background finalizer writes
+    scores, aggregates, and flips the session to completed. Clients should poll
+    `GET /sessions/{id}` while `evaluation_pending` is true.
     """
 
     transcript: str
     # Scores/feedback are only present once the evaluator has actually run.
-    # Nullable so the turn-1 response can return immediately after STT +
-    # follow-up generation without waiting on Gemma 4.
+    # Nullable so turn responses can return immediately while background
+    # evaluation writes the canonical scores.
     scores: ScoresOut | None = None
     feedback: str | None = None
     feedback_detail: FeedbackDetailOut | None = None

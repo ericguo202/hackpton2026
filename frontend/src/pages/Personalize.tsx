@@ -31,6 +31,7 @@ import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
+import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPolicy';
 import { joinSpoken } from '../lib/joinSpoken';
 import type { ExperienceLevel, MeResponse } from '../types/user';
 
@@ -170,6 +171,15 @@ function PersonalizeForm({ me, refetch }: FormProps) {
 
     if (!email) {
       setError("Couldn't read your email from Clerk. Try reloading.");
+      return;
+    }
+    // Block obvious prompt-injection in the free-text fields before saving.
+    // PDF résumé text (no client copy) is checked authoritatively server-side.
+    if (
+      violatesContentPolicy(shortBio) ||
+      (resumeMode === 'text' && violatesContentPolicy(resumeText))
+    ) {
+      setError(CONTENT_POLICY_MESSAGE);
       return;
     }
 

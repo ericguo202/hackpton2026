@@ -6,8 +6,10 @@
  *   - Save   — clickable; saves this session as the baseline attempt.
  *   - Saved  — disabled; already saved (or just saved this click).
  *   - Full   — disabled; the user is at the 5/5 cap.
- * Also disables (with a quiet reason) when the opening turn wasn't scored —
- * the server enforces the same gate, so this just avoids a pointless 422.
+ * Also disables (with a quiet reason) when the opening turn wasn't scored OR
+ * the session hasn't finished finalizing — the server requires a *completed*
+ * session to save, so this mirrors that gate client-side and avoids a pointless
+ * 422 (whose error copy would otherwise render under a still-clickable button).
  *
  * Self-contained: pulls the saved-questions list via `useSavedQuestions` to
  * know the current count (cap) and to fire the save + refetch. Semantic
@@ -28,12 +30,17 @@ type Props = {
   alreadySaved: boolean;
   /** Opening turn was evaluated (turn 1 has non-null scores). */
   evaluated: boolean;
+  /** Session has finished finalizing (status === 'completed'). The save
+   *  endpoint rejects non-completed sessions, so the button stays disabled
+   *  while turn 2 is still scoring even though turn 1 already has scores. */
+  sessionCompleted: boolean;
 };
 
 export default function SaveQuestionButton({
   sessionId,
   alreadySaved,
   evaluated,
+  sessionCompleted,
 }: Props) {
   const { saved, save } = useSavedQuestions();
   const [justSaved, setJustSaved] = useState(false);
@@ -42,7 +49,7 @@ export default function SaveQuestionButton({
 
   const isSaved = alreadySaved || justSaved;
   const atCap = !isSaved && (saved?.length ?? 0) >= SAVED_QUESTION_CAP;
-  const disabled = isSaved || atCap || !evaluated || busy;
+  const disabled = isSaved || atCap || !evaluated || !sessionCompleted || busy;
 
   async function handleClick() {
     setError(null);
@@ -72,11 +79,13 @@ export default function SaveQuestionButton({
 
   const title = !evaluated
     ? 'Available once the opening answer is scored'
-    : atCap
-      ? 'Delete one in History to save more'
-      : isSaved
-        ? 'Saved to re-practice from History'
-        : 'Save this opening question to re-practice later';
+    : !sessionCompleted
+      ? 'Available once scoring finishes'
+      : atCap
+        ? 'Delete one in History to save more'
+        : isSaved
+          ? 'Saved to re-practice from History'
+          : 'Save this opening question to re-practice later';
 
   return (
     <div className="flex flex-col items-start gap-1">
