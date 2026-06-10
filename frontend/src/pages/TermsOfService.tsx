@@ -125,8 +125,9 @@ export default function TermsOfService() {
           </p>
           <p>
             We may update these Terms from time to time as described in
-            &ldquo;Changes to these Terms&rdquo; below. Your continued use of the
-            Service after an update means you accept the updated Terms.
+            &ldquo;Changes to these Terms&rdquo; below. Where a change is
+            material, we will ask you to review and accept the updated Terms
+            before you continue using the Service.
           </p>
         </Section>
 
@@ -430,9 +431,10 @@ export default function TermsOfService() {
           <p>
             We may update these Terms from time to time. We will revise the
             &ldquo;Last updated&rdquo; date above and, where a change is material,
-            provide a more prominent notice and — where we have an acceptance
-            mechanism in place — ask you to review and accept the updated Terms
-            before continuing to use the Service.
+            provide a more prominent notice and ask you to review and accept the
+            updated Terms before continuing to use the Service. If you do not
+            accept the updated Terms, you may not continue using the Service, but
+            you can still export your data or delete your account.
           </p>
         </Section>
 

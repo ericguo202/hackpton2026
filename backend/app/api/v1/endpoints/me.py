@@ -33,11 +33,19 @@ from app.db.models.session_metrics import SessionMetrics
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.session import DimensionAverages, FillerWordStat, MeStatsOut
-from app.schemas.user import DeliveryAnalyticsConsentIn, UserOut
+from app.schemas.user import (
+    DeliveryAnalyticsConsentIn,
+    PolicyAcceptanceIn,
+    UserOut,
+)
 from app.services.daily_limit import check_and_reset as daily_check_and_reset
 from app.services.delivery_consent import (
     DELIVERY_ANALYTICS_NOTICE_VERSION,
     purge_delivery_analytics_for_user,
+)
+from app.services.policy_versions import (
+    CURRENT_PRIVACY_VERSION,
+    CURRENT_TERMS_VERSION,
 )
 from app.services.filler_words import filler_rate_pct
 
@@ -124,6 +132,44 @@ async def revoke_delivery_analytics_consent(
     return user
 
 
+@router.put("/policy-acceptance", response_model=UserOut)
+async def accept_policies(
+    body: PolicyAcceptanceIn,
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Record affirmative acceptance of the current Terms of Service + Privacy Policy.
+
+    The per-version timestamp written here is the clickwrap record ("who accepted
+    which version when") that makes the posted terms enforceable. Bumping a
+    CURRENT_* version invalidates the old record and the frontend gate re-prompts.
+    """
+    if not body.accepted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="You must accept the Terms of Service and Privacy Policy to continue.",
+        )
+    if (
+        body.terms_version != CURRENT_TERMS_VERSION
+        or body.privacy_version != CURRENT_PRIVACY_VERSION
+    ):
+        # A stale tab tried to record an old version. Reject so the record always
+        # reflects the version actually presented to the user.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Policy version is out of date. Reload and review the latest terms.",
+        )
+
+    now = _utcnow()
+    user.terms_accepted_version = CURRENT_TERMS_VERSION
+    user.terms_accepted_at = now
+    user.privacy_accepted_version = CURRENT_PRIVACY_VERSION
+    user.privacy_accepted_at = now
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
 def _columns(obj, fields: tuple[str, ...]) -> dict:
     """Pull a fixed allowlist of column values off an ORM row into a dict.
 
@@ -137,7 +183,10 @@ _EXPORT_USER_FIELDS = (
     "id", "email", "name", "resume_text", "industry", "target_role",
     "experience_level", "short_bio", "timezone", "tier",
     "delivery_analytics_consent_at", "delivery_analytics_consent_version",
-    "delivery_analytics_revoked_at", "created_at", "updated_at",
+    "delivery_analytics_revoked_at",
+    "terms_accepted_version", "terms_accepted_at",
+    "privacy_accepted_version", "privacy_accepted_at",
+    "created_at", "updated_at",
 )
 _EXPORT_SESSION_FIELDS = (
     "id", "company", "job_title", "company_summary", "status", "overall_score",

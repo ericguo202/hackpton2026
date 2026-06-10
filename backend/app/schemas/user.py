@@ -32,10 +32,24 @@ class UserOut(BaseModel):
     delivery_analytics_consent_at: datetime | None
     delivery_analytics_consent_version: int | None
     delivery_analytics_revoked_at: datetime | None
+    # Clickwrap acceptance record (version + timestamp per policy). NULL until the
+    # user accepts the current version; the frontend gate re-prompts on a mismatch.
+    terms_accepted_version: int | None
+    terms_accepted_at: datetime | None
+    privacy_accepted_version: int | None
+    privacy_accepted_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
 
 class DeliveryAnalyticsConsentIn(BaseModel):
     notice_version: int
+    accepted: bool
+
+
+class PolicyAcceptanceIn(BaseModel):
+    """Affirmative acceptance of the current Terms of Service + Privacy Policy."""
+
+    terms_version: int
+    privacy_version: int
     accepted: bool

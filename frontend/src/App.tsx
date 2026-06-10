@@ -5,6 +5,7 @@ import BetaFeedbackGate from './components/BetaFeedbackGate';
 import BetaFeedbackLauncher from './components/BetaFeedbackLauncher';
 import EmailConflictNotice from './components/EmailConflictNotice';
 import OnboardingForm from './components/OnboardingForm';
+import PolicyAcceptanceGate from './components/PolicyAcceptanceGate';
 import {
   RedirectIfOnboarded,
   RequireAuth,
@@ -97,6 +98,7 @@ function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <PolicyAcceptanceGate />
       <BetaFeedbackGate />
       <BetaFeedbackLauncher />
     </>

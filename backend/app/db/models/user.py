@@ -106,6 +106,25 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Clickwrap acceptance record — the per-version, timestamped proof that the
+    # user affirmatively agreed to the current Terms of Service and Privacy
+    # Policy. NULL means "has not accepted the current version", which the forced
+    # acceptance gate uses to (re-)prompt. The CURRENT_* constants live in
+    # `app/services/policy_versions.py` (mirrored in the frontend); bump a
+    # constant when a policy materially changes to force renewed acceptance.
+    terms_accepted_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    privacy_accepted_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    privacy_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )

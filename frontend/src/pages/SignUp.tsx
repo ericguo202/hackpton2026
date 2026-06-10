@@ -17,9 +17,11 @@
 import { useSignUp } from '@clerk/react/legacy';
 import { Eye, EyeOff } from 'lucide-react';
 import { Suspense, lazy, useState, type SubmitEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { useApi } from '../hooks/useApi';
+import { recordPolicyAcceptance } from '../lib/policyAcceptance';
 
 const Dithering = lazy(() =>
   import('@paper-design/shaders-react').then((mod) => ({ default: mod.Dithering })),
@@ -53,6 +55,7 @@ const GoogleIcon = () => (
 
 export default function SignUp() {
   const { isLoaded, signUp, setActive } = useSignUp();
+  const { apiFetch } = useApi();
   const navigate = useNavigate();
   const onBack = () => navigate('/');
   const onSignInClick = () => navigate('/sign-in');
@@ -63,6 +66,12 @@ export default function SignUp() {
   const [error, setError] = useState<string | null>(null);
   const [pendingVerification, setPendingVerification] = useState(false);
   const [code, setCode] = useState('');
+  // Required clickwrap: no account is created (email or Google) until the user
+  // affirmatively agrees to the Terms + Privacy Policy. The authoritative record
+  // is written server-side after auth — here it gates the buttons, and the email
+  // path additionally records on completion (see handleVerify) so that common
+  // path skips the post-auth acceptance modal.
+  const [agreed, setAgreed] = useState(false);
 
   const prefersReducedMotion =
     typeof window !== 'undefined' &&
@@ -136,6 +145,15 @@ export default function SignUp() {
       const result = await signUp.attemptEmailAddressVerification({ code });
       if (result.status === 'complete' && result.createdSessionId) {
         await setActive({ session: result.createdSessionId });
+        // Record the acceptance the user gave via the checkbox now that a
+        // session exists, so this path doesn't see the forced gate immediately
+        // after landing. Best-effort: if it fails, the post-auth gate backstops
+        // it, so never block the redirect on it.
+        try {
+          await recordPolicyAcceptance(apiFetch);
+        } catch {
+          // Swallow — the forced acceptance gate will re-collect it.
+        }
         navigate('/', { replace: true });
       } else {
         setError('Verification incomplete. Check the code and try again.');
@@ -295,6 +313,36 @@ export default function SignUp() {
 
                 <div id="clerk-captcha" />
 
+                <label className="flex items-start gap-2.5 cursor-pointer text-sm text-text-muted leading-[1.5]">
+                  <input
+                    type="checkbox"
+                    checked={agreed}
+                    onChange={(e) => setAgreed(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded-xs border border-border-strong bg-surface-sunken accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  />
+                  <span>
+                    I have read and agree to the{' '}
+                    <Link
+                      to="/legal/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-text underline underline-offset-4 decoration-border-strong hover:decoration-text transition-colors"
+                    >
+                      Terms of Service
+                    </Link>{' '}
+                    and{' '}
+                    <Link
+                      to="/legal/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-text underline underline-offset-4 decoration-border-strong hover:decoration-text transition-colors"
+                    >
+                      Privacy Policy
+                    </Link>
+                    .
+                  </span>
+                </label>
+
                 {displayError && (
                   <p
                     role="alert"
@@ -307,7 +355,7 @@ export default function SignUp() {
                 <FlowHoverButton
                   type="submit"
                   size="lg"
-                  disabled={submitting || !isLoaded}
+                  disabled={submitting || !isLoaded || !agreed}
                   className="w-full py-4"
                 >
                   {submitting ? 'Creating account…' : 'Create account'}
@@ -326,7 +374,7 @@ export default function SignUp() {
                 size="lg"
                 type="button"
                 onClick={handleGoogle}
-                disabled={!isLoaded}
+                disabled={!isLoaded || !agreed}
                 icon={<GoogleIcon />}
                 className="w-full py-4"
               >

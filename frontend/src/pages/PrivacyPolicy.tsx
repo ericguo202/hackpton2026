@@ -488,7 +488,8 @@ export default function PrivacyPolicy() {
           <p>
             We may update this policy from time to time. We will revise the
             &ldquo;Last updated&rdquo; date above and, where a change is material,
-            provide a more prominent notice.
+            provide a more prominent notice and ask you to review and accept the
+            updated policy before continuing to use the Service.
           </p>
         </Section>
 

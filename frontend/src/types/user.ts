@@ -37,6 +37,13 @@ export type MeResponse = {
   delivery_analytics_consent_at: string | null;
   delivery_analytics_consent_version: number | null;
   delivery_analytics_revoked_at: string | null;
+  // Clickwrap acceptance record (version + timestamp per policy). NULL until the
+  // user accepts the current version; the forced acceptance gate re-prompts when
+  // a stored version is behind the current CURRENT_*_VERSION constant.
+  terms_accepted_version: number | null;
+  terms_accepted_at: string | null;
+  privacy_accepted_version: number | null;
+  privacy_accepted_at: string | null;
   created_at: string;
   updated_at: string;
 };
