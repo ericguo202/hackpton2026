@@ -32,7 +32,10 @@ from app.db.session import get_db
 from app.schemas.session import DimensionAverages, FillerWordStat, MeStatsOut
 from app.schemas.user import DeliveryAnalyticsConsentIn, UserOut
 from app.services.daily_limit import check_and_reset as daily_check_and_reset
-from app.services.delivery_consent import DELIVERY_ANALYTICS_NOTICE_VERSION
+from app.services.delivery_consent import (
+    DELIVERY_ANALYTICS_NOTICE_VERSION,
+    purge_delivery_analytics_for_user,
+)
 from app.services.filler_words import filler_rate_pct
 
 router = APIRouter()
@@ -40,88 +43,6 @@ router = APIRouter()
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _strip_delivery_feedback(feedback_detail: dict | None) -> dict | None:
-    """Remove server-derived delivery coaching from a structured feedback blob."""
-    if not isinstance(feedback_detail, dict):
-        return feedback_detail
-
-    next_detail = dict(feedback_detail)
-    next_detail.pop("delivery_feedback", None)
-
-    quick_wins = next_detail.get("quick_wins")
-    if isinstance(quick_wins, list):
-        next_detail["quick_wins"] = [
-            item for item in quick_wins
-            if not (
-                isinstance(item, str)
-                and item.strip().lower().startswith("delivery:")
-            )
-        ]
-
-    return next_detail
-
-
-def _recompute_session_without_delivery(
-    session: InterviewSession,
-    metrics: SessionMetrics | None,
-    turns: list[InterviewTurn],
-) -> None:
-    """Refresh cached aggregates after deleting facial-delivery artifacts."""
-    flat_scores: list[float] = []
-    for turn in turns:
-        if turn.transcript_text is None:
-            continue
-        for value in (
-            turn.structure_score,
-            turn.problem_solving_score,
-            turn.impact_score,
-            turn.initiative_score,
-            turn.depth_score,
-        ):
-            if value is not None:
-                flat_scores.append(float(value))
-
-    overall = (
-        min(99.99, round(sum(flat_scores) / len(flat_scores) * 10, 2))
-        if flat_scores
-        else None
-    )
-    session.overall_score = overall
-    if metrics is not None:
-        metrics.avg_delivery = None
-        metrics.overall_score = overall
-
-
-async def _purge_delivery_analytics(db: AsyncSession, user: User) -> None:
-    """Delete stored webcam-derived summaries and derived delivery outputs."""
-    rows = await db.execute(
-        select(InterviewSession, InterviewTurn, SessionMetrics)
-        .join(InterviewTurn, InterviewTurn.session_id == InterviewSession.id)
-        .outerjoin(
-            SessionMetrics,
-            SessionMetrics.session_id == InterviewSession.id,
-        )
-        .where(InterviewSession.user_id == user.id)
-        .order_by(InterviewSession.id, InterviewTurn.turn_number)
-    )
-
-    turns_by_session: dict[InterviewSession, list[InterviewTurn]] = {}
-    metrics_by_session: dict[InterviewSession, SessionMetrics | None] = {}
-    for session, turn, metrics in rows.all():
-        turns_by_session.setdefault(session, []).append(turn)
-        metrics_by_session[session] = metrics
-        turn.cv_summary = None
-        turn.delivery_score = None
-        turn.feedback_detail = _strip_delivery_feedback(turn.feedback_detail)
-
-    for session, turns in turns_by_session.items():
-        _recompute_session_without_delivery(
-            session,
-            metrics_by_session.get(session),
-            turns,
-        )
 
 
 @router.get("", response_model=UserOut)
@@ -194,7 +115,7 @@ async def revoke_delivery_analytics_consent(
 ) -> User:
     """Revoke future collection and delete stored delivery analytics history."""
     user.delivery_analytics_revoked_at = _utcnow()
-    await _purge_delivery_analytics(db, user)
+    await purge_delivery_analytics_for_user(db, user.id)
     await db.commit()
     await db.refresh(user)
     return user

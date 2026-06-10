@@ -5,8 +5,8 @@ interview_turns.cv_summary. Calibration consent is browser-local and does not
 prove consent for that server-side artifact, so users now carry a versioned
 consent timestamp plus a revocation timestamp.
 
-Revision ID: 0012_delivery_consent
-Revises: 0011_word_counts
+Revision ID: 0013_delivery_consent
+Revises: 0012_session_feedback
 Create Date: 2026-06-09
 """
 
@@ -16,8 +16,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0012_delivery_consent"
-down_revision: Union[str, None] = "0011_word_counts"
+revision: str = "0013_delivery_consent"
+down_revision: Union[str, None] = "0012_session_feedback"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

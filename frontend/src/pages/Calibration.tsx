@@ -1061,9 +1061,15 @@ function PracticeDeliveryConsentPanel({
           visibility, eye-contact proxy, posture, expression, and streak counts.
         </li>
         <li>
-          <span className="font-medium text-text">Retention.</span> Completed
-          interview history is retained for the service, but you can revoke
-          this consent and delete stored delivery analytics from prior turns.
+          <span className="font-medium text-text">Retention and deletion.</span>{' '}
+          We keep the numeric delivery summary, delivery score, and
+          delivery-specific coaching only as long as needed for your coaching,
+          and never longer than 3 years after your last practice session. After
+          that — or sooner if you revoke this consent or delete your account —
+          they are permanently deleted and the affected session scores are
+          recalculated without them. Your other interview records, such as the
+          answer transcript and content scores, follow our general retention
+          policy and may remain.
         </li>
       </ul>
 

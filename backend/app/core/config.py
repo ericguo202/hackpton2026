@@ -114,6 +114,16 @@ class Settings(BaseSettings):
     ELEVENLABS_API_KEY: str | None = None
     ELEVENLABS_VOICE_ID: str | None = None
 
+    # Background enforcement of the delivery-analytics retention ceiling. When
+    # enabled, the app spawns a daily loop (guarded by a Postgres advisory lock
+    # so only one replica runs it under blue/green) that purges stored delivery
+    # summaries for users whose last session predates the retention window. Set
+    # to 0/false in dev or tests where the loop is unwanted.
+    DELIVERY_RETENTION_PURGE_ENABLED: bool = True
+    # Seconds between purge sweeps. Default daily; the sweep also runs once at
+    # startup, so frequent redeploys keep it current regardless.
+    DELIVERY_RETENTION_PURGE_INTERVAL_SECONDS: int = 24 * 60 * 60
+
     @property
     def DATABASE_URL(self) -> str:
         """SQLAlchemy async URL composed from the POSTGRES_* parts above."""

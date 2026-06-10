@@ -282,6 +282,8 @@ function DeliveryAnalyticsConsentNotice({
             Raw video, images, and face landmarks are not uploaded. We store
             only a numeric delivery summary with each answer for interview
             coaching; it is not used to identify you or make hiring decisions.
+            We keep these summaries no longer than 3 years after your last
+            session, and delete them right away if you revoke consent.
           </p>
         </div>
       </div>
