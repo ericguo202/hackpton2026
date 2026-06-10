@@ -455,11 +455,14 @@ export default function PrivacyPolicy() {
             Because minors generally cannot enter into binding contracts, if you
             are <strong>under 18</strong> you may use the Service only with the
             involvement of a parent or legal guardian who agrees to be bound by
-            our Terms and this Privacy Policy on your behalf.{' '}
-            <span className="text-text-muted">
-              [A Terms of Service is forthcoming; the agreement mechanism will be
-              finalized there.]
-            </span>
+            our{' '}
+            <Link
+              to="/legal/terms"
+              className="underline underline-offset-4 transition-colors hover:text-text"
+            >
+              Terms of Service
+            </Link>{' '}
+            and this Privacy Policy on your behalf.
           </p>
           <p>
             We do not knowingly collect personal information from anyone under the

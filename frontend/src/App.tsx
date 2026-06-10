@@ -13,6 +13,7 @@ import {
 import { useMe } from './hooks/useMe';
 import BiometricDataRetentionPolicy from './pages/BiometricDataRetentionPolicy';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
 import Hero from './pages/Hero';
 import History from './pages/History';
 import Home from './pages/Home';
@@ -73,6 +74,7 @@ function App() {
         element={<BiometricDataRetentionPolicy />}
       />
       <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+      <Route path="/legal/terms" element={<TermsOfService />} />
 
       <Route element={<RedirectIfOnboarded />}>
         <Route path="/sign-in" element={<SignIn />} />
