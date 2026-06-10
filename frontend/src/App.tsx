@@ -1,6 +1,8 @@
 import { Show } from '@clerk/react';
 import { Navigate, Route, Routes } from 'react-router';
 
+import BetaFeedbackGate from './components/BetaFeedbackGate';
+import BetaFeedbackLauncher from './components/BetaFeedbackLauncher';
 import EmailConflictNotice from './components/EmailConflictNotice';
 import OnboardingForm from './components/OnboardingForm';
 import {
@@ -60,7 +62,8 @@ function SignedInHome() {
 
 function App() {
   return (
-    <Routes>
+    <>
+      <Routes>
       <Route path="/" element={<HomeRoute />} />
       <Route path="/sso-callback" element={<SsoCallback />} />
 
@@ -84,7 +87,10 @@ function App() {
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+      <BetaFeedbackGate />
+      <BetaFeedbackLauncher />
+    </>
   );
 }
 
