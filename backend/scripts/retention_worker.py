@@ -2,8 +2,9 @@
 retention ceiling.
 
 Runs as its own container (the `retention_purge` service in
-docker-compose.prod.yml) so the consent's "deleted within 3 years of your last
-session" promise holds even when the API replicas are down or mid-redeploy. It
+docker-compose.prod.yml) so the consent's "deleted within 12 months of your
+last session" promise holds even when the API replicas are down or mid-redeploy.
+It
 reuses the exact advisory-lock-guarded daily loop the in-API scheduler uses, so
 the two coexist safely: the purge is idempotent and a Postgres advisory lock
 guarantees only one process sweeps at a time.

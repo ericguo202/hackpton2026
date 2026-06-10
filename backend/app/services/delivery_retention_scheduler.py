@@ -1,10 +1,11 @@
 """Daily background enforcement of the delivery-analytics retention ceiling.
 
 The delivery-analytics consent promises stored webcam summaries are deleted no
-later than `DELIVERY_ANALYTICS_RETENTION_YEARS` after a user's last session. A
+later than `DELIVERY_ANALYTICS_RETENTION_MONTHS` after a user's last session. A
 stated retention term that isn't enforced is worse than none, so this module
 runs `purge_expired_delivery_analytics` on a loop instead of relying on manual
-cleanup.
+cleanup. The same daily sweep also scrubs stale `incidents` payloads
+(`scrub_old_incident_content`), since those can hold user-supplied text.
 
 Topology note: production runs two API replicas (blue/green) behind Caddy, so
 the loop lives in *both* — a Postgres transaction-level advisory lock
@@ -22,6 +23,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.services.delivery_consent import purge_expired_delivery_analytics
+from app.services.incidents import scrub_old_incident_content
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,15 @@ async def _run_sweep_once() -> None:
                     "Delivery-analytics retention purge: cleared analytics "
                     "for %d user(s) past the retention window.",
                     purged,
+                )
+            # Same sweep also scrubs stale incident payloads (user-supplied
+            # text retained no longer than the configured window).
+            scrubbed = await scrub_old_incident_content(db)
+            if scrubbed:
+                logger.info(
+                    "Incident content scrub: cleared payloads on %d old "
+                    "incident row(s).",
+                    scrubbed,
                 )
 
 

@@ -11,6 +11,7 @@ import {
   RequireOnboarded,
 } from './components/route-guards';
 import { useMe } from './hooks/useMe';
+import BiometricDataRetentionPolicy from './pages/BiometricDataRetentionPolicy';
 import Hero from './pages/Hero';
 import History from './pages/History';
 import Home from './pages/Home';
@@ -66,6 +67,10 @@ function App() {
       <Routes>
       <Route path="/" element={<HomeRoute />} />
       <Route path="/sso-callback" element={<SsoCallback />} />
+      <Route
+        path="/legal/biometric-data-retention"
+        element={<BiometricDataRetentionPolicy />}
+      />
 
       <Route element={<RedirectIfOnboarded />}>
         <Route path="/sign-in" element={<SignIn />} />

@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     # production can never run with the content-policy layer silently disabled.
     ensure_moderation_configured()
     # Enforce the delivery-analytics retention ceiling on a daily cadence so the
-    # consent's "deleted within 3 years of your last session" promise is real.
+    # consent's "deleted within 12 months of your last session" promise is real.
     retention_task = start_retention_scheduler()
     yield
     # Shutdown

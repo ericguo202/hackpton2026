@@ -124,6 +124,12 @@ class Settings(BaseSettings):
     # startup, so frequent redeploys keep it current regardless.
     DELIVERY_RETENTION_PURGE_INTERVAL_SECONDS: int = 24 * 60 * 60
 
+    # Days after which an incident's free-text/JSON payload (sent_content,
+    # returned_content, error) is scrubbed to NULL, keeping only the event
+    # skeleton for audit. These fields can hold user-supplied text, so they are
+    # not retained indefinitely. Scrubbed by the same daily retention sweep.
+    INCIDENT_CONTENT_RETENTION_DAYS: int = 90
+
     @property
     def DATABASE_URL(self) -> str:
         """SQLAlchemy async URL composed from the POSTGRES_* parts above."""

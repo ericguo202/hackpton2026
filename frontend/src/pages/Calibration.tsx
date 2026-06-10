@@ -16,19 +16,11 @@ import {
   RefreshCw,
   ScanFace,
   ShieldCheck,
-  Trash2,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
-import { useApi } from '../hooks/useApi';
-import { useMe } from '../hooks/useMe';
-import { ApiError, extractApiErrorDetail } from '../lib/api';
-import {
-  DELIVERY_ANALYTICS_NOTICE_VERSION,
-  hasActiveDeliveryAnalyticsConsent,
-} from '../lib/deliveryAnalyticsConsent';
 import {
   clearFaceCalibration,
   clearFaceCalibrationConsent,
@@ -49,7 +41,6 @@ import {
   type Point,
 } from '../lib/faceHeuristics';
 import { getFaceLandmarker } from '../lib/faceLandmarker';
-import type { MeResponse } from '../types/user';
 
 const CAPTURE_DURATION_MS = 6000;
 const FRAME_MIN_MS = 1000 / 12;
@@ -182,8 +173,6 @@ function SignedInNav() {
 export default function Calibration() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { apiFetch } = useApi();
-  const { me, refetch: refetchMe } = useMe();
   const fromOnboarding = searchParams.get('from') === 'onboarding';
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -201,9 +190,6 @@ export default function Calibration() {
     readFaceCalibrationConsent,
   );
   const [consentChecked, setConsentChecked] = useState(false);
-  const [deliveryConsentChecked, setDeliveryConsentChecked] = useState(false);
-  const [deliveryConsentBusy, setDeliveryConsentBusy] = useState(false);
-  const [deliveryConsentError, setDeliveryConsentError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [liveRead, setLiveRead] = useState<LiveRead>(EMPTY_LIVE_READ);
@@ -244,50 +230,6 @@ export default function Calibration() {
     setConsent(nextConsent);
     setConsentChecked(false);
     setError(null);
-  }
-
-  async function acceptDeliveryAnalyticsConsent() {
-    setDeliveryConsentBusy(true);
-    setDeliveryConsentError(null);
-    try {
-      await apiFetch<MeResponse>('/api/v1/me/delivery-analytics-consent', {
-        method: 'PUT',
-        body: JSON.stringify({
-          notice_version: DELIVERY_ANALYTICS_NOTICE_VERSION,
-          accepted: true,
-        }),
-      });
-      setDeliveryConsentChecked(false);
-      void refetchMe();
-    } catch (err) {
-      setDeliveryConsentError(
-        err instanceof ApiError
-          ? extractApiErrorDetail(err)
-          : 'Could not save delivery analytics consent.',
-      );
-    } finally {
-      setDeliveryConsentBusy(false);
-    }
-  }
-
-  async function revokeDeliveryAnalyticsConsent() {
-    setDeliveryConsentBusy(true);
-    setDeliveryConsentError(null);
-    try {
-      await apiFetch<MeResponse>('/api/v1/me/delivery-analytics-consent', {
-        method: 'DELETE',
-      });
-      setDeliveryConsentChecked(false);
-      void refetchMe();
-    } catch (err) {
-      setDeliveryConsentError(
-        err instanceof ApiError
-          ? extractApiErrorDetail(err)
-          : 'Could not delete delivery analytics.',
-      );
-    } finally {
-      setDeliveryConsentBusy(false);
-    }
   }
 
   async function enableCamera() {
@@ -504,11 +446,6 @@ export default function Calibration() {
   const hasCaptureAverage = captureAverages.sampleCount > 0;
   const savedLabel = profile ? formatCalibrationDate(profile.calibratedAt) : null;
   const consentLabel = consent ? formatConsentDate(consent.acceptedAt) : null;
-  const deliveryConsentActive = hasActiveDeliveryAnalyticsConsent(me);
-  const deliveryConsentLabel =
-    deliveryConsentActive && me?.delivery_analytics_consent_at
-      ? formatConsentDate(me.delivery_analytics_consent_at)
-      : null;
 
   return (
     <div className="min-h-screen bg-surface text-text">
@@ -561,17 +498,6 @@ export default function Calibration() {
               onCheckedChange={setConsentChecked}
               onClear={removeCalibration}
               onDecline={() => navigate('/')}
-            />
-
-            <PracticeDeliveryConsentPanel
-              active={deliveryConsentActive}
-              busy={deliveryConsentBusy}
-              checked={deliveryConsentChecked}
-              consentLabel={deliveryConsentLabel}
-              error={deliveryConsentError}
-              onAccept={() => { void acceptDeliveryAnalyticsConsent(); }}
-              onCheckedChange={setDeliveryConsentChecked}
-              onDelete={() => { void revokeDeliveryAnalyticsConsent(); }}
             />
           </section>
 
@@ -1005,124 +931,6 @@ function CalibrationConsentPanel({
             </button>
           </div>
         </div>
-      )}
-    </div>
-  );
-}
-
-function PracticeDeliveryConsentPanel({
-  active,
-  busy,
-  checked,
-  consentLabel,
-  error,
-  onAccept,
-  onCheckedChange,
-  onDelete,
-}: {
-  active: boolean;
-  busy: boolean;
-  checked: boolean;
-  consentLabel: string | null;
-  error: string | null;
-  onAccept: () => void;
-  onCheckedChange: (checked: boolean) => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="mt-5 rounded-lg border border-border bg-surface-raised p-4">
-      <div className="flex gap-3">
-        <ShieldCheck
-          className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
-          aria-hidden
-        />
-        <div>
-          <p className="text-sm font-medium text-text">
-            Practice delivery analytics consent
-          </p>
-          <p className="mt-2 text-xs leading-6 text-text-subtle">
-            This controls the numeric delivery summaries stored with practice
-            answers. It is separate from local calibration, which stays in this
-            browser.
-          </p>
-        </div>
-      </div>
-
-      <ul className="mt-4 space-y-3 text-xs leading-6 text-text-subtle">
-        <li>
-          <span className="font-medium text-text">Purpose.</span> Delivery
-          analytics are used only for interview-practice coaching, not
-          identification, hiring, or employment decisions.
-        </li>
-        <li>
-          <span className="font-medium text-text">Data sent.</span> If you use
-          the camera during practice, raw video, images, and landmarks stay on
-          your device. The server receives aggregate numbers such as face
-          visibility, eye-contact proxy, posture, expression, and streak counts.
-        </li>
-        <li>
-          <span className="font-medium text-text">Retention and deletion.</span>{' '}
-          We keep the numeric delivery summary, delivery score, and
-          delivery-specific coaching only as long as needed for your coaching,
-          and never longer than 3 years after your last practice session. After
-          that — or sooner if you revoke this consent or delete your account —
-          they are permanently deleted and the affected session scores are
-          recalculated without them. Your other interview records, such as the
-          answer transcript and content scores, follow our general retention
-          policy and may remain.
-        </li>
-      </ul>
-
-      {active ? (
-        <div className="mt-4 rounded border border-border bg-surface-sunken px-3 py-3">
-          <p className="text-xs font-medium text-text">
-            {consentLabel ?? 'Delivery analytics consent is active'}
-          </p>
-          <p className="mt-1 text-xs leading-5 text-text-subtle">
-            Deleting disables future camera delivery summaries and removes
-            stored delivery summaries, delivery scores, and delivery-specific
-            coaching from completed history.
-          </p>
-          <FlowHoverButton
-            type="button"
-            disabled={busy}
-            onClick={onDelete}
-            icon={<Trash2 className="h-4 w-4" aria-hidden />}
-            className="mt-3"
-          >
-            Delete delivery analytics
-          </FlowHoverButton>
-        </div>
-      ) : (
-        <div className="mt-4 space-y-3">
-          <label className="flex cursor-pointer items-start gap-3 rounded border border-border bg-surface-sunken px-3 py-3 text-xs leading-5 text-text-subtle">
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={(event) => onCheckedChange(event.currentTarget.checked)}
-              className="mt-1 h-4 w-4 accent-[var(--color-accent)]"
-            />
-            <span>
-              I am authorized to consent and agree to camera-based delivery
-              analytics and storage of numeric delivery summaries for coaching.
-            </span>
-          </label>
-          <FlowHoverButton
-            type="button"
-            variant="dark"
-            disabled={!checked || busy}
-            onClick={onAccept}
-            icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
-          >
-            Enable delivery analytics
-          </FlowHoverButton>
-        </div>
-      )}
-
-      {error && (
-        <p role="alert" className="mt-3 text-xs leading-5 text-text">
-          {error}
-        </p>
       )}
     </div>
   );

@@ -6,9 +6,11 @@ summary (`interview_turns.cv_summary`) is stored server-side, so consent for
 that artifact must be demonstrable on the user row.
 
 Retention: the delivery-analytics consent promises these summaries are kept no
-longer than `DELIVERY_ANALYTICS_RETENTION_YEARS` after the user's last practice
-session (BIPA §15(a)'s "within 3 years of the individual's last interaction"
-benchmark). `purge_expired_delivery_analytics` enforces that promise; the
+longer than `DELIVERY_ANALYTICS_RETENTION_MONTHS` after the user's last practice
+session. 12 months is the strictest common ceiling across the biometric regimes
+we surveyed (Texas CUBI ~1yr after purpose; Colorado HB24-1130 24mo; Illinois
+BIPA §15(a) 3yr) — chosen deliberately since the data is non-identifying
+coaching metrics. `purge_expired_delivery_analytics` enforces that promise; the
 in-app scheduler (`delivery_retention_scheduler.py`) runs it on a daily cadence.
 The same purge primitive backs the user-initiated revocation in `me.py`.
 """
@@ -29,11 +31,11 @@ DELIVERY_ANALYTICS_NOTICE_VERSION = 1
 
 # Hard retention ceiling for server-stored delivery summaries, anchored to the
 # user's most recent session. Mirrors the user-facing consent copy ("never
-# longer than 3 years after your last practice session"). Using 365-day years
-# keeps the cutoff marginally *earlier* than three calendar years, which only
-# ever deletes sooner — consistent with the "no later than" promise.
-DELIVERY_ANALYTICS_RETENTION_YEARS = 3
-_RETENTION_DELTA = timedelta(days=365 * DELIVERY_ANALYTICS_RETENTION_YEARS)
+# longer than 12 months after your last practice session"). Measured in days so
+# the cutoff is unambiguous; 365 days lands at or before the 12-month mark,
+# which only ever deletes sooner — consistent with the "no later than" promise.
+DELIVERY_ANALYTICS_RETENTION_MONTHS = 12
+_RETENTION_DELTA = timedelta(days=365)
 
 
 def has_active_delivery_analytics_consent(user: User) -> bool:
@@ -138,8 +140,9 @@ async def purge_expired_delivery_analytics(
     """Purge delivery analytics for users past the retention ceiling.
 
     "Past the ceiling" = the user's most recent session ended/started more than
-    `DELIVERY_ANALYTICS_RETENTION_YEARS` ago. The clock resets on every new
-    session, matching the consent copy and BIPA's "last interaction" standard.
+    `DELIVERY_ANALYTICS_RETENTION_MONTHS` ago. The clock resets on every new
+    session, matching the consent copy and the "last interaction" standard
+    common to the biometric statutes.
 
     Returns the number of users purged. Does NOT commit — the caller owns the
     transaction boundary (the scheduler wraps this in a single transaction with

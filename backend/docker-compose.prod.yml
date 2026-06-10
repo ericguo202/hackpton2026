@@ -64,7 +64,7 @@ services:
       - tools
 
   # Dedicated worker that enforces the delivery-analytics retention ceiling
-  # (delete stored webcam summaries within 3 years of a user's last session).
+  # (delete stored webcam summaries within 12 months of a user's last session).
   # Runs independently of api_blue/api_green so the promise holds even when the
   # API is down. Shares the same advisory-lock-guarded loop as the in-API
   # scheduler, so the two are safe to run together (single-flight + idempotent).

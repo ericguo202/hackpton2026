@@ -28,7 +28,10 @@ import { useNavigate } from 'react-router';
 
 import AdvancedPanel from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
+import DeliveryConsentDialog from '../components/DeliveryConsentDialog';
 import FlashBanner from '../components/FlashBanner';
+import PrivacyPanel from '../components/PrivacyPanel';
+import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { FlowHoverButton } from '../components/ui/flow-hover-button';
@@ -36,7 +39,26 @@ import { useApi } from '../hooks/useApi';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
+import {
+  DELIVERY_ANALYTICS_NOTICE_VERSION,
+  hasActiveDeliveryAnalyticsConsent,
+} from '../lib/deliveryAnalyticsConsent';
+import type { MeResponse } from '../types/user';
 import type { PracticeLocationState } from './Practice';
+
+type Surface = 'basic' | 'advanced' | 'privacy';
+
+function formatConsentDate(iso: string): string {
+  try {
+    return `Consented ${new Date(iso).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })}`;
+  } catch {
+    return 'Delivery analytics consent is active';
+  }
+}
 
 type SessionStart = {
   session_id: string;
@@ -81,13 +103,19 @@ function AutoSubmitPill({
   );
 }
 
+const SURFACE_LABELS: Record<Surface, string> = {
+  basic: 'Basic',
+  advanced: 'Advanced',
+  privacy: 'Privacy',
+};
+
 function ModeTabs({
   mode,
   setMode,
   disabled,
 }: {
-  mode: 'basic' | 'advanced';
-  setMode: (m: 'basic' | 'advanced') => void;
+  mode: Surface;
+  setMode: (m: Surface) => void;
   disabled: boolean;
 }) {
   return (
@@ -96,7 +124,7 @@ function ModeTabs({
       aria-label="Setup mode"
       className="inline-flex rounded border border-border bg-surface-raised p-0.5"
     >
-      {(['basic', 'advanced'] as const).map((m) => {
+      {(['basic', 'advanced', 'privacy'] as const).map((m) => {
         const active = mode === m;
         return (
           <button
@@ -117,7 +145,7 @@ function ModeTabs({
                 : 'text-text-muted hover:text-text')
             }
           >
-            {m === 'basic' ? 'Basic' : 'Advanced'}
+            {SURFACE_LABELS[m]}
           </button>
         );
       })}
@@ -127,7 +155,7 @@ function ModeTabs({
 
 export default function Home() {
   const { user } = useUser();
-  const { me } = useMe();
+  const { me, refetch: refetchMe } = useMe();
   const { apiFetch } = useApi();
   const navigate = useNavigate();
 
@@ -141,17 +169,27 @@ export default function Home() {
   // Same key the mid-session eye-icon toggle in Practice.tsx writes to —
   // both surfaces share state via localStorage. Default true (visible).
   const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
-  // Whether the Advanced surface is active. Shared between the mobile pill
-  // tabs and the desktop drawer so the state survives a viewport crossing
-  // 900px (tablet rotation, browser split, etc.). `mode` is derived from
-  // it, not a separate state.
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const mode: 'basic' | 'advanced' = advancedOpen ? 'advanced' : 'basic';
+  // Which setup surface is active. Shared between the mobile pill tabs and the
+  // desktop drawers so it survives a viewport crossing 900px. 'basic' = no
+  // drawer open on desktop; 'advanced'/'privacy' open the matching drawer.
+  const [surface, setSurface] = useState<Surface>('basic');
+
+  // Pre-session delivery-analytics consent popup state.
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
+
+  const deliveryConsentActive = hasActiveDeliveryAnalyticsConsent(me);
+  const deliveryConsentLabel = me?.delivery_analytics_consent_at
+    ? formatConsentDate(me.delivery_analytics_consent_at)
+    : null;
 
   const firstName = user?.firstName ?? null;
 
-  async function handleStart(e: SubmitEvent<HTMLFormElement>) {
-    e.preventDefault();
+  // Mic preflight + POST /sessions + navigate to /practice. Camera enabling is
+  // decided in Practice from the persisted consent on `me`, so this doesn't
+  // need to know the consent choice — it just creates the session.
+  async function createAndGoToSession() {
     const trimmed = company.trim();
     if (!trimmed) return;
 
@@ -206,6 +244,75 @@ export default function Home() {
       );
       setSubmitting(false);
     }
+  }
+
+  function handleStart(e: SubmitEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!company.trim()) return;
+    // First-time gate: ask for delivery-analytics consent before creating the
+    // session. Once consent is active we never re-prompt — start immediately.
+    if (!deliveryConsentActive) {
+      setConsentError(null);
+      setConsentModalOpen(true);
+      return;
+    }
+    void createAndGoToSession();
+  }
+
+  // PUT consent → refetch `me`. Returns whether it succeeded so callers can
+  // chain session creation only on success.
+  async function grantConsent(): Promise<boolean> {
+    setConsentBusy(true);
+    setConsentError(null);
+    try {
+      await apiFetch<MeResponse>('/api/v1/me/delivery-analytics-consent', {
+        method: 'PUT',
+        body: JSON.stringify({
+          notice_version: DELIVERY_ANALYTICS_NOTICE_VERSION,
+          accepted: true,
+        }),
+      });
+      await refetchMe();
+      return true;
+    } catch (err) {
+      setConsentError(
+        err instanceof ApiError ? extractApiErrorDetail(err) : (err as Error).message,
+      );
+      return false;
+    } finally {
+      setConsentBusy(false);
+    }
+  }
+
+  async function revokeConsent() {
+    setConsentBusy(true);
+    setConsentError(null);
+    try {
+      await apiFetch<MeResponse>('/api/v1/me/delivery-analytics-consent', {
+        method: 'DELETE',
+      });
+      await refetchMe();
+    } catch (err) {
+      setConsentError(
+        err instanceof ApiError ? extractApiErrorDetail(err) : (err as Error).message,
+      );
+    } finally {
+      setConsentBusy(false);
+    }
+  }
+
+  // Popup actions: consent → save then start (camera enabled in Practice);
+  // decline → start voice-only (consent stays inactive → camera never enabled).
+  async function handleConsentAndStart() {
+    const ok = await grantConsent();
+    if (!ok) return;
+    setConsentModalOpen(false);
+    void createAndGoToSession();
+  }
+
+  function handleDeclineAndStart() {
+    setConsentModalOpen(false);
+    void createAndGoToSession();
   }
 
   const targetRoleBadge = me?.target_role ? (
@@ -332,16 +439,34 @@ export default function Home() {
                   />
                   <button
                     type="button"
-                    onClick={() => setAdvancedOpen((v) => !v)}
+                    onClick={() =>
+                      setSurface((s) => (s === 'advanced' ? 'basic' : 'advanced'))
+                    }
                     disabled={submitting}
-                    aria-expanded={advancedOpen}
+                    aria-expanded={surface === 'advanced'}
                     aria-haspopup="dialog"
                     className="inline-flex items-center gap-1 text-sm text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <span>Advanced</span>
                     <ChevronRight
                       aria-hidden
-                      className={`h-3.5 w-3.5 transition-transform ${advancedOpen ? 'rotate-180' : ''}`}
+                      className={`h-3.5 w-3.5 transition-transform ${surface === 'advanced' ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSurface((s) => (s === 'privacy' ? 'basic' : 'privacy'))
+                    }
+                    disabled={submitting}
+                    aria-expanded={surface === 'privacy'}
+                    aria-haspopup="dialog"
+                    className="inline-flex items-center gap-1 text-sm text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span>Privacy</span>
+                    <ChevronRight
+                      aria-hidden
+                      className={`h-3.5 w-3.5 transition-transform ${surface === 'privacy' ? 'rotate-180' : ''}`}
                     />
                   </button>
                 </div>
@@ -365,8 +490,8 @@ export default function Home() {
 
               {/* Mobile slab: < 900px */}
               <div className="block min-[900px]:hidden">
-                <section key={mode} className="anim-crossfade">
-                  {mode === 'basic' ? (
+                <section key={surface} className="anim-crossfade">
+                  {surface === 'basic' ? (
                     <>
                       <h1
                         className="mb-10 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
@@ -399,7 +524,7 @@ export default function Home() {
                         />
                       </div>
                     </>
-                  ) : (
+                  ) : surface === 'advanced' ? (
                     <>
                       <h2
                         className="mb-8 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text"
@@ -415,6 +540,23 @@ export default function Home() {
                         disabled={submitting}
                       />
                     </>
+                  ) : (
+                    <>
+                      <h2
+                        className="mb-8 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text"
+                        style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)' }}
+                      >
+                        Privacy
+                      </h2>
+                      <PrivacyPanel
+                        active={deliveryConsentActive}
+                        busy={consentBusy}
+                        error={consentError}
+                        consentLabel={deliveryConsentLabel}
+                        onGrant={() => { void grantConsent(); }}
+                        onRevoke={() => { void revokeConsent(); }}
+                      />
+                    </>
                   )}
                 </section>
 
@@ -426,8 +568,8 @@ export default function Home() {
                     {submitting ? 'Starting...' : 'Begin session'}
                   </FlowHoverButton>
                   <ModeTabs
-                    mode={mode}
-                    setMode={(m) => setAdvancedOpen(m === 'advanced')}
+                    mode={surface}
+                    setMode={setSurface}
                     disabled={submitting}
                   />
                   {targetRoleBadge}
@@ -440,18 +582,40 @@ export default function Home() {
           </form>
 
           <AdvancedPanelDrawer
-            open={advancedOpen}
-            onClose={() => setAdvancedOpen(false)}
+            open={surface === 'advanced'}
+            onClose={() => setSurface('basic')}
             voiceId={voiceId}
             onVoiceSelect={setVoiceId}
             showQuestionText={showQuestionText}
             onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
             disabled={submitting}
           />
+
+          <PrivacyPanelDrawer
+            open={surface === 'privacy'}
+            onClose={() => setSurface('basic')}
+            active={deliveryConsentActive}
+            busy={consentBusy}
+            error={consentError}
+            consentLabel={deliveryConsentLabel}
+            onGrant={() => { void grantConsent(); }}
+            onRevoke={() => { void revokeConsent(); }}
+          />
         </div>
       </main>
 
       <ScoreDimensions tagline="One opening question. One follow-up. Then the scores." />
+
+      <DeliveryConsentDialog
+        open={consentModalOpen}
+        busy={consentBusy}
+        error={consentError}
+        onConsent={() => { void handleConsentAndStart(); }}
+        onDecline={handleDeclineAndStart}
+        onCancel={() => {
+          if (!consentBusy) setConsentModalOpen(false);
+        }}
+      />
     </div>
   );
 }

@@ -21,7 +21,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { UserButton } from '@clerk/react';
-import { ShieldCheck, VideoOff } from 'lucide-react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 
 import PageMorphTransition from '../components/PageMorphTransition';
@@ -46,15 +45,11 @@ import { useMe } from '../hooks/useMe';
 import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
-import {
-  DELIVERY_ANALYTICS_NOTICE_VERSION,
-  hasActiveDeliveryAnalyticsConsent,
-} from '../lib/deliveryAnalyticsConsent';
+import { hasActiveDeliveryAnalyticsConsent } from '../lib/deliveryAnalyticsConsent';
 import { cn } from '../lib/utils';
 import type { InterviewSummary } from '../lib/faceHeuristics';
 import type { DimensionAverages, SessionDetail, TurnDetail } from '../types/history';
 import type { Scores, TurnResult } from '../types/session';
-import type { MeResponse } from '../types/user';
 
 export type PracticeLocationState = {
   sessionId: string;
@@ -251,85 +246,6 @@ function SessionInfoPanel({
   );
 }
 
-function DeliveryAnalyticsConsentNotice({
-  checked,
-  error,
-  submitting,
-  onAccept,
-  onCheckedChange,
-  onDecline,
-}: {
-  checked: boolean;
-  error: string | null;
-  submitting: boolean;
-  onAccept: () => void;
-  onCheckedChange: (checked: boolean) => void;
-  onDecline: () => void;
-}) {
-  return (
-    <div className="w-full rounded-lg border border-border bg-surface-raised p-4 text-left shadow-sm min-[900px]:w-[45vw]">
-      <div className="flex items-start gap-3">
-        <ShieldCheck
-          className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
-          aria-hidden
-        />
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-text">
-            Optional delivery analytics
-          </p>
-          <p className="mt-2 text-xs leading-5 text-text-subtle">
-            If enabled, your browser analyzes webcam frames while you answer.
-            Raw video, images, and face landmarks are not uploaded. We store
-            only a numeric delivery summary with each answer for interview
-            coaching; it is not used to identify you or make hiring decisions.
-            We keep these summaries no longer than 3 years after your last
-            session, and delete them right away if you revoke consent.
-          </p>
-        </div>
-      </div>
-
-      <label className="mt-3 flex cursor-pointer items-start gap-3 rounded border border-border bg-surface-sunken px-3 py-3 text-xs leading-5 text-text-subtle">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onCheckedChange(event.currentTarget.checked)}
-          className="mt-1 h-4 w-4 accent-[var(--color-accent)]"
-        />
-        <span>
-          I am authorized to consent and agree to camera-based delivery
-          analytics and storage of numeric delivery summaries for coaching.
-        </span>
-      </label>
-
-      {error && (
-        <p role="alert" className="mt-3 text-xs leading-5 text-text">
-          {error}
-        </p>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <FlowHoverButton
-          type="button"
-          variant="dark"
-          disabled={!checked || submitting}
-          onClick={onAccept}
-          icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
-        >
-          Enable delivery scoring
-        </FlowHoverButton>
-        <FlowHoverButton
-          type="button"
-          disabled={submitting}
-          onClick={onDecline}
-          icon={<VideoOff className="h-4 w-4" aria-hidden />}
-        >
-          Continue audio only
-        </FlowHoverButton>
-      </div>
-    </div>
-  );
-}
-
 function revokeReplayUrls(turns: ReplayTurnResult[]) {
   for (const turn of turns) {
     if (turn.replayUrl) URL.revokeObjectURL(turn.replayUrl);
@@ -359,7 +275,7 @@ function PracticeSession({
   navigate: ReturnType<typeof useNavigate>;
 }) {
   const { apiFetch } = useApi();
-  const { me, refetch: refetchMe } = useMe();
+  const { me } = useMe();
   const recorder = useRecorder();
   const analyzer = useFaceAnalyzer(
     recorder.videoStream,
@@ -400,11 +316,6 @@ function PracticeSession({
   const [replayKey, setReplayKey] = useState(0);
   const [showTranscript, setShowTranscript] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
-  const [deliveryConsentChecked, setDeliveryConsentChecked] = useState(false);
-  const [deliveryConsentDismissed, setDeliveryConsentDismissed] = useState(false);
-  const [deliveryConsentAcceptedThisSession, setDeliveryConsentAcceptedThisSession] = useState(false);
-  const [deliveryConsentSubmitting, setDeliveryConsentSubmitting] = useState(false);
-  const [deliveryConsentError, setDeliveryConsentError] = useState<string | null>(null);
   // Seconds of the current recording. Driven by the interval effect below;
   // reset to 0 in `handleAudioEnded` (the sole recording-start path) so it
   // never carries a stale value into a new turn.
@@ -522,8 +433,11 @@ function PracticeSession({
     };
   }, [apiFetch, isDone, sessionDetail?.status, sessionId]);
 
-  const deliveryAnalyticsEnabled =
-    deliveryConsentAcceptedThisSession || hasActiveDeliveryAnalyticsConsent(me);
+  // Webcam delivery scoring runs only when the user has active server-side
+  // consent (granted via the pre-session popup or the Home Privacy surface).
+  // Without it, `recorder.start({ video: false })` means the camera is never
+  // enabled and no cv_summary is computed or sent.
+  const deliveryAnalyticsEnabled = hasActiveDeliveryAnalyticsConsent(me);
 
   async function handleSubmitTurn() {
     if (!recorder.audioBlob || !sessionId || !currentQ) return;
@@ -673,37 +587,6 @@ function PracticeSession({
     recorder.stop();
   }
 
-  async function handleAcceptDeliveryConsent() {
-    setDeliveryConsentSubmitting(true);
-    setDeliveryConsentError(null);
-    try {
-      const updated = await apiFetch<MeResponse>(
-        '/api/v1/me/delivery-analytics-consent',
-        {
-          method: 'PUT',
-          body: JSON.stringify({
-            notice_version: DELIVERY_ANALYTICS_NOTICE_VERSION,
-            accepted: true,
-          }),
-        },
-      );
-      setDeliveryConsentAcceptedThisSession(
-        hasActiveDeliveryAnalyticsConsent(updated),
-      );
-      setDeliveryConsentDismissed(false);
-      setDeliveryConsentChecked(false);
-      void refetchMe();
-    } catch (err) {
-      setDeliveryConsentError(
-        err instanceof ApiError
-          ? extractApiErrorDetail(err)
-          : 'Could not save delivery analytics consent.',
-      );
-    } finally {
-      setDeliveryConsentSubmitting(false);
-    }
-  }
-
   function handleRestart() {
     if (recorder.state !== 'idle') recorder.stop();
     recorder.reset();
@@ -791,24 +674,6 @@ function PracticeSession({
   // (the in-recording RecordingNotice covers later turns); hidden once recording
   // starts (state leaves 'idle').
   const showFirstTurnHint = recorder.state === 'idle' && currentQ?.num === 1;
-  const showDeliveryConsentNotice =
-    recorder.state === 'idle'
-    && currentQ?.num === 1
-    && !deliveryAnalyticsEnabled
-    && !deliveryConsentDismissed;
-  const deliveryConsentNotice = showDeliveryConsentNotice ? (
-    <DeliveryAnalyticsConsentNotice
-      checked={deliveryConsentChecked}
-      error={deliveryConsentError}
-      submitting={deliveryConsentSubmitting}
-      onAccept={() => { void handleAcceptDeliveryConsent(); }}
-      onCheckedChange={setDeliveryConsentChecked}
-      onDecline={() => {
-        setDeliveryConsentDismissed(true);
-        setDeliveryConsentError(null);
-      }}
-    />
-  ) : null;
   const previousTurn = turnResults.length > 0 ? turnResults[0] : null;
   const showTranscriptPanel = showTranscript && previousTurn;
   const showQuestionDuringSession = showQuestionText;
@@ -873,7 +738,6 @@ function PracticeSession({
                 isFinalTurn={currentQ.num >= 2}
                 recordingNotice={recordingNotice}
                 firstTurnHint={showFirstTurnHint}
-                deliveryConsentNotice={deliveryConsentNotice}
                 onSubmitPreview={handleSubmitTurn}
                 onReRecordPreview={handleReRecord}
               />

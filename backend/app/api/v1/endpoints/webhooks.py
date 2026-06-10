@@ -7,7 +7,14 @@ the browser to Clerk's servers — our FastAPI never sees it). The webhook
 closes that loop: Clerk POSTs `user.deleted` here, we delete the matching
 `users` row, and the ON DELETE CASCADE FKs on `interview_sessions`,
 `interview_configs`, `interview_turns`, and `session_metrics` clean up the
-rest.
+rest (so all stored delivery analytics go with them).
+
+The one FK that is ON DELETE SET NULL rather than CASCADE is `incidents.user_id`
+— left that way so the security/audit log survives normal deletions. But an
+incident's `sent_content` can hold user-supplied text (moderated input,
+saved-question text, injection attempts), so on account deletion we explicitly
+hard-delete the departing user's incident rows BEFORE removing the user (while
+the `user_id`/`clerk_user_id` match still resolves).
 
 Auth model:
   This route is UNAUTHENTICATED at the FastAPI level — Clerk's server has
@@ -24,12 +31,13 @@ Idempotency:
 """
 
 from fastapi import APIRouter, HTTPException, Request, status
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from svix.webhooks import Webhook, WebhookVerificationError
 
 from app.core.config import settings
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
+from app.services.incidents import delete_incidents_for_user
 
 router = APIRouter()
 
@@ -87,6 +95,14 @@ async def clerk_webhook(request: Request) -> None:
     # New session per webhook — the request-scoped `get_db` dep doesn't
     # apply here since we're not depending on it.
     async with AsyncSessionLocal() as db:
+        # Resolve the local id first so we can purge incidents by either
+        # identifier before the row (and its FK linkage) disappears.
+        local_user_id = await db.scalar(
+            select(User.id).where(User.clerk_user_id == clerk_user_id)
+        )
+        await delete_incidents_for_user(
+            db, user_id=local_user_id, clerk_user_id=clerk_user_id
+        )
         await db.execute(delete(User).where(User.clerk_user_id == clerk_user_id))
         await db.commit()
 
