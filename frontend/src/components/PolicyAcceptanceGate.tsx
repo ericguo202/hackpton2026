@@ -10,8 +10,10 @@
  *
  * The check is server-state-driven (`useMe`), so a refresh re-evaluates it and
  * there's no client-only flag to dodge. `/practice` is excluded so an in-progress
- * interview is never interrupted — the user is re-prompted the moment they
- * navigate elsewhere, mirroring `BetaFeedbackGate`.
+ * interview is never interrupted, and `/legal/*` is excluded so the policy links
+ * inside the modal (which open in a new tab where this gate is also mounted) stay
+ * readable — the user is re-prompted the moment they navigate elsewhere, mirroring
+ * `BetaFeedbackGate`.
  */
 
 import { useState } from 'react';
@@ -37,6 +39,10 @@ export default function PolicyAcceptanceGate() {
     Boolean(isSignedIn) &&
     isReady &&
     pathname !== '/practice' &&
+    // The acceptance links open the policy pages (in a new tab, where this gate
+    // is also mounted). Never block a /legal/* route, or the modal would cover
+    // the very policy the user opened it to read.
+    !pathname.startsWith('/legal') &&
     needsPolicyAcceptance(me);
 
   async function handleAccept() {
