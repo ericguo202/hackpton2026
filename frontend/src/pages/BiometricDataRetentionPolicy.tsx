@@ -102,8 +102,14 @@ export default function BiometricDataRetentionPolicy() {
             webcam-based delivery analytics and the handling of your voice
             recording during practice. All other personal information — your
             profile, résumé text, answer transcripts, account and authentication
-            data — is governed by our general Privacy Policy, which this policy
-            supplements and does not replace.
+            data — is governed by our{' '}
+            <Link
+              to="/legal/privacy"
+              className="underline underline-offset-4 transition-colors hover:text-text"
+            >
+              general Privacy Policy
+            </Link>
+            , which this policy supplements and does not replace.
           </p>
         </Section>
 
