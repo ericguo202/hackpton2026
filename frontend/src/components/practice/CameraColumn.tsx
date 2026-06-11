@@ -79,7 +79,7 @@ export function CameraColumn({
                   ? 'Evaluating your recording…'
                   : 'Audio/video recording will restart when the follow-up question finishes playing.'
                 : recorderState === 'idle'
-                  ? 'Camera will start once the question audio ends.'
+                  ? 'Recording will start once the question audio ends.'
                   : 'Webcam not enabled — audio recorded only.'}
             </p>
           </div>

@@ -18,15 +18,27 @@
 
 import { useState, type ReactNode } from 'react';
 import { Link, matchPath, useLocation } from 'react-router';
+import { LEGAL_LINKS } from '../lib/legalLinks';
 import ThemeToggle from './ThemeToggle';
 
 type Props = {
   rightSlot?: ReactNode;
   nav?: ReactNode;
+  /**
+   * Render the mobile hamburger + dropdown even when there's no page `nav`,
+   * so a surface with no inline nav (the signed-out Hero) still exposes the
+   * legal-policy links below 900px, where the footer is hidden.
+   */
+  legalMenu?: boolean;
 };
 
-export default function TopBar({ rightSlot, nav }: Props) {
+export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const showMobileMenu = Boolean(nav) || Boolean(legalMenu);
+  // With page `nav`, the hamburger only fills in below 900px (the inline nav
+  // covers desktop). A legal-only menu (no `nav`, e.g. signed-out Hero) has no
+  // inline counterpart, so its hamburger must persist at every width.
+  const collapseOnDesktop = Boolean(nav);
 
   return (
     <header className="relative flex items-center justify-between gap-6 px-8 md:px-16 pt-8 pb-4">
@@ -42,13 +54,16 @@ export default function TopBar({ rightSlot, nav }: Props) {
             {nav}
           </nav>
         )}
-        {nav && (
+        {showMobileMenu && (
           <button
             type="button"
             onClick={() => setMobileNavOpen((v) => !v)}
             aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={mobileNavOpen}
-            className="min-[900px]:hidden inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-sm text-text transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            className={
+              (collapseOnDesktop ? 'min-[900px]:hidden ' : '') +
+              'inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-sm text-text transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+            }
           >
             <svg
               width="20"
@@ -86,13 +101,42 @@ export default function TopBar({ rightSlot, nav }: Props) {
         already wired navigation callbacks to each link, so we just need
         the dismissal to follow any click within this region.
       */}
-      {nav && mobileNavOpen && (
+      {showMobileMenu && mobileNavOpen && (
         <div
-          className="min-[900px]:hidden absolute left-0 right-0 top-full z-40 border-b border-border bg-surface px-8 py-4 shadow-sm"
+          className={
+            (collapseOnDesktop ? 'min-[900px]:hidden ' : '') +
+            'absolute left-0 right-0 top-full z-40 border-b border-border bg-surface px-8 py-4 shadow-sm'
+          }
           onClick={() => setMobileNavOpen(false)}
         >
-          <nav className="flex flex-col items-start gap-4 text-xs uppercase tracking-eyebrow text-text-muted">
-            {nav}
+          {nav && (
+            <nav className="flex flex-col items-start gap-4 text-xs uppercase tracking-eyebrow text-text-muted">
+              {nav}
+            </nav>
+          )}
+          {/*
+            Legal-policy links live in the desktop footer (ScoreDimensions),
+            which is hidden below 900px. Surface them here so mobile users
+            still have a path to /legal/* without typing the URL. On a surface
+            with page nav they sit under a divider; on the legal-only menu
+            (signed-out Hero) they're the whole dropdown, so the divider/margin
+            is dropped.
+          */}
+          <nav
+            className={
+              'flex flex-col items-start gap-3 text-eyebrow uppercase tracking-eyebrow text-text-subtle' +
+              (nav ? ' mt-4 border-t border-border pt-4' : '')
+            }
+          >
+            {LEGAL_LINKS.map((l) => (
+              <Link
+                key={l.to}
+                to={l.to}
+                className="cursor-pointer transition-colors hover:text-text focus-visible:outline-none focus-visible:text-text"
+              >
+                {l.label}
+              </Link>
+            ))}
           </nav>
         </div>
       )}

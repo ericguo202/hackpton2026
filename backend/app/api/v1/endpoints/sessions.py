@@ -51,6 +51,7 @@ from app.services.daily_limit import (
     increment as daily_increment,
 )
 from app.services.coaching import generate_next_take
+from app.services.delivery_consent import has_active_delivery_analytics_consent
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
 from app.services.followup import generate_followup
@@ -872,6 +873,15 @@ async def submit_turn(
         raise HTTPException(status_code=404, detail="Session not found")
     if session.status != SessionStatus.in_progress:
         raise HTTPException(status_code=400, detail="Session is not in progress")
+
+    if cv_summary and not has_active_delivery_analytics_consent(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Delivery analytics consent is required before camera-derived "
+                "delivery summaries can be submitted."
+            ),
+        )
 
     # 1a. Pull the persisted brief's category so we can hand it to the
     # evaluator and get field-tailored scoring. Legacy sessions persisted

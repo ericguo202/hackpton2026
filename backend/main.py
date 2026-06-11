@@ -8,6 +8,10 @@ from contextlib import asynccontextmanager
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.session import check_db_connection
+from app.services.delivery_retention_scheduler import (
+    start_retention_scheduler,
+    stop_retention_scheduler,
+)
 from app.services.incidents import log_error
 from app.services.moderation import (
     ModerationUnavailableError,
@@ -32,8 +36,12 @@ async def lifespan(app: FastAPI):
     # Fail closed: refuse to boot if content moderation isn't configured, so
     # production can never run with the content-policy layer silently disabled.
     ensure_moderation_configured()
+    # Enforce the delivery-analytics retention ceiling on a daily cadence so the
+    # consent's "deleted within 12 months of your last session" promise is real.
+    retention_task = start_retention_scheduler()
     yield
-    # Shutdown (add cleanup here if needed)
+    # Shutdown
+    await stop_retention_scheduler(retention_task)
 
 
 app = FastAPI(

@@ -15,9 +15,12 @@ Expected behaviors for /me:
   - Authorization: Bearer <valid JWT>  -> 200 UserOut
 """
 
+from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy import Integer, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,15 +28,32 @@ from app.core.auth import ClerkClaims, current_user, get_current_user_db
 from app.db.models.enums import SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
+from app.db.models.saved_question import SavedQuestion
 from app.db.models.session_metrics import SessionMetrics
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.session import DimensionAverages, FillerWordStat, MeStatsOut
-from app.schemas.user import UserOut
+from app.schemas.user import (
+    DeliveryAnalyticsConsentIn,
+    PolicyAcceptanceIn,
+    UserOut,
+)
 from app.services.daily_limit import check_and_reset as daily_check_and_reset
+from app.services.delivery_consent import (
+    DELIVERY_ANALYTICS_NOTICE_VERSION,
+    purge_delivery_analytics_for_user,
+)
+from app.services.policy_versions import (
+    CURRENT_PRIVACY_VERSION,
+    CURRENT_TERMS_VERSION,
+)
 from app.services.filler_words import filler_rate_pct
 
 router = APIRouter()
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @router.get("", response_model=UserOut)
@@ -71,6 +91,201 @@ async def get_me(
         user.email_conflict = conflicting_id is not None
 
     return user
+
+
+@router.put("/delivery-analytics-consent", response_model=UserOut)
+async def accept_delivery_analytics_consent(
+    body: DeliveryAnalyticsConsentIn,
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Persist affirmative consent for server-stored delivery analytics."""
+    if not body.accepted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Consent must be accepted to enable delivery analytics.",
+        )
+    if body.notice_version != DELIVERY_ANALYTICS_NOTICE_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Delivery analytics notice version is out of date.",
+        )
+
+    user.delivery_analytics_consent_at = _utcnow()
+    user.delivery_analytics_consent_version = DELIVERY_ANALYTICS_NOTICE_VERSION
+    user.delivery_analytics_revoked_at = None
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.delete("/delivery-analytics-consent", response_model=UserOut)
+async def revoke_delivery_analytics_consent(
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Revoke future collection and delete stored delivery analytics history."""
+    user.delivery_analytics_revoked_at = _utcnow()
+    await purge_delivery_analytics_for_user(db, user.id)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.put("/policy-acceptance", response_model=UserOut)
+async def accept_policies(
+    body: PolicyAcceptanceIn,
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Record affirmative acceptance of the current Terms of Service + Privacy Policy.
+
+    The per-version timestamp written here is the clickwrap record ("who accepted
+    which version when") that makes the posted terms enforceable. Bumping a
+    CURRENT_* version invalidates the old record and the frontend gate re-prompts.
+    """
+    if not body.accepted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="You must accept the Terms of Service and Privacy Policy to continue.",
+        )
+    if (
+        body.terms_version != CURRENT_TERMS_VERSION
+        or body.privacy_version != CURRENT_PRIVACY_VERSION
+    ):
+        # A stale tab tried to record an old version. Reject so the record always
+        # reflects the version actually presented to the user.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Policy version is out of date. Reload and review the latest terms.",
+        )
+
+    now = _utcnow()
+    user.terms_accepted_version = CURRENT_TERMS_VERSION
+    user.terms_accepted_at = now
+    user.privacy_accepted_version = CURRENT_PRIVACY_VERSION
+    user.privacy_accepted_at = now
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+def _columns(obj, fields: tuple[str, ...]) -> dict:
+    """Pull a fixed allowlist of column values off an ORM row into a dict.
+
+    Explicit allowlist (not __dict__) so a new internal column never silently
+    leaks into the user-facing export.
+    """
+    return {f: getattr(obj, f) for f in fields}
+
+
+_EXPORT_USER_FIELDS = (
+    "id", "email", "name", "resume_text", "industry", "target_role",
+    "experience_level", "short_bio", "timezone", "tier",
+    "delivery_analytics_consent_at", "delivery_analytics_consent_version",
+    "delivery_analytics_revoked_at",
+    "terms_accepted_version", "terms_accepted_at",
+    "privacy_accepted_version", "privacy_accepted_at",
+    "created_at", "updated_at",
+)
+_EXPORT_SESSION_FIELDS = (
+    "id", "company", "job_title", "company_summary", "status", "overall_score",
+    "experience_level", "saved_question_id", "started_at", "ended_at",
+    "created_at",
+)
+_EXPORT_TURN_FIELDS = (
+    "id", "session_id", "turn_number", "question_text", "transcript_text",
+    "is_followup", "structure_score", "problem_solving_score", "impact_score",
+    "initiative_score", "depth_score", "delivery_score", "cv_summary",
+    "filler_word_count", "filler_word_breakdown", "word_count", "feedback",
+    "feedback_detail", "ai_model_used", "evaluated_at", "created_at",
+)
+_EXPORT_METRICS_FIELDS = (
+    "avg_structure", "avg_problem_solving", "avg_initiative", "avg_impact",
+    "avg_depth", "avg_delivery", "total_filler_word_count", "total_word_count",
+    "overall_score", "turns_evaluated", "generated_at",
+)
+_EXPORT_SAVED_QUESTION_FIELDS = (
+    "id", "question_text", "company", "job_title", "category",
+    "experience_level", "created_at",
+)
+
+
+@router.get("/export")
+async def export_my_data(
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Export everything we store about the caller as one JSON bundle.
+
+    Backs the access / data-portability rights (GDPR Art. 15/20, CCPA right to
+    know, etc.). Includes the consent record, all sessions + turns (transcripts,
+    scores, webcam `cv_summary`, feedback), session metrics, and saved
+    questions. Internal audit data (the `incidents` log) is deliberately
+    excluded — it's operational/security data, not the subject's content.
+    """
+    sessions = (
+        await db.execute(
+            select(InterviewSession)
+            .where(InterviewSession.user_id == user.id)
+            .order_by(InterviewSession.created_at)
+        )
+    ).scalars().all()
+    session_ids = [s.id for s in sessions]
+
+    turns_by_session: dict = {}
+    metrics_by_session: dict = {}
+    if session_ids:
+        turns = (
+            await db.execute(
+                select(InterviewTurn)
+                .where(InterviewTurn.session_id.in_(session_ids))
+                .order_by(InterviewTurn.session_id, InterviewTurn.turn_number)
+            )
+        ).scalars().all()
+        for turn in turns:
+            turns_by_session.setdefault(turn.session_id, []).append(
+                _columns(turn, _EXPORT_TURN_FIELDS)
+            )
+        metrics_rows = (
+            await db.execute(
+                select(SessionMetrics).where(
+                    SessionMetrics.session_id.in_(session_ids)
+                )
+            )
+        ).scalars().all()
+        for m in metrics_rows:
+            metrics_by_session[m.session_id] = _columns(m, _EXPORT_METRICS_FIELDS)
+
+    saved = (
+        await db.execute(
+            select(SavedQuestion)
+            .where(SavedQuestion.user_id == user.id)
+            .order_by(SavedQuestion.created_at)
+        )
+    ).scalars().all()
+
+    bundle = {
+        "exported_at": _utcnow().isoformat(),
+        "user": _columns(user, _EXPORT_USER_FIELDS),
+        "sessions": [
+            {
+                **_columns(s, _EXPORT_SESSION_FIELDS),
+                "metrics": metrics_by_session.get(s.id),
+                "turns": turns_by_session.get(s.id, []),
+            }
+            for s in sessions
+        ],
+        "saved_questions": [
+            _columns(q, _EXPORT_SAVED_QUESTION_FIELDS) for q in saved
+        ],
+    }
+    return JSONResponse(
+        content=jsonable_encoder(bundle),
+        headers={
+            "Content-Disposition": 'attachment; filename="my-data-export.json"'
+        },
+    )
 
 
 def _to_decimal(v) -> Decimal | None:

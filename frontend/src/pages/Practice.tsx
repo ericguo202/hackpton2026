@@ -41,9 +41,11 @@ import { FlowHoverButton } from '../components/ui/flow-hover-button';
 import { useApi } from '../hooks/useApi';
 import { useFaceAnalyzer, type AnalyzerDiagnostics } from '../hooks/useFaceAnalyzer';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
+import { useMe } from '../hooks/useMe';
 import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
+import { hasActiveDeliveryAnalyticsConsent } from '../lib/deliveryAnalyticsConsent';
 import { cn } from '../lib/utils';
 import type { InterviewSummary } from '../lib/faceHeuristics';
 import type { DimensionAverages, SessionDetail, TurnDetail } from '../types/history';
@@ -273,6 +275,7 @@ function PracticeSession({
   navigate: ReturnType<typeof useNavigate>;
 }) {
   const { apiFetch } = useApi();
+  const { me } = useMe();
   const recorder = useRecorder();
   const analyzer = useFaceAnalyzer(
     recorder.videoStream,
@@ -430,6 +433,12 @@ function PracticeSession({
     };
   }, [apiFetch, isDone, sessionDetail?.status, sessionId]);
 
+  // Webcam delivery scoring runs only when the user has active server-side
+  // consent (granted via the pre-session popup or the Home Privacy surface).
+  // Without it, `recorder.start({ video: false })` means the camera is never
+  // enabled and no cv_summary is computed or sent.
+  const deliveryAnalyticsEnabled = hasActiveDeliveryAnalyticsConsent(me);
+
   async function handleSubmitTurn() {
     if (!recorder.audioBlob || !sessionId || !currentQ) return;
     setSubmittingTurn(true);
@@ -440,10 +449,10 @@ function PracticeSession({
       const form = new FormData();
       form.append('audio', recorder.audioBlob, 'answer.webm');
 
-      const cvSummary = analyzer.buildSummary();
+      const cvSummary = deliveryAnalyticsEnabled ? analyzer.buildSummary() : null;
       if (cvSummary) {
         form.append('cv_summary', JSON.stringify(cvSummary));
-      } else {
+      } else if (deliveryAnalyticsEnabled) {
         console.warn('[Practice] cv_summary missing on submit', analyzer.diagnostics);
       }
 
@@ -592,7 +601,7 @@ function PracticeSession({
     // Zero the clock here (the only place recording begins) so the timer
     // effect starts from 0 with no synchronous setState inside the effect.
     setElapsedSeconds(0);
-    recorder.start().catch((err: Error) => {
+    recorder.start({ video: deliveryAnalyticsEnabled }).catch((err: Error) => {
       setTurnError(`Could not start recording: ${err.message}`);
     });
   }

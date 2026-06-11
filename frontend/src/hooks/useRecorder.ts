@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 type RecorderState = 'idle' | 'recording' | 'stopped';
+type StartOptions = { video?: boolean };
 
 function pickSupportedMimeType(candidates: string[]): string | undefined {
   for (const candidate of candidates) {
@@ -58,14 +59,20 @@ export function useRecorder() {
     setVideoStream(null);
   }, []);
 
-  const start = useCallback(async () => {
-    // Try for both tracks. If the user denies camera only, fall back to
-    // audio-only so the answer still goes through.
+  const start = useCallback(async (options: StartOptions = {}) => {
+    const wantsVideo = options.video !== false;
+    // Try for both tracks only after the user has opted into delivery
+    // analytics. If camera setup fails, fall back to audio-only so the answer
+    // still goes through.
     let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    } catch {
+    if (!wantsVideo) {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } else {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
     }
 
     // Mark this as the current recording generation. Both `onstop`

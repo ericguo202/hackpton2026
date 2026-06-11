@@ -63,6 +63,29 @@ services:
     profiles:
       - tools
 
+  # Dedicated worker that enforces the delivery-analytics retention ceiling
+  # (delete stored webcam summaries within 12 months of a user's last session).
+  # Runs independently of api_blue/api_green so the promise holds even when the
+  # API is down. Shares the same advisory-lock-guarded loop as the in-API
+  # scheduler, so the two are safe to run together (single-flight + idempotent).
+  retention_purge:
+    image: ${API_IMAGE:?API_IMAGE must be set}
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      # Worker process, not web/migrations: don't run migrations on boot (the
+      # `migrate` service owns schema) and skip the API-oriented healthcheck.
+      RUN_MIGRATIONS_ON_STARTUP: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "-m", "scripts.retention_worker"]
+    healthcheck:
+      disable: true
+
   caddy:
     image: caddy:2
     restart: always

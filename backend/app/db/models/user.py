@@ -12,7 +12,7 @@ Populated via two paths:
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import Date, Enum, Integer, Text, Boolean, text
+from sqlalchemy import Date, DateTime, Enum, Integer, Text, Boolean, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -91,6 +91,38 @@ class User(Base):
     # without a MutableList wrapper.
     recent_opening_questions: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+
+    # Server-side proof of consent for practice delivery analytics. This is
+    # separate from browser-local calibration consent: calibration never leaves
+    # the device, while `interview_turns.cv_summary` is persisted on our server.
+    delivery_analytics_consent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    delivery_analytics_consent_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    delivery_analytics_revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Clickwrap acceptance record — the per-version, timestamped proof that the
+    # user affirmatively agreed to the current Terms of Service and Privacy
+    # Policy. NULL means "has not accepted the current version", which the forced
+    # acceptance gate uses to (re-)prompt. The CURRENT_* constants live in
+    # `app/services/policy_versions.py` (mirrored in the frontend); bump a
+    # constant when a policy materially changes to force renewed acceptance.
+    terms_accepted_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    privacy_accepted_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    privacy_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(

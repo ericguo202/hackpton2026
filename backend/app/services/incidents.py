@@ -10,12 +10,15 @@ from __future__ import annotations
 import logging
 import traceback
 from collections.abc import Mapping, Sequence
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import delete as sa_delete, or_, update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.models.incident import Incident
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
@@ -65,6 +68,68 @@ def _user_fields(user: User | None) -> dict[str, Any]:
     if user is None:
         return {"user_id": None, "clerk_user_id": None}
     return {"user_id": user.id, "clerk_user_id": user.clerk_user_id}
+
+
+async def scrub_old_incident_content(
+    db: AsyncSession, *, now: datetime | None = None, retention_days: int | None = None
+) -> int:
+    """NULL the free-text/JSON payload of incidents past the content-retention
+    window, keeping the event skeleton (type/severity/timestamps) for audit.
+
+    `sent_content`/`returned_content` can hold user-supplied text (moderated
+    input, saved-question text, injection-attempt input), so we don't keep it
+    indefinitely. Operates inside the CALLER's transaction (no commit) — the
+    daily retention sweep batches this with its other work. Idempotent: rows
+    already scrubbed are excluded, so re-runs report 0.
+    """
+    if retention_days is None:
+        retention_days = settings.INCIDENT_CONTENT_RETENTION_DAYS
+    # incidents.occurred_at is TIMESTAMP WITHOUT TIME ZONE (naive UTC) — compare
+    # against a naive cutoff (see the same convention in delivery_consent.py).
+    if now is None:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+    elif now.tzinfo is not None:
+        now = now.astimezone(timezone.utc).replace(tzinfo=None)
+    cutoff = now - timedelta(days=retention_days)
+
+    result = await db.execute(
+        sa_update(Incident)
+        .where(Incident.occurred_at < cutoff)
+        .where(
+            or_(
+                Incident.sent_content.isnot(None),
+                Incident.returned_content.isnot(None),
+                Incident.error.isnot(None),
+            )
+        )
+        .values(sent_content=None, returned_content=None, error=None)
+    )
+    return result.rowcount or 0
+
+
+async def delete_incidents_for_user(
+    db: AsyncSession,
+    *,
+    user_id: UUID | None = None,
+    clerk_user_id: str | None = None,
+) -> int:
+    """Hard-delete a departing user's incident rows.
+
+    The `incidents.user_id` FK is ON DELETE SET NULL, so without this a deleted
+    user's rows would survive de-linked but still carrying their content. Called
+    from the Clerk `user.deleted` webhook BEFORE the users row is removed (so the
+    `user_id` match still resolves). Matches on either identifier. Operates in
+    the caller's transaction (no commit).
+    """
+    conditions = []
+    if user_id is not None:
+        conditions.append(Incident.user_id == user_id)
+    if clerk_user_id is not None:
+        conditions.append(Incident.clerk_user_id == clerk_user_id)
+    if not conditions:
+        return 0
+    result = await db.execute(sa_delete(Incident).where(or_(*conditions)))
+    return result.rowcount or 0
 
 
 async def log_incident(
