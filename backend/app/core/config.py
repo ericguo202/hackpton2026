@@ -32,7 +32,6 @@ class Settings(BaseSettings):
         "http://localhost:5174",
         "http://localhost:8080",
         "https://hackpton2026.vercel.app",
-        "https://socraticvoice.com",
         "https://interviewpie.com"
     ]
 

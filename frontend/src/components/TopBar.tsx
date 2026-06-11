@@ -43,7 +43,7 @@ export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
   return (
     <header className="relative flex items-center justify-between gap-6 px-8 md:px-16 pt-8 pb-4">
       <div className="flex items-baseline gap-3 text-eyebrow text-sm uppercase tracking-eyebrow text-text-muted">
-        <span className="font-medium text-text tabular-nums">SocraticVoice</span>
+        <span className="font-medium text-text tabular-nums">InterviewPie</span>
         <span aria-hidden className="hidden min-[1130px]:inline">·</span>
         <span className="hidden min-[1130px]:inline">Interview Practice</span>
       </div>

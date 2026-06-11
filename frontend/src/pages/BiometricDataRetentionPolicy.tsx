@@ -23,7 +23,7 @@ import TopBar from '../components/TopBar';
 
 // Placeholders for counsel to finalize before publication.
 const ENTITY = '[Legal Entity Name]';
-const PRIVACY_EMAIL = 'privacy@socraticvoice.com';
+const PRIVACY_EMAIL = 'privacy@interviewpie.com';
 const EFFECTIVE_DATE = '[Effective date — pending legal review]';
 
 function Section({
@@ -89,7 +89,7 @@ export default function BiometricDataRetentionPolicy() {
         </p>
         <p className="mt-4 text-sm leading-7 text-text-subtle">
           This policy explains how {ENTITY} (&ldquo;we,&rdquo; &ldquo;us&rdquo;)
-          handles biometric and biometric-derived data in the SocraticVoice
+          handles biometric and biometric-derived data in the InterviewPie
           interview-practice product, including how long we keep it and how it is
           destroyed. It is the retention policy referenced in the consent notices
           shown before camera-based features are enabled.

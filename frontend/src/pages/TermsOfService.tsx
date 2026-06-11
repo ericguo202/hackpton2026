@@ -29,7 +29,7 @@ import TopBar from '../components/TopBar';
 // the Privacy Policy and Biometric Data Retention Policy so the three documents
 // stay in sync.
 const ENTITY = '[Legal Entity Name]';
-const PRIVACY_EMAIL = 'privacy@socraticvoice.com';
+const PRIVACY_EMAIL = 'privacy@interviewpie.com';
 const EFFECTIVE_DATE = '[Effective date — pending legal review]';
 
 function Section({
@@ -96,7 +96,7 @@ export default function TermsOfService() {
         <p className="mt-4 text-sm leading-7 text-text-subtle">
           These Terms of Service (&ldquo;Terms&rdquo;) are an agreement between
           you and {ENTITY} (&ldquo;we,&rdquo; &ldquo;us,&rdquo;
-          &ldquo;our&rdquo;) governing your use of the SocraticVoice
+          &ldquo;our&rdquo;) governing your use of the InterviewPie
           interview-practice product (the &ldquo;Service&rdquo;). Please read
           them carefully. They work alongside our{' '}
           <Link
@@ -117,7 +117,7 @@ export default function TermsOfService() {
 
         <Section id="acceptance" heading="1. Introduction and acceptance">
           <p>
-            SocraticVoice is an AI behavioral-interview coach. You record spoken
+            InterviewPie is an AI behavioral-interview coach. You record spoken
             answers to interview questions; we transcribe and evaluate them and
             give you written feedback and practice scores. By accessing or using
             the Service, you agree to be bound by these Terms. If you do not

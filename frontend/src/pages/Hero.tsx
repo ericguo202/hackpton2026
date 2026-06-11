@@ -71,7 +71,7 @@ export default function Hero() {
                 lineHeight: 1,
               }}
             >
-              SOCRATICVOICE
+              INTERVIEWPIE
             </p>
 
             <h1
