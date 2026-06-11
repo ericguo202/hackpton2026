@@ -1,5 +1,5 @@
 """
-Forward-coaching generator (OpenRouter → `google/gemini-2.5-flash`).
+Forward-coaching generator (OpenRouter → `deepseek/deepseek-v4-flash`, no reasoning).
 
 Separate from the evaluator on purpose. The evaluator's job is scoring +
 retrospective feedback against a long (~22k-char) field/experience rubric; this
@@ -34,7 +34,7 @@ from app.services.evaluator import EvaluatorOutput, NextTake
 
 logger = logging.getLogger(__name__)
 
-COACHING_MODEL = "google/gemini-2.5-flash"
+COACHING_MODEL = "deepseek/deepseek-v4-flash"
 
 _SYSTEM_PROMPT = """\
 You are a behavioral-interview coach. The candidate just answered a question and \
@@ -43,11 +43,17 @@ write ONE short, forward-looking coaching tip for their NEXT attempt.
 
 Return ONLY a JSON object with exactly these two string fields:
 - "focus": one plain sentence naming the single most important thing to change \
-next time (<= 240 characters).
+next time. HARD LIMIT 270 characters.
 - "approach": two to three plain sentences on how to deliver a stronger version, \
-built on the candidate's own example (<= 360 characters).
+built on the candidate's own example. HARD LIMIT 390 characters.
 
 Hard rules:
+- CHARACTER LIMITS ARE STRICT AND NON-NEGOTIABLE. "focus" must be at most 270 \
+characters and "approach" at most 390 characters, counting EVERY character \
+including spaces and punctuation. Any text past the limit is chopped off \
+mid-sentence and shown to the candidate with a trailing "..." that looks broken. \
+Always finish your final sentence comfortably inside the limit — if you are \
+running long, tighten the wording or drop a clause, never spill over.
 - Use ONLY what the candidate actually said. Never invent names, numbers, \
 companies, results, or events they did not state.
 - When a specific is missing, tell them what KIND of detail to add (e.g. "name \
@@ -166,9 +172,18 @@ async def generate_next_take(
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.3,
+            # No reasoning trace, so the budget only has to cover the small JSON
+            # output object (two short capped strings) — 400 is plenty.
             max_tokens=400,
+            # Without the reasoning trace this returns in a couple of seconds;
+            # the path is still background (hidden behind "Scoring in progress")
+            # and fails soft to None on timeout. We promise ~40s delivery, so
+            # keep the timeout tight.
             timeout=30.0,
             response_format={"type": "json_object"},
+            # deepseek-v4-flash reasons by default; disable it explicitly so this
+            # stays a fast, cheap, single-shot generation.
+            extra_body={"reasoning": {"enabled": False}},
         )
         raw = response.choices[0].message.content or ""
         data = json.loads(extract_json_object(raw))

@@ -1,5 +1,5 @@
 """
-Follow-up question generator (OpenRouter → `google/gemini-2.5-flash`).
+Follow-up question generator (OpenRouter → `deepseek/deepseek-v4-flash`, no reasoning).
 
 Separate from the evaluator so both can run in parallel — follow-up
 generation only needs the question + transcript and uses a plain-text
@@ -31,7 +31,7 @@ from app.services._openrouter import get_client
 
 logger = logging.getLogger(__name__)
 
-FOLLOWUP_MODEL = "google/gemini-2.5-flash"
+FOLLOWUP_MODEL = "deepseek/deepseek-v4-flash"
 
 _FALLBACK = "Can you walk me through a specific challenge you faced and how you resolved it?"
 
@@ -188,7 +188,7 @@ async def generate_followup(
     sample_question_themes: list[str] | None = None,
     experience_level: ExperienceLevel | None = None,
 ) -> str:
-    """Return a probing follow-up question via Gemini 2.5 Flash."""
+    """Return a probing follow-up question via DeepSeek v4 Flash (no reasoning)."""
     # Deterministic backstop: if the transcript carries an injection marker, skip
     # the LLM entirely (no token spend on attacker-directed work) and ask a
     # generic probe. In the normal flow `submit_turn` 422s such a transcript
@@ -219,6 +219,10 @@ async def generate_followup(
         temperature=0.4,
         max_tokens=256,
         timeout=30.0,
+        # deepseek-v4-flash reasons by default; this is a fast single-line
+        # generation that doesn't need a reasoning trace, so disable it to keep
+        # latency and cost down.
+        extra_body={"reasoning": {"enabled": False}},
     )
     raw = response.choices[0].message.content or ""
     logger.warning("Followup raw response: %r", raw)

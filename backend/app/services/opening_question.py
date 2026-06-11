@@ -4,7 +4,7 @@ Opening-question generator.
 Produces a single tailored behavioral-interview question that references both
 the candidate's profile (resume + declared target role/industry/bio) and the
 company brief produced by `company_research.research_company()`. Runs on
-`google/gemini-2.5-flash` via OpenRouter.
+`google/gemini-3.5-flash` (minimal reasoning) via OpenRouter.
 
 The system prompt is assembled per-call by
 `_field_prompts.build_field_system_prompt(brief.category)`. That helper:
@@ -51,7 +51,7 @@ from app.services.incidents import log_injection_detected
 
 logger = logging.getLogger(__name__)
 
-OPENING_MODEL = "google/gemini-2.5-flash"
+OPENING_MODEL = "google/gemini-3.5-flash"
 _RESUME_CHAR_LIMIT = 1500
 
 
@@ -245,6 +245,9 @@ async def generate_opening_question(
         ],
         temperature=0.7,
         timeout=60.0,
+        # gemini-3.5-flash reasons by default; this is a single short generation
+        # that doesn't need a reasoning trace, so keep it minimal for latency/cost.
+        extra_body={"reasoning": {"effort": "minimal"}},
     )
     text = response.choices[0].message.content or ""
     return _strip_wrapping_quotes(text)

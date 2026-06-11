@@ -29,7 +29,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
   - **Empty-omission pattern (load-bearing).** `opening_question.py:_company_digest` surfaces these **only when non-empty** — rendering "Role signals: (none)" cues the model to invent from priors. Reused by `followup.py` and `SessionDetail.tsx` Overview.
   - **Recent-questions avoid-list (global, reset-on-profile-change).** `users.recent_opening_questions` (JSONB, `'[]'` default, migration `0008_recent_opening_qs`) caches the **3 most recent opening questions**, newest-first. `_recent_questions_block` injects them into the **user** prompt as a "generate a DISTINCT question" avoid-list (empty-omission). `sessions.py` reads into `generate_opening_question(..., recent_questions=…)`, then rolls the new one in (`([opening_q] + old)[:3]`, **reassigned not mutated** so SQLAlchemy dirty-tracking fires). **Global scope** across companies. **Reset to `[]` in `onboarding.py`** whenever `target_role` / `industry` / `experience_level` changes. Not in `UserOut`.
 
-- **Field-tailored, confusion-aware follow-up question.** `app/services/followup.py` (Gemini 2.5 Flash). Three coupled rules:
+- **Field-tailored, confusion-aware follow-up question.** `app/services/followup.py` (DeepSeek v4 Flash, no reasoning). Three coupled rules:
   - **Brief threading:** `generate_followup` accepts `category`, `role_signals`, `sample_question_themes`, `experience_level` (all default `None`, so legacy `brief_out is None` sessions work). `_followup_and_tts` threads them from `brief_out` (+ `experience_level` from `user`). `Context:` block uses empty-omission. **No separate experience-tailored follow-up prompt** — level is one calibration line, not a matrix lookup.
   - **Confused-candidate rule:** off-topic / nonsensical / single-word answer → do NOT pretend it was substantive or echo it back; gently redirect by re-asking more concretely.
   - **Output-format rule + narrow sanitizer:** prefatory statements OK; meta-reasoning forbidden. Output runs through `_sanitize_followup` (strips wrap-quotes, leading `Question:`/`Q:`/`Follow-up:` labels, asterisks). **A heuristic "drop preamble" trimmer was DELIBERATELY NOT added** (false-positives on legit framings); meta-reasoning suppression lives in the prompt, not post-trim.
@@ -81,7 +81,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
 
 - **Frontend**: React + Vite, Clerk (auth), recharts, MediaRecorder, MediaPipe (webcam delivery analytics)
 - **Backend**: FastAPI, Alembic + Postgres, OpenAI Python SDK pointed at OpenRouter (`https://openrouter.ai/api/v1`)
-- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v3.2` evaluator, `google/gemini-2.5-flash` research/opening/follow-up/coaching, `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback), Serper
+- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v3.2` evaluator, `google/gemini-2.5-flash` research, `google/gemini-3.5-flash` opening (minimal reasoning), `deepseek/deepseek-v4-flash` follow-up + coaching (both no reasoning), `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback), Serper
 - **Auth**: Clerk JWT verified via `python-jose` against `CLERK_JWT_ISSUER` JWKS
 
 ---
@@ -93,7 +93,7 @@ Browser (React+Vite)
   │── Clerk JWT ──────────────────────► FastAPI
   │── MediaRecorder blob ─────────────► FastAPI
                                           │── ElevenLabs STT (audio → transcript)
-                                          │── OpenRouter (DeepSeek v3.2 evaluator, Gemini 2.5 Flash research/questions)
+                                          │── OpenRouter (DeepSeek v3.2 evaluator, Gemini research + opening question, DeepSeek v4 Flash follow-up)
                                           │── ElevenLabs TTS (text → audio)
                                           │── Serper API (company research)
                                           └── Postgres (via Alembic)
@@ -102,10 +102,10 @@ Browser (React+Vite)
 **Up to five straight-line LLM calls per session, all via OpenRouter.** #1/#2 fire once at session start; #3 fires once after turn 1 (follow-up); #4 evaluates each turn in background work; #5 generates forward coaching right after each eval (same bg task). Turn 1 eval+coaching runs while the user answers turn 2. Final-turn eval+coaching runs in `_run_background_finalize` after the final POST returns, then metrics are written and the session flips to `completed`.
 
 1. **Company research + field classification** (`google/gemini-2.5-flash`). Two parallel Serper queries via `asyncio.gather` → `CompanyBrief(description, headlines, values, category, role_signals, sample_question_themes)`. `category` ∈ 15 buckets.
-2. **Opening question** (`google/gemini-2.5-flash`). System by `build_field_system_prompt(brief.category, rng=None)`; user prompt (`_company_digest`) appends `role_signals` / `sample_question_themes` only when non-empty.
-3. **Follow-up question** (non-final turns, `google/gemini-2.5-flash` via `followup.py`, system+user split). System = hard rules (10–25 words, references something concrete, ends in `?`) + confused-candidate + output-format; output through `_sanitize_followup`.
+2. **Opening question** (`google/gemini-3.5-flash`, minimal reasoning). System by `build_field_system_prompt(brief.category, rng=None)`; user prompt (`_company_digest`) appends `role_signals` / `sample_question_themes` only when non-empty.
+3. **Follow-up question** (non-final turns, `deepseek/deepseek-v4-flash`, no reasoning, via `followup.py`, system+user split). System = hard rules (10–25 words, references something concrete, ends in `?`) + confused-candidate + output-format; output through `_sanitize_followup`.
 4. **Evaluate** (`deepseek/deepseek-v3.2`, JSON mode, detached bg task). Rubric from `_field_rubrics.FIELD_RUBRICS` keyed on `brief.category` — same key as opening/follow-up.
-5. **Forward coaching** (`google/gemini-2.5-flash` via `coaching.py:generate_next_take`, JSON mode). A deliberately SEPARATE short call (NOT folded into the evaluator's LOCKED prompt) run right after #4 in the same bg task (`sessions.py:_attach_next_take`). Input grounded in the evaluator's output — question + transcript + `main_takeaway` + top `improvement_moments`. Writes `feedback_detail.next_take` (`NextTake{focus, approach}`). **Fails soft**: any error → `next_take` null, scoring unaffected. Surfaced only in Practice's `ImproveNextCard`.
+5. **Forward coaching** (`deepseek/deepseek-v4-flash`, no reasoning, via `coaching.py:generate_next_take`, JSON mode). A deliberately SEPARATE short call (NOT folded into the evaluator's LOCKED prompt) run right after #4 in the same bg task (`sessions.py:_attach_next_take`). Input grounded in the evaluator's output — question + transcript + `main_takeaway` + top `improvement_moments`. Writes `feedback_detail.next_take` (`NextTake{focus, approach}`). **Fails soft**: any error → `next_take` null, scoring unaffected. Surfaced only in Practice's `ImproveNextCard`.
 
 ---
 
@@ -203,7 +203,7 @@ POST   /saved-questions/{id}/practice  { voice_id?, timezone? } → SessionCreat
 }
 ```
 
-- **Models:** Evaluator → `deepseek/deepseek-v3.2`. Research / opening / follow-up → `google/gemini-2.5-flash`. No other model mixing.
+- **Models:** Evaluator → `deepseek/deepseek-v3.2`. Research → `google/gemini-2.5-flash`; opening → `google/gemini-3.5-flash` (minimal reasoning); follow-up → `deepseek/deepseek-v4-flash` (no reasoning). No other model mixing.
 - **Scores:** five content dims LLM-scored 0–10 ints, then `_calibrate_content_scores` (only lowers); `delivery` computed server-side by `_compute_delivery_score` (never trusted from the model). All six nullable on the wire.
 - **Delivery feedback:** `feedback_detail.delivery_feedback` built server-side from `cv_summary` (never the LLM, not in the prompt), omitted when camera declined. `summary` required; four cues optional, each ≤270 chars.
 - **Forward coaching:** `feedback_detail.next_take` (`{focus ≤270, approach ≤390}`) is NOT from the evaluator — written by the separate coaching call (#5, `coaching.py`) and merged before persistence. Null on legacy turns / coaching failure. Reuses the evaluator's `ProseStr*` `BeforeValidator` truncators.
