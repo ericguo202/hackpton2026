@@ -8,6 +8,10 @@
  * the same response when the candidate allows camera access.
  */
 
+import { Link } from 'react-router';
+
+import { LEGAL_LINKS } from '../lib/legalLinks';
+
 const DIMENSIONS = [
   { n: '01', name: 'Structure' },
   { n: '02', name: 'Problem Solving' },
@@ -17,11 +21,11 @@ const DIMENSIONS = [
   { n: '06', name: 'Delivery' },
 ] as const;
 
-type Props = { tagline?: string };
+type Props = { tagline?: string; legal?: boolean };
 
-export default function ScoreDimensions({ tagline }: Props) {
+export default function ScoreDimensions({ tagline, legal }: Props) {
   return (
-    <footer className="hidden sm:flex border-t border-border px-8 md:px-16 py-6 flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <footer className="hidden min-[900px]:flex border-t border-border px-8 md:px-16 py-6 flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <dl className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
         {DIMENSIONS.map((d) => (
           <div key={d.n} className="flex items-baseline gap-2">
@@ -30,10 +34,24 @@ export default function ScoreDimensions({ tagline }: Props) {
           </div>
         ))}
       </dl>
-      {tagline && (
-        <p className="font-display italic text-base text-text-muted">
-          {tagline}
-        </p>
+      {legal ? (
+        <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+          {LEGAL_LINKS.map((l) => (
+            <Link
+              key={l.to}
+              to={l.to}
+              className="transition-colors hover:text-text focus-visible:text-text"
+            >
+              {l.label}
+            </Link>
+          ))}
+        </nav>
+      ) : (
+        tagline && (
+          <p className="font-display italic text-base text-text-muted">
+            {tagline}
+          </p>
+        )
       )}
     </footer>
   );

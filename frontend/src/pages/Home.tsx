@@ -604,7 +604,7 @@ export default function Home() {
         </div>
       </main>
 
-      <ScoreDimensions tagline="One opening question. One follow-up. Then the scores." />
+      <ScoreDimensions legal />
 
       <DeliveryConsentDialog
         open={consentModalOpen}

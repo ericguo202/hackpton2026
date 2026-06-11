@@ -21,6 +21,7 @@ export default function Hero() {
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
       <TopBar
+        legalMenu
         rightSlot={
           <button
             type="button"
