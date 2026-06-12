@@ -247,7 +247,7 @@ async def generate_opening_question(
         timeout=60.0,
         # gemini-3.5-flash reasons by default; this is a single short generation
         # that doesn't need a reasoning trace, so keep it minimal for latency/cost.
-        extra_body={"reasoning": {"effort": "minimal"}},
+        extra_body={"reasoning": {"effort": "medium"}},
     )
     text = response.choices[0].message.content or ""
     return _strip_wrapping_quotes(text)
