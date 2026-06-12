@@ -363,42 +363,15 @@ export default function Home() {
 
       <main className="flex-1">
         <div className="relative flex min-h-full items-center overflow-hidden">
-          {/* Quiet pie-arc brand accent (replaces the retired sculpture).
-              Two stroke arcs on the brand tokens echo the score-pie mark
-              without competing with the company input — no data, no text,
-              no motion beyond the page reveal. Deliberately ≥xl only. */}
-          <svg
+          {/* Decorative brand accent. Deliberately >=1250px only so it never
+              competes with the company input on smaller layouts. */}
+          <img
             aria-hidden="true"
-            viewBox="0 0 480 480"
-            fill="none"
-            className="anim-reveal pointer-events-none hidden xl:block absolute right-[3vw] top-1/2 h-[24rem] w-[24rem] -translate-y-1/2"
+            alt=""
+            src="/interviewpie_cherry_pie_slice.svg"
+            className="anim-reveal pointer-events-none hidden min-[1250px]:block absolute right-[5vw] top-1/2 h-[28rem] w-[40rem] -translate-y-1/2 object-contain"
             style={{ animationDelay: '320ms' }}
-          >
-            <g transform="rotate(-90 240 240)">
-              <circle cx="240" cy="240" r="200" stroke="var(--color-border)" strokeWidth="1.5" />
-              <circle
-                cx="240"
-                cy="240"
-                r="200"
-                pathLength={100}
-                stroke="var(--color-cherry)"
-                strokeWidth="12"
-                strokeLinecap="round"
-                strokeDasharray="20 80"
-              />
-              <circle
-                cx="240"
-                cy="240"
-                r="162"
-                pathLength={100}
-                stroke="var(--color-amber)"
-                strokeWidth="12"
-                strokeLinecap="round"
-                strokeDasharray="11 89"
-                strokeDashoffset={-32}
-              />
-            </g>
-          </svg>
+          />
 
           <form
             onSubmit={handleStart}
@@ -416,7 +389,7 @@ export default function Home() {
               <div className="hidden min-[900px]:block">
                 <h1
                   className="anim-reveal mb-10 font-display font-semibold leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
-                  style={{ animationDelay: '80ms', fontSize: 'clamp(2.25rem, 5vw, 4.25rem)' }}
+                  style={{ animationDelay: '80ms', fontSize: 'clamp(2rem, 4vw, 3.5rem)' }}
                 >
                   Which company are you
                   <br />
