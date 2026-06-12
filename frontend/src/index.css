@@ -115,7 +115,7 @@
   --color-amber-tint:   #FFF1DC;  /* chip / soft-callout background */
 
   /* ---------- Semantic aliases (prefer these in components) ---------- */
-  --color-surface:        var(--color-primary-100);
+  --color-surface:        #F5E7CF;
   --color-surface-raised: var(--color-tertiary-100);
   --color-surface-sunken: var(--color-quaternary-100);
   --color-border:         var(--color-primary-200);
