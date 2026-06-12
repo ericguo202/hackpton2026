@@ -1,9 +1,6 @@
 /**
- * Shared editorial masthead for Hero and Home.
- *
- * The wordmark is intentionally metadata-style — issue number, section,
- * sub-section — rather than a logo. This sets the "publication" tone
- * established in .impeccable.md (premium, quiet, intentional).
+ * Shared masthead for Hero and Home: the InterviewPie brand lockup on the
+ * left, navigation and account controls on the right.
  *
  * `nav` slot holds inline navigation links (Practice / History) on the
  * signed-in surface. `rightSlot` holds the sign-in link on Hero and the
@@ -19,6 +16,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, matchPath, useLocation } from 'react-router';
 import { LEGAL_LINKS } from '../lib/legalLinks';
+import BrandLockup from './BrandLockup';
 import ThemeToggle from './ThemeToggle';
 
 type Props = {
@@ -42,11 +40,7 @@ export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
 
   return (
     <header className="relative flex items-center justify-between gap-6 px-8 md:px-16 pt-8 pb-4">
-      <div className="flex items-baseline gap-3 text-eyebrow text-sm uppercase tracking-eyebrow text-text-muted">
-        <span className="font-medium text-text tabular-nums">InterviewPie</span>
-        <span aria-hidden className="hidden min-[1130px]:inline">·</span>
-        <span className="hidden min-[1130px]:inline">Interview Practice</span>
-      </div>
+      <BrandLockup />
 
       <div className="flex items-center gap-4">
         {nav && (

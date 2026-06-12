@@ -27,3 +27,6 @@ dist-ssr
 .claude
 .impeccable.md
 .env
+
+# screenshot output from scripts/shot.mjs (visual QA helper)
+shots

@@ -1,23 +1,25 @@
 /**
- * Signed-out landing / hero page.
+ * Signed-out landing page.
  *
- * Design brief: frontend/.impeccable.md, "Current focus: the hero / landing
- * page" and the five hero design principles. Typography carries the
- * emotional load; no illustrations, no gradient cards, no decorative
- * elements. One primary action alone on a cream surface.
+ * Design brief: .impeccable/brief-rebrand-stage1.md (confirmed). Four beats:
+ * hero with a real-feedback specimen in place of illustration, the two-turn
+ * session as a numbered sequence, the methodology case, and the free-tier
+ * statement with a closing CTA. Student-first, but professional enough to
+ * demo to a college career center as-is (PRODUCT.md future audience).
  *
- * Both the header link and the primary CTA navigate to `/sign-in`.
+ * The header link goes to /sign-in; both CTAs go to /sign-up (new visitors).
  */
 
-import { ImageDithering } from '@paper-design/shaders-react';
 import { useNavigate } from 'react-router';
-import ScoreDimensions from '../components/ScoreDimensions';
+import HowItWorks from '../components/landing/HowItWorks';
+import LandingFooter from '../components/landing/LandingFooter';
+import Methodology from '../components/landing/Methodology';
+import ScorePieChart from '../components/landing/ScorePieChart';
 import TopBar from '../components/TopBar';
 import { GetStartedButton } from '../components/ui/get-started-button';
 
 export default function Hero() {
   const navigate = useNavigate();
-  const onSignInClick = () => navigate('/sign-in');
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
       <TopBar
@@ -25,7 +27,7 @@ export default function Hero() {
         rightSlot={
           <button
             type="button"
-            onClick={onSignInClick}
+            onClick={() => navigate('/sign-in')}
             className="relative cursor-pointer text-sm text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs before:absolute before:-inset-[14px] before:content-['']"
           >
             Sign in
@@ -33,82 +35,74 @@ export default function Hero() {
         }
       />
 
-      <main className="relative flex-1 flex items-center overflow-hidden">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none hidden xl:block absolute inset-y-0 right-0 aspect-[478/357] bg-[#17150F] overflow-hidden"
-          style={{
-            WebkitMaskImage:
-              'linear-gradient(to right, transparent 0%, black 85%)',
-            maskImage:
-              'linear-gradient(to right, transparent 0%, black 85%)',
-          }}
+      <main className="flex-1">
+        {/* Beat 1 — hero: type column + the score pie (brand visual). */}
+        <section
+          aria-labelledby="hero-heading"
+          className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-8 md:px-16 pt-8 pb-20 md:pt-12 md:pb-28"
         >
-          <ImageDithering
-            originalColors={false}
-            inverted={false}
-            type="8x8"
-            size={2.5}
-            colorSteps={2}
-            image="/hero-sculpture.png"
-            scale={1}
-            fit="cover"
-            colorBack="#00000000"
-            colorFront="#F1E9D2"
-            colorHighlight="#EAFF94"
-            className="absolute inset-0 w-full h-full"
-          />
-        </div>
+          <div className="grid items-center gap-12 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(21rem,26rem)] min-[900px]:gap-16">
+            <div>
+              <h1
+                id="hero-heading"
+                className="anim-reveal mb-6 md:mb-8 text-[2.25rem] lg:text-[2.625rem] xl:text-[3.25rem]"
+                style={{ animationDelay: '0ms', textWrap: 'balance', marginTop: 0 }}
+              >
+                Practice the interview, not the panic.
+              </h1>
 
-        <div className="relative z-10 w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-8 md:px-16 py-16 md:py-24">
-          <div className="max-w-[54rem]">
-            <p
-              className="anim-reveal font-display font-medium text-text mb-0"
-              style={{
-                animationDelay: '0ms',
-                fontSize: 'clamp(1.75rem, 3vw, 2.5rem)',
-                letterSpacing: '-0.02em',
-                lineHeight: 1,
-              }}
-            >
-              INTERVIEWPIE
-            </p>
-
-            <h1
-              className="anim-reveal font-display font-medium tracking-[-0.022em] leading-[1.12] text-text -mt-2 md:-mt-3 mb-8 md:mb-10"
-              style={{
-                animationDelay: '80ms',
-                fontSize: 'clamp(2.75rem, 6.5vw, 5.5rem)',
-              }}
-            >
-              Practice the interview,
-              <br />
-              not the panic.
-            </h1>
-
-            <p
-              className="anim-reveal font-sans text-lg md:text-xl text-text-muted leading-[1.55] max-w-[56ch] mb-4 md:mb-6"
-              style={{ animationDelay: '160ms' }}
-            >
-              Speak your answer aloud. Get six scores and a short list of
-              fixes. Two turns per session — a tight rep, not a marathon.
-            </p>
-
-            <div
-              className="anim-reveal flex flex-wrap items-center gap-x-8 gap-y-4"
-              style={{ animationDelay: '240ms' }}
-            >
-              <GetStartedButton onClick={onSignInClick} />
-
-              <p className="text-sm text-text-subtle">
-                Guided interview practice rooted in questions, speech, and reason
+              <p
+                className="anim-reveal max-w-[56ch] text-base lg:text-lg xl:text-xl leading-[1.55] text-text-muted mb-8"
+                style={{ animationDelay: '90ms' }}
+              >
+                Speak your answer out loud. Get six scores, the exact quotes
+                that earned them, and a short list of fixes. Two turns per
+                session: a tight rep, not a marathon.
               </p>
+
+              <div
+                className="anim-reveal flex flex-wrap items-center gap-x-7 gap-y-4"
+                style={{ animationDelay: '180ms' }}
+              >
+                <GetStartedButton onClick={() => navigate('/sign-up')} />
+                <p className="text-sm text-text-subtle">
+                  Behavioral interview prep, as easy as pie.
+                </p>
+              </div>
+            </div>
+
+            <div className="anim-reveal hidden min-[900px]:block" style={{ animationDelay: '260ms' }}>
+              <ScorePieChart />
             </div>
           </div>
-        </div>
+        </section>
+
+        {/* Beat 2 — the session as a true ordered sequence. */}
+        <HowItWorks />
+
+        {/* Beat 3 — the methodology case (raised full-bleed band). */}
+        <Methodology />
+
+        {/* Beat 4 — free tier + closing CTA. */}
+        <section
+          aria-labelledby="free-tier-heading"
+          className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-8 md:px-16 py-20 md:py-28"
+        >
+          <div className="mx-auto flex max-w-[44rem] flex-col items-center text-center">
+            <h2 id="free-tier-heading" style={{ textWrap: 'balance' }}>
+              Five practice sessions a day, free.
+            </h2>
+            <p className="mt-3 mb-8 max-w-[48ch] text-[0.9375rem] leading-relaxed text-text-muted">
+              The counter resets at midnight, your local time. No card
+              required, nothing to install: a browser, a microphone, and ten
+              minutes.
+            </p>
+            <GetStartedButton onClick={() => navigate('/sign-up')} />
+          </div>
+        </section>
       </main>
 
-      <ScoreDimensions tagline="For interviews that happen at 10 a.m. tomorrow." />
+      <LandingFooter />
     </div>
   );
 }

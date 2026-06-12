@@ -1,7 +1,7 @@
-/* Inter (variable optical size + italic) for all app/display/UI text.
+/* DM Sans (display/headings, the wordmark face) + Inter (body/UI text).
    Google Font imports MUST precede `@import "tailwindcss"` — Tailwind's
    import expands into `@layer` rules, and all `@import`s must come first. */
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,500..700&family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..700&display=swap');
 @import "tailwindcss";
 
 /* Dark mode is a class strategy on <html>. The token swap below (html.dark)
@@ -10,81 +10,89 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* ---------- Scale tokens ---------- */
+  /* ---------- Scale tokens ----------
+     InterviewPie rebrand (DESIGN.md): one warm-neutral family tinted toward
+     the brand amber hue, anchored on the vanilla page surface (#FDF8F2) and
+     cocoa ink (#271812). The pre-rebrand earth scales were nine near-duplicate
+     ramps; they collapse into this single family. The scale NAMES are kept so
+     legacy `bg-tertiary-200`-style utilities keep compiling — tertiary and
+     quaternary carry bespoke light stops (card white / sunken well) that the
+     semantic aliases below bind to; the rest mirror primary. */
 
-  /* Primary */
-  --color-primary-100: #F1E9D2;
-  --color-primary-200: #ccc19e;
-  --color-primary-300: #a49a7e;
-  --color-primary-400: #7d765f;
-  --color-primary-500: #585342;
-  --color-primary-600: #363228;
-  --color-primary-700: #17150f;
+  /* Primary — the canonical neutral ramp */
+  --color-primary-100: #FDF8F2;
+  --color-primary-200: #E8DCCB;
+  --color-primary-300: #D4C3AC;
+  --color-primary-400: #9C8874;
+  --color-primary-500: #6E5D50;
+  --color-primary-600: #463A30;
+  --color-primary-700: #271812;
 
-  /* Secondary */
-  --color-secondary-100: #E7DFC6;
-  --color-secondary-200: #beb7a3;
-  --color-secondary-300: #979180;
-  --color-secondary-400: #716d60;
-  --color-secondary-500: #4e4b41;
-  --color-secondary-600: #2d2b25;
-  --color-secondary-700: #12110e;
+  /* Secondary (mirrors primary) */
+  --color-secondary-100: #FDF8F2;
+  --color-secondary-200: #E8DCCB;
+  --color-secondary-300: #D4C3AC;
+  --color-secondary-400: #9C8874;
+  --color-secondary-500: #6E5D50;
+  --color-secondary-600: #463A30;
+  --color-secondary-700: #271812;
 
-  /* Tertiary */
-  --color-tertiary-100: #f4f0e7;
-  --color-tertiary-200: #D4CAB0;
-  --color-tertiary-300: #aba38e;
-  --color-tertiary-400: #847e6d;
-  --color-tertiary-500: #605b4e;
-  --color-tertiary-600: #3d3a31;
-  --color-tertiary-700: #1d1c17;
+  /* Tertiary — raised-surface family (100 = card white, 200/300 = folder-tab
+     neutrals; the SessionDetail "case file" reads these directly) */
+  --color-tertiary-100: #FFFFFF;
+  --color-tertiary-200: #F6EDE2;
+  --color-tertiary-300: #E8DCCB;
+  --color-tertiary-400: #9C8874;
+  --color-tertiary-500: #6E5D50;
+  --color-tertiary-600: #463A30;
+  --color-tertiary-700: #271812;
 
-  /* Quaternary */
-  --color-quaternary-100: #eee6d5;
-  --color-quaternary-200: #C9BEA3;
-  --color-quaternary-300: #a19882;
-  --color-quaternary-400: #7a7362;
-  --color-quaternary-500: #565044;
-  --color-quaternary-600: #343028;
-  --color-quaternary-700: #14130e;
+  /* Quaternary — sunken-surface family (100 = inputs/wells) */
+  --color-quaternary-100: #F6EDE2;
+  --color-quaternary-200: #E5D8C6;
+  --color-quaternary-300: #D0BFA8;
+  --color-quaternary-400: #9C8874;
+  --color-quaternary-500: #6E5D50;
+  --color-quaternary-600: #463A30;
+  --color-quaternary-700: #271812;
 
-  /* Quinary */
-  --color-quinary-100: #e5d9c8;
-  --color-quinary-200: #c2b099;
-  --color-quinary-300: #998B78;
-  --color-quinary-400: #726759;
-  --color-quinary-500: #4d463b;
-  --color-quinary-600: #2b2720;
-  --color-quinary-700: #13100d;
+  /* Quinary (mirrors primary) */
+  --color-quinary-100: #FDF8F2;
+  --color-quinary-200: #E8DCCB;
+  --color-quinary-300: #D4C3AC;
+  --color-quinary-400: #9C8874;
+  --color-quinary-500: #6E5D50;
+  --color-quinary-600: #463A30;
+  --color-quinary-700: #271812;
 
-  /* Senary */
-  --color-senary-100: #e9d8b2;
-  --color-senary-200: #c1b08d;
-  --color-senary-300: #988b6e;
-  --color-senary-400: #716751;
-  --color-senary-500: #4c4536;
-  --color-senary-600: #2b261c;
-  --color-senary-700: #13110b;
+  /* Senary (mirrors primary) */
+  --color-senary-100: #FDF8F2;
+  --color-senary-200: #E8DCCB;
+  --color-senary-300: #D4C3AC;
+  --color-senary-400: #9C8874;
+  --color-senary-500: #6E5D50;
+  --color-senary-600: #463A30;
+  --color-senary-700: #271812;
 
-  /* Septenary */
-  --color-septenary-100: #E9D9B8;
-  --color-septenary-200: #c1b290;
-  --color-septenary-300: #988c71;
-  --color-septenary-400: #726853;
-  --color-septenary-500: #4d4637;
-  --color-septenary-600: #2b271e;
-  --color-septenary-700: #13110b;
+  /* Septenary (mirrors primary) */
+  --color-septenary-100: #FDF8F2;
+  --color-septenary-200: #E8DCCB;
+  --color-septenary-300: #D4C3AC;
+  --color-septenary-400: #9C8874;
+  --color-septenary-500: #6E5D50;
+  --color-septenary-600: #463A30;
+  --color-septenary-700: #271812;
 
-  /* Octonary */
-  --color-octonary-100: #f6f1de;
-  --color-octonary-200: #DAD1AA;
-  --color-octonary-300: #b1aa8a;
-  --color-octonary-400: #8a846b;
-  --color-octonary-500: #65604d;
-  --color-octonary-600: #423f31;
-  --color-octonary-700: #222018;
+  /* Octonary (mirrors primary) */
+  --color-octonary-100: #FDF8F2;
+  --color-octonary-200: #E8DCCB;
+  --color-octonary-300: #D4C3AC;
+  --color-octonary-400: #9C8874;
+  --color-octonary-500: #6E5D50;
+  --color-octonary-600: #463A30;
+  --color-octonary-700: #271812;
 
-  /* Grey */
+  /* Grey — true neutral, unchanged */
   --color-grey-100: #eae9e6;
   --color-grey-200: #c2c1bd;
   --color-grey-300: #9c9a97;
@@ -92,6 +100,18 @@
   --color-grey-500: #535351;
   --color-grey-600: #333231;
   --color-grey-700: #151514;
+
+  /* ---------- Brand tokens (DESIGN.md §2) ----------
+     Cherry is the single action color: primary buttons, links, selection.
+     Amber is garnish: icon fills, chip backgrounds, highlights — NEVER type
+     on light surfaces and never a fill under white text (fails contrast). */
+  --color-cherry:       #C41E3A;  /* AA as text on vanilla (5.5:1) and as fill under white (5.9:1) */
+  --color-cherry-deep:  #A8172F;  /* light-mode hover */
+  --color-cherry-glaze: #F2697C;  /* dark-mode accent text (6.1:1 on black-cherry) */
+  --color-cherry-tint:  #F9E2E5;  /* selected-state wash */
+  --color-amber:        #FFA630;
+  --color-amber-deep:   #D28414;
+  --color-amber-tint:   #FFF1DC;  /* chip / soft-callout background */
 
   /* ---------- Semantic aliases (prefer these in components) ---------- */
   --color-surface:        var(--color-primary-100);
@@ -101,23 +121,21 @@
   --color-border-strong:  var(--color-primary-300);
   --color-text:           var(--color-primary-700);
   --color-text-muted:     var(--color-primary-500);
-  /* text-subtle is a custom stop between primary-400 and primary-500.
-     primary-400 (#7d765f) on surface = 3.77:1 and fails WCAG AA.
-     This value clears AA (4.64:1) while staying softer than text-muted. */
-  --color-text-subtle:    #706853;
-  --color-accent:         var(--color-primary-700);
-  --color-accent-fg:      var(--color-primary-100);
-  --color-accent-hover:   var(--color-primary-600);
-  --color-focus-ring:     var(--color-primary-700);
+  /* text-subtle sits between primary-400 and primary-500: primary-400
+     (#9C8874) on the vanilla surface fails AA; this value clears 4.8:1
+     while staying softer than text-muted. */
+  --color-text-subtle:    #7C6B5D;
+  --color-accent:         var(--color-cherry);
+  --color-accent-fg:      #FFFFFF;
+  --color-accent-hover:   var(--color-cherry-deep);
+  --color-focus-ring:     var(--color-cherry);
 
   /* ---------- Chart series ----------
-     Six categorically distinct hues tuned for the warm cream surface
-     (--color-surface = #F1E9D2). The primary/secondary/etc. ramps are
-     intentionally monochromatic for typography, so charts need a
-     dedicated palette. Hues are spaced ~60° apart at moderate
-     saturation/luminance to stay editorial (not crayon-bright) while
-     remaining unambiguously different from each other.
-     Each token also clears 4.5:1 contrast against --color-surface. */
+     Six categorically distinct hues, ~60° apart at moderate saturation so
+     the metric displays stay editorial (not crayon-bright) while remaining
+     unambiguously different from each other. Each clears 4.5:1 against
+     --color-surface (#FDF8F2 is lighter than the pre-rebrand cream, so the
+     pre-verified hues carry over with improved contrast). */
   --color-chart-1: #2c6e7a;  /* teal       — structure       */
   --color-chart-2: #b25a39;  /* terracotta — problem solving */
   --color-chart-3: #4a7a4a;  /* forest     — impact          */
@@ -128,8 +146,8 @@
   /* ---------- Rate quality (traffic-light) ----------
      Threshold colors for the filler-word rate bar (lower is better):
        good ≤5% · ok ≤10% · warn ≤15% · bad >15%.
-     Earth-toned greens/ambers/terracotta/brick so the scale reads as a
-     traffic light without breaking the palette. Used only by FillerRateBar;
+     Muted greens/ambers/terracotta/brick so the scale reads as a traffic
+     light without breaking the palette. Used only by FillerRateBar;
      re-resolved per theme in the html.dark block below. */
   --color-rate-good: #4a7a4a;  /* forest green */
   --color-rate-ok:   #b58a2c;  /* amber        */
@@ -137,18 +155,18 @@
   --color-rate-bad:  #a3342a;  /* brick red    */
 
   /* ---------- Fonts ----------
-     All three app tokens resolve to Inter today. The three-token split is
-     forward-looking — if UI/body/display ever need to diverge, swap one
-     token without a global rename. Geist Mono is reserved for code only;
-     no `@import` for it since nothing currently uses `font-mono`. */
+     DM Sans (600/700) is the wordmark face and carries all headings;
+     Inter carries body, navigation, and data. Geist Mono is reserved for
+     code only; no `@import` for it since nothing currently uses `font-mono`. */
   --font-sans:    "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-ui:      "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono:    "Geist Mono", ui-monospace, Consolas, monospace;
 
-  /* ---------- Editorial eyebrow ----------
-     Running heads, masthead metadata, dimension lists. Pair with
-     `uppercase`, `tracking-eyebrow`, and a muted text token. */
+  /* ---------- Data-label eyebrow ----------
+     Dimension lists and metric labels in data displays ONLY (DESIGN.md:
+     never section scaffolding). Pair with `uppercase`, `tracking-eyebrow`,
+     and a muted text token. */
   --text-eyebrow: 11px;
   --text-eyebrow--line-height: 1.1;
   --tracking-eyebrow: 0.22em;
@@ -176,41 +194,45 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ---------- Dark mode (warm espresso) ----------
+/* ---------- Dark mode (black cherry) ----------
    Token-swap strategy: we override ONLY the semantic aliases + chart series
-   (never the 9 raw scales) so this is a curated dark palette, not an inversion
-   of the cream light theme. Because every utility and `:root { background:
-   var(--color-surface) }` reads `var(...)`, redefining these here re-resolves
-   the whole app. Specificity: `html.dark` (0,1,1) beats `@theme`'s `:root`
-   (0,1,0), so these win. Contrast targets WCAG AA on #16140F (text ~15:1,
-   muted ~8:1, subtle ~4.6:1; chart hues brightened to clear 4.5:1). */
+   (never the raw scales) so this is a curated dark palette, not an inversion
+   of the vanilla light theme. The surface is a near-black with a faint maroon
+   cast (DESIGN.md §2 dark mode). Because every utility and `:root {
+   background: var(--color-surface) }` reads `var(...)`, redefining these here
+   re-resolves the whole app. Specificity: `html.dark` (0,1,1) beats `@theme`'s
+   `:root` (0,1,0), so these win. Contrast targets WCAG AA on #1C1214 (text
+   ~14:1, muted ~7:1, subtle ~5:1; chart hues brightened to clear 4.5:1).
+   The primary button stays cherry-with-white in BOTH themes (the
+   Same-Button-Both-Themes rule); dark hover brightens instead of darkening. */
 html.dark {
   color-scheme: dark;
 
-  /* Private dark-text palette, referenced below so the manila-card exception
+  /* Private dark-text palette, referenced below so the case-file exception
      (further down) can restore these exact values on its dark inner panels
      without re-stating the hexes. */
-  --dk-text:        #ECE3CD;
-  --dk-text-muted:  #B3A988;
-  --dk-text-subtle: #9A9072;
+  --dk-text:        #F5EADF;
+  --dk-text-muted:  #C7B2A8;
+  --dk-text-subtle: #A38F85;
 
-  --color-surface:        #16140F;  /* page bg — warm near-black   */
-  --color-surface-raised: #211E17;  /* cards: lifted above surface */
-  --color-surface-sunken: #100E0A;  /* wells/inputs: below surface */
+  --color-surface:        #1C1214;  /* page bg — black cherry      */
+  --color-surface-raised: #271A1C;  /* cards: lifted above surface */
+  --color-surface-sunken: #150D0F;  /* wells/inputs: below surface */
 
-  --color-border:         #3A352A;
-  --color-border-strong:  #4D4636;
+  --color-border:         #3E2F30;
+  --color-border-strong:  #523F40;
 
   --color-text:           var(--dk-text);
   --color-text-muted:     var(--dk-text-muted);
   --color-text-subtle:    var(--dk-text-subtle);
 
-  /* Primary CTA flips: light tan button + dark text (light mode is the inverse). */
-  --color-accent:         #E3D6B0;
-  --color-accent-fg:      #16140F;
-  --color-accent-hover:   #D2C49C;
+  --color-accent:         var(--color-cherry);
+  --color-accent-fg:      #FFFFFF;
+  --color-accent-hover:   #D63B53;  /* brighten, don't darken, on dark */
 
-  --color-focus-ring:     #E3D6B0;  /* visible against the dark ring offset */
+  /* Amber gains text/indicator rights in dark mode only (10:1 on the
+     surface); as a focus ring it outpunches cherry against black cherry. */
+  --color-focus-ring:     var(--color-amber);
 
   /* Chart series brightened so each clears ~4.5:1 on the dark surface and the
      six hues stay categorically distinct (~60° apart). */
@@ -228,15 +250,16 @@ html.dark {
   --color-rate-bad:  #E5705C;  /* brick red    */
 }
 
-/* Manila "case file" exception. The folder card + inactive folder tabs use the
-   fixed raw scale `bg-tertiary-200` (light manila), kept light in dark mode by
-   design — so text placed directly on it must read DARK. Re-scope the text
-   tokens for that subtree back to the light-theme values (the manila surface is
-   the same hue in both themes, so the light contrast still holds). */
+/* Case-file exception. The folder card + inactive folder tabs use the fixed
+   raw scale `bg-tertiary-200` (now the warm sunken neutral), kept light in
+   dark mode by design — so text placed directly on it must read DARK.
+   Re-scope the text tokens for that subtree back to the light-theme values
+   (the surface is the same hue in both themes, so the light contrast holds).
+   Stage 2 of the rebrand retires this exception (DESIGN.md §5 Folder Tabs). */
 html.dark .bg-tertiary-200 {
   --color-text:        var(--color-primary-700);
   --color-text-muted:  var(--color-primary-500);
-  --color-text-subtle: #706853;  /* matches the light-theme --color-text-subtle */
+  --color-text-subtle: #7C6B5D;  /* matches the light-theme --color-text-subtle */
 }
 
 /* …but the dark inset panels inside the card (company brief, score tiles, turn
@@ -261,7 +284,7 @@ body {
   margin: 0;
 }
 
-/* Hide the native scrollbar — the cream surface is quiet, and a default
+/* Hide the native scrollbar — the warm surface is quiet, and a default
    grey scrollbar sticks out against it. Scrolling still works via wheel,
    trackpad, keyboard, and touch; only the visual indicator is gone. */
 html {
@@ -271,11 +294,14 @@ html::-webkit-scrollbar {
   display: none; /* Chromium, Safari */
 }
 
+/* Headings are DM Sans 600 (the Wordmark Weight Rule: 700 belongs to the
+   brand name and at most one display statement per page; everything else
+   in DM Sans is 600. Inter never renders headings). */
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
   color: var(--color-text);
-  font-weight: 500;
-  /* Engage Inter's optical-size (opsz 14..32) axis so display sizes pick
+  font-weight: 600;
+  /* Engage DM Sans's optical-size (opsz 9..40) axis so display sizes pick
      up the more delicate cuts and body-adjacent sizes stay sturdy. */
   font-optical-sizing: auto;
 }
@@ -365,16 +391,16 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
 
 /* Clerk overrides: hide branding footer (covers both "Secured by clerk" and
    the "Development mode" banner) and recolor the generated initials avatar
-   to match the earth-tone palette. The popover itself is themed via the
+   to match the brand palette. The popover itself is themed via the
    <ClerkProvider appearance> prop in main.tsx; these rules cover cases
    appearance variables don't reach. */
 .cl-userButtonPopoverFooter {
   display: none !important;
 }
 
-/* Accent tokens (not raw primary scale) so the avatar flips with the theme:
-   identical in light (accent = primary-700, accent-fg = primary-100), and a
-   cream circle with dark initials in dark mode — visible on the dark TopBar. */
+/* Accent tokens (not raw hexes) so the avatar follows the brand: a cherry
+   circle with white initials in both themes — visible on the vanilla TopBar
+   and the black-cherry one alike. */
 .cl-userButtonAvatarBox,
 .cl-userPreviewAvatarBox,
 .cl-avatarBox {
