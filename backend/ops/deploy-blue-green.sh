@@ -9,6 +9,7 @@ ACTIVE_FILE="${ACTIVE_FILE:-$STATE_DIR/active_color}"
 UPSTREAM_DIR="${UPSTREAM_DIR:-caddy}"
 UPSTREAM_FILE="${UPSTREAM_FILE:-$UPSTREAM_DIR/upstream}"
 IMAGE_REF="${IMAGE_REF:?IMAGE_REF must be set to the image tag to deploy}"
+MIN_ROOT_FREE_KB="${MIN_ROOT_FREE_KB:-3145728}"
 
 compose() {
     docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
@@ -113,11 +114,54 @@ rollback_caddy() {
     reload_or_start_caddy || true
 }
 
+print_disk_usage() {
+    echo "[deploy] Root filesystem usage"
+    df -h /
+    echo "[deploy] Docker disk usage"
+    docker system df || true
+}
+
+require_root_free_space() {
+    local available_kb
+    available_kb="$(df -Pk / | awk 'NR == 2 {print $4}')"
+
+    if [ -z "$available_kb" ] || [ "$available_kb" -lt "$MIN_ROOT_FREE_KB" ]; then
+        echo "[deploy] Not enough free space on / for a safe image pull"
+        echo "[deploy] Available: ${available_kb:-unknown} KiB; required: $MIN_ROOT_FREE_KB KiB"
+        print_disk_usage
+        return 1
+    fi
+}
+
+remove_stopped_legacy_api_container() {
+    local container_name="${COMPOSE_PROJECT_NAME}-api-1"
+    local cid
+    cid="$(docker ps -aq --filter "name=^/${container_name}$" --filter "status=exited" | head -n 1)"
+
+    if [ -n "$cid" ]; then
+        echo "[deploy] Removing stopped legacy api container $container_name"
+        docker rm "$cid" || true
+    fi
+}
+
+pre_pull_cleanup() {
+    print_disk_usage
+    remove_stopped_legacy_api_container
+
+    echo "[deploy] Pruning unused Docker images and build cache before pull"
+    docker image prune -af --filter "until=24h" || true
+    docker builder prune -af --filter "until=24h" || true
+
+    require_root_free_space
+}
+
 mkdir -p "$STATE_DIR" "$UPSTREAM_DIR"
 
 if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
     echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 fi
+
+pre_pull_cleanup
 
 echo "[deploy] Pulling $IMAGE_REF"
 docker pull "$IMAGE_REF"

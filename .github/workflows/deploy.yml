@@ -9,6 +9,10 @@ on:
 env:
   REGISTRY: ghcr.io
 
+concurrency:
+  group: backend-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -78,6 +82,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: IMAGE_REF,GHCR_USERNAME,GHCR_TOKEN,PUBLIC_HEALTH_URL
           script: |
+            set -Eeuo pipefail
             cd ~/hackpton2026/backend
             git fetch origin main
             git checkout main
