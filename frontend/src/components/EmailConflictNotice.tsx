@@ -18,7 +18,7 @@
 import { useClerk } from '@clerk/react';
 import { useNavigate } from 'react-router';
 
-import { FlowHoverButton } from './ui/flow-hover-button';
+import { Button } from './ui/button';
 
 export default function EmailConflictNotice() {
   const { signOut } = useClerk();
@@ -35,7 +35,7 @@ export default function EmailConflictNotice() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface px-8">
       <div className="w-full max-w-md flex flex-col gap-5 text-center">
-        <h1 className="font-display font-medium tracking-[-0.02em] leading-tight text-text text-3xl md:text-4xl">
+        <h1 className="font-display font-semibold tracking-[-0.02em] leading-tight text-text text-3xl md:text-4xl">
           This email already has an account
         </h1>
         <p className="text-text-muted leading-[1.55]">
@@ -43,14 +43,14 @@ export default function EmailConflictNotice() {
           original method — if you first signed up with Google, use “Continue
           with Google.”
         </p>
-        <FlowHoverButton
+        <Button
           type="button"
           size="lg"
           onClick={handleBackToSignIn}
-          className="w-full py-4"
+          className="w-full"
         >
           Back to sign in
-        </FlowHoverButton>
+        </Button>
       </div>
     </div>
   );

@@ -20,7 +20,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { Button } from '../components/ui/button';
 import {
   clearFaceCalibration,
   clearFaceCalibrationConsent,
@@ -461,7 +461,7 @@ export default function Calibration() {
               {fromOnboarding ? 'Final setup' : 'Delivery settings'}
             </p>
             <h1
-              className="font-display font-medium leading-[1.02] tracking-[-0.03em]"
+              className="font-display font-semibold leading-[1.02] tracking-[-0.03em]"
               style={{ fontSize: 'clamp(2.5rem, 5vw, 5.4rem)' }}
             >
               Let the coach read you fairly.
@@ -515,7 +515,10 @@ export default function Calibration() {
             </div>
 
             <div className="p-4 md:p-6">
-              <div className="relative aspect-video overflow-hidden rounded-lg border border-primary-500 bg-[#0d0c09]">
+              {/* Camera well stays black-cherry-sunken in BOTH themes (a
+                  video feed needs a dark backing), so the raw brand hex is
+                  deliberate rather than a theme token. */}
+              <div className="relative aspect-video overflow-hidden rounded-lg border border-primary-500 bg-[#150D0F]">
                 {cameraActive ? (
                   <video
                     ref={videoRef}
@@ -560,7 +563,7 @@ export default function Calibration() {
                           : 'border-primary-300/55'
                       }`}
                     />
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0d0c09]/90 to-transparent px-4 pb-4 pt-12">
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#150D0F]/90 to-transparent px-4 pb-4 pt-12">
                       <p className="text-xs text-primary-200">
                         {captureActive
                           ? liveRead.faceVisible
@@ -704,31 +707,29 @@ export default function Calibration() {
 
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 {(phase === 'idle' || phase === 'error') && (
-                  <FlowHoverButton
+                  <Button
                     type="button"
                     onClick={enableCamera}
                     disabled={!consent}
-                    variant="dark"
-                    icon={<Eye className="h-4 w-4" aria-hidden />}
                   >
+                    <Eye className="mr-2 h-4 w-4" aria-hidden />
                     {consent ? 'Enable camera' : 'Accept privacy notice first'}
-                  </FlowHoverButton>
+                  </Button>
                 )}
                 {phase === 'requesting' && (
-                  <FlowHoverButton type="button" disabled variant="dark">
+                  <Button type="button" disabled>
                     Preparing camera...
-                  </FlowHoverButton>
+                  </Button>
                 )}
                 {phase === 'ready' && (
                   <>
-                    <FlowHoverButton
+                    <Button
                       type="button"
                       onClick={beginCapture}
-                      variant="dark"
-                      icon={<ScanFace className="h-4 w-4" aria-hidden />}
                     >
+                      <ScanFace className="mr-2 h-4 w-4" aria-hidden />
                       Begin six-second read
-                    </FlowHoverButton>
+                    </Button>
                     <button
                       type="button"
                       onClick={() => {
@@ -742,20 +743,19 @@ export default function Calibration() {
                   </>
                 )}
                 {phase === 'capturing' && (
-                  <FlowHoverButton type="button" disabled variant="dark">
+                  <Button type="button" disabled>
                     Reading baseline...
-                  </FlowHoverButton>
+                  </Button>
                 )}
                 {phase === 'complete' && (
                   <>
-                    <FlowHoverButton
+                    <Button
                       type="button"
                       onClick={() => navigate('/')}
-                      variant="dark"
-                      icon={<Check className="h-4 w-4" aria-hidden />}
                     >
+                      <Check className="mr-2 h-4 w-4" aria-hidden />
                       {fromOnboarding ? 'Start practicing' : 'Back to practice'}
-                    </FlowHoverButton>
+                    </Button>
                     <button
                       type="button"
                       onClick={enableCamera}
@@ -913,15 +913,14 @@ function CalibrationConsentPanel({
           </label>
 
           <div className="flex flex-wrap items-center gap-3">
-            <FlowHoverButton
+            <Button
               type="button"
               onClick={onAccept}
               disabled={!checked}
-              variant="dark"
-              icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
             >
+              <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />
               Accept and continue
-            </FlowHoverButton>
+            </Button>
             <button
               type="button"
               onClick={onDecline}

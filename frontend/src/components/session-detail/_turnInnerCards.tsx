@@ -30,10 +30,10 @@ import { SCORE_COLOR_MAP, SCORE_KEYS, formatIssueType, num } from './_helpers';
 /* Primitives                                                         */
 /* ------------------------------------------------------------------ */
 
-/** The lighter beige paper-insert card that sits inside the dark folder. */
+/** Sunken inset panel inside the folder card (page → card → well). */
 export function InnerCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg bg-surface-raised p-5 h-full overflow-hidden flex flex-col">
+    <div className="rounded-lg bg-surface-sunken p-5 h-full overflow-hidden flex flex-col">
       {children}
     </div>
   );

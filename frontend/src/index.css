@@ -15,9 +15,11 @@
      the brand amber hue, anchored on the vanilla page surface (#FDF8F2) and
      cocoa ink (#271812). The pre-rebrand earth scales were nine near-duplicate
      ramps; they collapse into this single family. The scale NAMES are kept so
-     legacy `bg-tertiary-200`-style utilities keep compiling — tertiary and
-     quaternary carry bespoke light stops (card white / sunken well) that the
-     semantic aliases below bind to; the rest mirror primary. */
+     legacy raw-scale utilities keep compiling — tertiary and quaternary carry
+     bespoke light stops (card white / sunken well) that the semantic aliases
+     below bind to; the rest mirror primary. Components should use the
+     semantic aliases; the manila case-file exception that read
+     `bg-tertiary-200` directly was retired in rebrand stage 2. */
 
   /* Primary — the canonical neutral ramp */
   --color-primary-100: #FDF8F2;
@@ -37,8 +39,7 @@
   --color-secondary-600: #463A30;
   --color-secondary-700: #271812;
 
-  /* Tertiary — raised-surface family (100 = card white, 200/300 = folder-tab
-     neutrals; the SessionDetail "case file" reads these directly) */
+  /* Tertiary — raised-surface family (100 = card white) */
   --color-tertiary-100: #FFFFFF;
   --color-tertiary-200: #F6EDE2;
   --color-tertiary-300: #E8DCCB;
@@ -208,13 +209,6 @@
 html.dark {
   color-scheme: dark;
 
-  /* Private dark-text palette, referenced below so the case-file exception
-     (further down) can restore these exact values on its dark inner panels
-     without re-stating the hexes. */
-  --dk-text:        #F5EADF;
-  --dk-text-muted:  #C7B2A8;
-  --dk-text-subtle: #A38F85;
-
   --color-surface:        #1C1214;  /* page bg — black cherry      */
   --color-surface-raised: #271A1C;  /* cards: lifted above surface */
   --color-surface-sunken: #150D0F;  /* wells/inputs: below surface */
@@ -222,9 +216,9 @@ html.dark {
   --color-border:         #3E2F30;
   --color-border-strong:  #523F40;
 
-  --color-text:           var(--dk-text);
-  --color-text-muted:     var(--dk-text-muted);
-  --color-text-subtle:    var(--dk-text-subtle);
+  --color-text:           #F5EADF;
+  --color-text-muted:     #C7B2A8;
+  --color-text-subtle:    #A38F85;
 
   --color-accent:         var(--color-cherry);
   --color-accent-fg:      #FFFFFF;
@@ -248,27 +242,6 @@ html.dark {
   --color-rate-ok:   #E0B552;  /* amber        */
   --color-rate-warn: #E08A5F;  /* terracotta   */
   --color-rate-bad:  #E5705C;  /* brick red    */
-}
-
-/* Case-file exception. The folder card + inactive folder tabs use the fixed
-   raw scale `bg-tertiary-200` (now the warm sunken neutral), kept light in
-   dark mode by design — so text placed directly on it must read DARK.
-   Re-scope the text tokens for that subtree back to the light-theme values
-   (the surface is the same hue in both themes, so the light contrast holds).
-   Stage 2 of the rebrand retires this exception (DESIGN.md §5 Folder Tabs). */
-html.dark .bg-tertiary-200 {
-  --color-text:        var(--color-primary-700);
-  --color-text-muted:  var(--color-primary-500);
-  --color-text-subtle: #7C6B5D;  /* matches the light-theme --color-text-subtle */
-}
-
-/* …but the dark inset panels inside the card (company brief, score tiles, turn
-   InnerCards — all `bg-surface-raised`) are dark surfaces, so restore the dark
-   palette's light text there. Nested `bg-surface-sunken` inherits this. */
-html.dark .bg-tertiary-200 .bg-surface-raised {
-  --color-text:        var(--dk-text);
-  --color-text-muted:  var(--dk-text-muted);
-  --color-text-subtle: var(--dk-text-subtle);
 }
 
 /* Root-font scaling on large monitors. The whole design system is rem-based

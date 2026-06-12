@@ -22,7 +22,6 @@
 
 import { useState, type SubmitEvent } from 'react';
 import { UserButton, useUser } from '@clerk/react';
-import { ImageDithering } from '@paper-design/shaders-react';
 import { ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
@@ -34,7 +33,7 @@ import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
@@ -364,31 +363,42 @@ export default function Home() {
 
       <main className="flex-1">
         <div className="relative flex min-h-full items-center overflow-hidden">
-          <div
+          {/* Quiet pie-arc brand accent (replaces the retired sculpture).
+              Two stroke arcs on the brand tokens echo the score-pie mark
+              without competing with the company input — no data, no text,
+              no motion beyond the page reveal. Deliberately ≥xl only. */}
+          <svg
             aria-hidden="true"
-            className="pointer-events-none hidden xl:block absolute inset-y-0 right-0 aspect-[563/484] bg-[#17150F] overflow-hidden"
-            style={{
-              WebkitMaskImage:
-                'linear-gradient(to right, transparent 0%, black 85%)',
-              maskImage:
-                'linear-gradient(to right, transparent 0%, black 85%)',
-            }}
+            viewBox="0 0 480 480"
+            fill="none"
+            className="anim-reveal pointer-events-none hidden xl:block absolute right-[3vw] top-1/2 h-[24rem] w-[24rem] -translate-y-1/2"
+            style={{ animationDelay: '320ms' }}
           >
-            <ImageDithering
-              originalColors={false}
-              inverted={false}
-              type="8x8"
-              size={2.5}
-              colorSteps={2}
-              image="/home-sculpture.png"
-              scale={1}
-              fit="cover"
-              colorBack="#00000000"
-              colorFront="#F1E9D2"
-              colorHighlight="#EAFF94"
-              className="absolute inset-0 w-full h-full"
-            />
-          </div>
+            <g transform="rotate(-90 240 240)">
+              <circle cx="240" cy="240" r="200" stroke="var(--color-border)" strokeWidth="1.5" />
+              <circle
+                cx="240"
+                cy="240"
+                r="200"
+                pathLength={100}
+                stroke="var(--color-cherry)"
+                strokeWidth="12"
+                strokeLinecap="round"
+                strokeDasharray="20 80"
+              />
+              <circle
+                cx="240"
+                cy="240"
+                r="162"
+                pathLength={100}
+                stroke="var(--color-amber)"
+                strokeWidth="12"
+                strokeLinecap="round"
+                strokeDasharray="11 89"
+                strokeDashoffset={-32}
+              />
+            </g>
+          </svg>
 
           <form
             onSubmit={handleStart}
@@ -396,7 +406,7 @@ export default function Home() {
           >
             <div className="max-w-[54rem]">
               <p
-                className="anim-reveal mb-10 text-eyebrow uppercase tracking-eyebrow text-text-muted md:mb-12"
+                className="anim-reveal mb-10 text-sm font-medium text-text-muted md:mb-12"
                 style={{ animationDelay: '0ms' }}
               >
                 Good {timeOfDay()}{firstName ? `, ${firstName}` : ''}
@@ -405,7 +415,7 @@ export default function Home() {
               {/* Desktop slab: ≥ 900px */}
               <div className="hidden min-[900px]:block">
                 <h1
-                  className="anim-reveal mb-10 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
+                  className="anim-reveal mb-10 font-display font-semibold leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
                   style={{ animationDelay: '80ms', fontSize: 'clamp(2.25rem, 5vw, 4.25rem)' }}
                 >
                   Which company are you
@@ -475,12 +485,12 @@ export default function Home() {
                   className="anim-reveal mt-10 flex flex-wrap items-baseline gap-x-8 gap-y-4"
                   style={{ animationDelay: '280ms' }}
                 >
-                  <FlowHoverButton
+                  <Button
                     type="submit"
                     disabled={!company.trim() || submitting}
                   >
                     {submitting ? 'Starting...' : 'Begin session'}
-                  </FlowHoverButton>
+                  </Button>
                   {targetRoleBadge}
                   {dailyLimitBadge}
                 </div>
@@ -494,7 +504,7 @@ export default function Home() {
                   {surface === 'basic' ? (
                     <>
                       <h1
-                        className="mb-10 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
+                        className="mb-10 font-display font-semibold leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
                         style={{ fontSize: 'clamp(2.25rem, 5vw, 4.25rem)' }}
                       >
                         Which company are you
@@ -527,7 +537,7 @@ export default function Home() {
                   ) : surface === 'advanced' ? (
                     <>
                       <h2
-                        className="mb-8 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text"
+                        className="mb-8 font-display font-semibold leading-[1.15] tracking-[-0.02em] text-text"
                         style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)' }}
                       >
                         Customize your interview
@@ -543,7 +553,7 @@ export default function Home() {
                   ) : (
                     <>
                       <h2
-                        className="mb-8 font-display font-medium leading-[1.15] tracking-[-0.02em] text-text"
+                        className="mb-8 font-display font-semibold leading-[1.15] tracking-[-0.02em] text-text"
                         style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)' }}
                       >
                         Privacy
@@ -561,12 +571,12 @@ export default function Home() {
                 </section>
 
                 <div className="mt-10 flex flex-wrap items-center gap-x-4 gap-y-3">
-                  <FlowHoverButton
+                  <Button
                     type="submit"
                     disabled={!company.trim() || submitting}
                   >
                     {submitting ? 'Starting...' : 'Begin session'}
-                  </FlowHoverButton>
+                  </Button>
                   <ModeTabs
                     mode={surface}
                     setMode={setSurface}

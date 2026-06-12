@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import VoicePickerGrid from './VoicePickerGrid';
-import { FlowHoverButton } from './ui/flow-hover-button';
+import { Button } from './ui/button';
 
 interface Props {
   open: boolean;
@@ -87,22 +87,21 @@ export default function RePracticeVoiceDialog({
         </div>
 
         <div className="mt-8 flex justify-end gap-3">
-          <FlowHoverButton
-            variant="dark"
+          <Button
+            variant="outline"
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="cursor-pointer"
           >
             Cancel
-          </FlowHoverButton>
-          <FlowHoverButton
+          </Button>
+          <Button
             type="button"
             onClick={() => onStart(voiceId)}
             disabled={busy}
           >
             {busy ? 'Starting…' : 'Start session'}
-          </FlowHoverButton>
+          </Button>
         </div>
       </div>
     </div>,

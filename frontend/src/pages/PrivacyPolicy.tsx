@@ -104,7 +104,7 @@ export default function PrivacyPolicy() {
           Legal
         </p>
         <h1
-          className="mt-3 font-display font-medium leading-[1.04] tracking-[-0.03em]"
+          className="mt-3 font-display font-semibold leading-[1.04] tracking-[-0.03em]"
           style={{ fontSize: 'clamp(2.2rem, 4vw, 3.4rem)' }}
         >
           Privacy Policy

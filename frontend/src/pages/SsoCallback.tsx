@@ -21,7 +21,7 @@ import { isClerkAPIResponseError } from '@clerk/react/errors';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { Button } from '../components/ui/button';
 
 type CallbackState = 'pending' | 'restricted' | 'error';
 
@@ -120,7 +120,7 @@ export default function SsoCallback() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface px-8">
       <div className="w-full max-w-md flex flex-col gap-5 text-center">
-        <h1 className="font-display font-medium tracking-[-0.02em] leading-tight text-text text-3xl md:text-4xl">
+        <h1 className="font-display font-semibold tracking-[-0.02em] leading-tight text-text text-3xl md:text-4xl">
           {isRestricted ? 'Access not available yet' : 'Something went wrong'}
         </h1>
         <p className="text-text-muted leading-[1.55]">
@@ -128,14 +128,14 @@ export default function SsoCallback() {
             ? "Access currently restricted to beta testers."
             : "We couldn't finish signing you in. Try again, or use email and password."}
         </p>
-        <FlowHoverButton
+        <Button
           type="button"
           size="lg"
           onClick={() => navigate('/sign-in', { replace: true })}
-          className="w-full py-4"
+          className="w-full"
         >
           Back to sign in
-        </FlowHoverButton>
+        </Button>
       </div>
     </div>
   );

@@ -16,7 +16,7 @@ import { UserButton } from '@clerk/react';
 import { useNavigate, useParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { Button } from '../components/ui/button';
 import {
   FolderTabs,
   SideNavButton,
@@ -174,7 +174,7 @@ export default function SessionDetail() {
                     aria-labelledby={tabs[safeIndex]?.tabId}
                     onTouchStart={handleTouchStart}
                     onTouchEnd={handleTouchEnd}
-                    className="anim-crossfade rounded-lg border border-border-strong bg-tertiary-200 min-[900px]:rounded-tl-none"
+                    className="anim-crossfade rounded-lg border border-border-strong bg-surface-raised min-[900px]:rounded-tl-none"
                   >
                     {safeIndex === 0 ? (
                       <OverviewPanel
@@ -195,23 +195,23 @@ export default function SessionDetail() {
                       because the side circular buttons handle nav there. */}
                   <div className="min-[900px]:hidden mt-6 flex items-center justify-between gap-3">
                     {prevTab ? (
-                      <FlowHoverButton
-                        variant="dark"
+                      <Button
+                        variant="outline"
                         type="button"
                         onClick={() => setActiveTabIndex(safeIndex - 1)}
                       >
                         ← Prev: {prevTab.label}
-                      </FlowHoverButton>
+                      </Button>
                     ) : (
                       <div className="flex-1" />
                     )}
                     {nextTab ? (
-                      <FlowHoverButton
+                      <Button
                         type="button"
                         onClick={() => setActiveTabIndex(safeIndex + 1)}
                       >
                         Next: {nextTab.label} →
-                      </FlowHoverButton>
+                      </Button>
                     ) : (
                       <div className="flex-1" />
                     )}

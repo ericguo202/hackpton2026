@@ -30,40 +30,42 @@ const baseVariables = {
   fontSize: '0.875rem',
 }
 
-// Light palette — the original values, kept verbatim.
+// Light palette — DESIGN.md vanilla/ink/cherry. Clerk popovers are raised
+// surfaces, so the background is card white over the vanilla page.
 const lightVariables = {
-  colorPrimary: '#17150f',
-  colorBackground: '#f4f0e7',
-  colorForeground: '#17150f',
-  colorMuted: '#ccc19e',
-  colorMutedForeground: '#585342',
-  colorNeutral: '#17150f',
-  colorInputBackground: '#F1E9D2',
-  colorInputForeground: '#17150f',
-  colorBorder: '#ccc19e',
-  colorShimmer: 'rgba(23, 21, 15, 0.06)',
+  colorPrimary: '#C41E3A',         // cherry; Clerk auto-contrasts to white text
+  colorBackground: '#FFFFFF',      // surface-raised (card white)
+  colorForeground: '#271812',      // ink
+  colorMuted: '#F6EDE2',           // sunken
+  colorMutedForeground: '#6E5D50', // ink-muted
+  colorNeutral: '#271812',
+  colorInputBackground: '#F6EDE2', // sunken
+  colorInputForeground: '#271812',
+  colorBorder: '#E8DCCB',          // border-warm
+  colorShimmer: 'rgba(39, 24, 18, 0.06)',
 }
 
-// Dark palette — mirrors the espresso tokens in index.css (html.dark).
+// Dark palette — mirrors the black-cherry tokens in index.css (html.dark).
+// Accent-level color uses cherry-glaze (the dark-mode accent text tone);
+// raw cherry sits too close to the black-cherry surface for link text.
 const darkVariables = {
-  colorPrimary: '#E3D6B0',         // accent (cream); Clerk auto-contrasts text
-  colorBackground: '#211E17',      // surface-raised
-  colorForeground: '#ECE3CD',      // text
-  colorMuted: '#2A2620',
-  colorMutedForeground: '#B3A988', // text-muted
-  colorNeutral: '#ECE3CD',         // neutral shades generated from light ink
-  colorInputBackground: '#16140F', // surface
-  colorInputForeground: '#ECE3CD',
-  colorBorder: '#3A352A',
-  colorShimmer: 'rgba(236, 227, 205, 0.08)',
+  colorPrimary: '#F2697C',         // cherry-glaze; Clerk auto-contrasts text
+  colorBackground: '#271A1C',      // surface-raised
+  colorForeground: '#F5EADF',      // cream text
+  colorMuted: '#1C1214',           // surface
+  colorMutedForeground: '#C7B2A8', // cream text-muted
+  colorNeutral: '#F5EADF',         // neutral shades generated from cream
+  colorInputBackground: '#150D0F', // sunken
+  colorInputForeground: '#F5EADF',
+  colorBorder: '#3E2F30',
+  colorShimmer: 'rgba(245, 234, 223, 0.08)',
 }
 
 // Token-class overrides — these resolve per-theme on their own, so they're
-// shared across light/dark.
+// shared across light/dark. Elevation is border-only (the No-Shadow Rule).
 const elements = {
   userButtonPopoverFooter: 'hidden',
-  userButtonPopoverCard:
-    'border border-border shadow-[0_12px_40px_-12px_rgba(23,21,15,0.18)]',
+  userButtonPopoverCard: 'border border-border shadow-none',
   userButtonAvatarBox: 'ring-1 ring-border-strong',
   userButtonPopoverActionButton: 'hover:bg-surface-sunken',
 }

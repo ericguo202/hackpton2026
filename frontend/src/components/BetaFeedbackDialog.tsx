@@ -4,7 +4,7 @@ import { Send, X } from 'lucide-react';
 
 import { cn } from '../lib/utils';
 import type { SessionFeedbackPayload } from '../types/sessionFeedback';
-import { FlowHoverButton } from './ui/flow-hover-button';
+import { Button } from './ui/button';
 
 type Props = {
   open: boolean;
@@ -184,7 +184,7 @@ export default function BetaFeedbackDialog({
     >
       <form
         ref={formRef}
-        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-2xl"
+        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-surface-raised"
         onClick={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault();
@@ -192,9 +192,7 @@ export default function BetaFeedbackDialog({
         }}
       >
         <div className="relative border-b border-border px-6 py-5">
-          <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
-            Beta feedback
-          </p>
+          <p className="text-sm font-medium text-text-muted">Beta feedback</p>
           <h2 id="beta-feedback-title" className="mt-2 font-display text-2xl text-text">
             Tell us what to improve
           </h2>
@@ -306,7 +304,7 @@ export default function BetaFeedbackDialog({
 
         <div className="border-t border-border bg-surface px-6 py-4">
           {error && (
-            <p role="alert" className="mb-3 text-sm text-red-600">
+            <p role="alert" className="mb-3 text-sm text-accent dark:text-cherry-glaze">
               {error}
             </p>
           )}
@@ -314,12 +312,12 @@ export default function BetaFeedbackDialog({
             {/* title lives on the wrapper so it surfaces on hover even while the
                 button is disabled (disabled buttons don't fire tooltips). */}
             <span title={canSubmit ? undefined : 'Please fill out all required questions'}>
-              <FlowHoverButton type="submit" disabled={!canSubmit}>
+              <Button type="submit" disabled={!canSubmit}>
                 <span className="inline-flex items-center gap-2">
                   <Send className="h-4 w-4" aria-hidden="true" />
                   {submitting ? 'Submitting...' : 'Submit feedback'}
                 </span>
-              </FlowHoverButton>
+              </Button>
             </span>
           </div>
         </div>
@@ -344,14 +342,14 @@ function RatingField({
     <fieldset className="space-y-3">
       <legend className="text-sm font-semibold text-text">
         {label}
-        <span className="text-red-600"> *</span>
+        <span className="text-accent dark:text-cherry-glaze"> *</span>
       </legend>
       <div className="grid grid-cols-5 gap-2">
         {RATINGS.map((rating) => (
           <label
             key={`${name}-${rating}`}
             className={cn(
-              'flex h-11 cursor-pointer items-center justify-center rounded border text-sm font-semibold transition',
+              'flex h-11 cursor-pointer items-center justify-center rounded-full border text-sm font-semibold transition',
               value === rating
                 ? 'border-accent bg-accent text-accent-fg'
                 : 'border-border-strong bg-surface text-text hover:bg-surface-sunken',
@@ -390,7 +388,7 @@ function TextareaField({
     <label className="block space-y-2">
       <span className="text-sm font-semibold text-text">
         {label}
-        {required && <span className="text-red-600"> *</span>}
+        {required && <span className="text-accent dark:text-cherry-glaze"> *</span>}
       </span>
       <textarea
         value={value}
@@ -398,7 +396,7 @@ function TextareaField({
         rows={rows}
         required={required}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full resize-y rounded border border-border-strong bg-surface px-3 py-2 text-sm leading-6 text-text outline-none transition focus:border-accent focus:ring-2 focus:ring-focus-ring"
+        className="w-full resize-y rounded border border-border bg-surface-sunken px-3 py-2 text-sm leading-6 text-text outline-none transition focus:border-accent focus:ring-2 focus:ring-focus-ring"
       />
     </label>
   );
@@ -418,7 +416,7 @@ function BranchButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'h-11 rounded border px-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
+        'h-11 cursor-pointer rounded-full border px-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
         selected
           ? 'border-accent bg-accent text-accent-fg'
           : 'border-border-strong bg-surface text-text hover:bg-surface-sunken',

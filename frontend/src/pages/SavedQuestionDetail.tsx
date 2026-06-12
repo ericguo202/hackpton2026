@@ -31,7 +31,7 @@ import {
 import DimensionMenu from '../components/DimensionMenu';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { Button } from '../components/ui/button';
 import { useSavedQuestionDetail } from '../hooks/useSavedQuestionDetail';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
@@ -282,7 +282,7 @@ export default function SavedQuestionDetail() {
               <div className="anim-reveal mb-10 flex flex-col gap-6 md:mb-12 md:flex-row md:items-end md:justify-between">
                 <div className="max-w-[54rem]">
                   <h1
-                    className="font-display font-medium leading-[1.1] tracking-[-0.02em] text-text"
+                    className="font-display font-semibold leading-[1.1] tracking-[-0.02em] text-text"
                     style={{ fontSize: 'clamp(1.5rem, 3vw, 2.5rem)' }}
                   >
                     {saved.question_text}
@@ -294,13 +294,13 @@ export default function SavedQuestionDetail() {
                     })}
                   </p>
                 </div>
-                <FlowHoverButton
+                <Button
                   type="button"
                   onClick={() => setDialogOpen(true)}
                   disabled={rePracticing}
                 >
                   {rePracticing ? 'Starting…' : 'Re-practice'}
-                </FlowHoverButton>
+                </Button>
               </div>
 
               <RePracticeVoiceDialog
@@ -315,7 +315,7 @@ export default function SavedQuestionDetail() {
               <section className="anim-reveal mb-16" style={{ animationDelay: '120ms' }}>
                 <div className="mb-6 flex items-baseline justify-between gap-4">
                   <h2
-                    className="font-display font-medium text-text"
+                    className="font-display font-semibold text-text"
                     style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
                   >
                     Progress
@@ -432,7 +432,7 @@ export default function SavedQuestionDetail() {
               {/* Attempts list */}
               <section className="anim-reveal" style={{ animationDelay: '200ms' }}>
                 <h2
-                  className="mb-2 font-display font-medium text-text"
+                  className="mb-2 font-display font-semibold text-text"
                   style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
                 >
                   Attempts

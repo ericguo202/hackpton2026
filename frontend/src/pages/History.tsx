@@ -32,7 +32,7 @@ import {
 import DimensionMenu from '../components/DimensionMenu';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { Button } from '../components/ui/button';
 import { useMeStats } from '../hooks/useMeStats';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { useSessions } from '../hooks/useSessions';
@@ -438,7 +438,7 @@ export default function History() {
             Your history
           </p>
           <h1
-            className="anim-reveal font-display font-medium tracking-[-0.02em] leading-[1.05] text-text mb-12 md:mb-16"
+            className="anim-reveal font-display font-semibold tracking-[-0.02em] leading-[1.05] text-text mb-12 md:mb-16"
             style={{ animationDelay: '80ms', fontSize: 'clamp(2rem, 4vw, 3.25rem)' }}
           >
             Progress over time.
@@ -484,7 +484,7 @@ export default function History() {
           >
             <div className="flex items-baseline justify-between gap-4 mb-6">
               <h2
-                className="font-display font-medium text-text"
+                className="font-display font-semibold text-text"
                 style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
               >
                 Score trend
@@ -628,7 +628,7 @@ export default function History() {
           {(hasFillerRate || hasTopFillerWords) && (
             <section id="filler-words" className="anim-reveal mb-10" style={{ animationDelay: '270ms' }}>
               <h2
-                className="font-display font-medium text-text mb-6"
+                className="font-display font-semibold text-text mb-6"
                 style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
               >
                 Filler words
@@ -668,7 +668,7 @@ export default function History() {
           <section id="sessions" className="anim-reveal scroll-mt-8" style={{ animationDelay: '320ms' }}>
             <div className="flex items-baseline justify-between gap-4 mb-2">
               <h2
-                className="font-display font-medium text-text"
+                className="font-display font-semibold text-text"
                 style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
               >
                 Sessions
@@ -686,12 +686,12 @@ export default function History() {
                 <p className="text-sm text-text-muted mb-6">
                   Start a mock interview from Practice to see it here.
                 </p>
-                <FlowHoverButton
+                <Button
                   type="button"
                   onClick={() => navigate('/')}
                 >
                   Start a session
-                </FlowHoverButton>
+                </Button>
               </div>
             )}
 
@@ -773,7 +773,7 @@ function SavedQuestionsSection() {
     <section className="anim-reveal mb-6" style={{ animationDelay: '300ms' }}>
       <div className="mb-2 flex items-baseline justify-between gap-4">
         <h2
-          className="font-display font-medium text-text"
+          className="font-display font-semibold text-text"
           style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
         >
           Saved questions
@@ -865,9 +865,9 @@ function SavedQuestionRow({
       </span>
 
       <div className="col-span-5 min-[900px]:col-span-3 flex items-center justify-end gap-3">
-        <FlowHoverButton type="button" onClick={onRePractice} disabled={busy}>
+        <Button variant="outline" type="button" onClick={onRePractice} disabled={busy}>
           {busy ? 'Starting…' : 'Re-practice'}
-        </FlowHoverButton>
+        </Button>
         <button
           type="button"
           onClick={onDelete}

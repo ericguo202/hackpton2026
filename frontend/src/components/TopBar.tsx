@@ -44,7 +44,7 @@ export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
 
       <div className="flex items-center gap-4">
         {nav && (
-          <nav className="hidden min-[900px]:flex items-baseline gap-6 text-xs uppercase tracking-eyebrow text-text-muted">
+          <nav className="hidden min-[900px]:flex items-baseline gap-6 text-sm font-medium">
             {nav}
           </nav>
         )}
@@ -104,7 +104,7 @@ export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
           onClick={() => setMobileNavOpen(false)}
         >
           {nav && (
-            <nav className="flex flex-col items-start gap-4 text-xs uppercase tracking-eyebrow text-text-muted">
+            <nav className="flex flex-col items-start gap-4 text-sm font-medium">
               {nav}
             </nav>
           )}
@@ -118,7 +118,7 @@ export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
           */}
           <nav
             className={
-              'flex flex-col items-start gap-3 text-eyebrow uppercase tracking-eyebrow text-text-subtle' +
+              'flex flex-col items-start gap-3 text-sm text-text-subtle' +
               (nav ? ' mt-4 border-t border-border pt-4' : '')
             }
           >
@@ -165,7 +165,7 @@ export function TopBarNavLink({ to, matchPatterns, children }: NavLinkProps) {
         'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
         'focus-visible:ring-offset-surface rounded-sm ' +
         (active
-          ? 'text-text font-medium'
+          ? 'text-text underline underline-offset-[6px] decoration-2 decoration-accent'
           : 'text-text-muted hover:text-text')
       }
     >

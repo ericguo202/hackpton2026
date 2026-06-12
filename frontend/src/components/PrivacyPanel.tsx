@@ -13,7 +13,7 @@ import { ShieldCheck, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import DeliveryConsentBullets from './DeliveryConsentBullets';
-import { FlowHoverButton } from './ui/flow-hover-button';
+import { Button } from './ui/button';
 
 type Props = {
   active: boolean;
@@ -65,15 +65,16 @@ export default function PrivacyPanel({
             delivery summaries, delivery scores, and delivery-specific coaching
             from completed history.
           </p>
-          <FlowHoverButton
+          <Button
             type="button"
+            variant="outline"
             disabled={busy}
             onClick={onRevoke}
-            icon={<Trash2 className="h-4 w-4" aria-hidden />}
             className="mt-3"
           >
+            <Trash2 className="mr-2 h-4 w-4" aria-hidden />
             Delete delivery analytics
-          </FlowHoverButton>
+          </Button>
         </div>
       ) : (
         <div className="space-y-3">
@@ -90,15 +91,14 @@ export default function PrivacyPanel({
               analytics and storage of numeric delivery summaries for coaching.
             </span>
           </label>
-          <FlowHoverButton
+          <Button
             type="button"
-            variant="dark"
             disabled={!checked || busy}
             onClick={onGrant}
-            icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
           >
+            <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />
             Enable delivery analytics
-          </FlowHoverButton>
+          </Button>
         </div>
       )}
 
