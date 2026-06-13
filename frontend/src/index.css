@@ -367,7 +367,7 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
 }
 
 .moment-flash {
-  animation: moment-flash-border 700ms ease-out;
+  animation: moment-flash-border 1450ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {

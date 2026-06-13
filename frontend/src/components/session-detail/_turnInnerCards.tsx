@@ -163,18 +163,29 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
           <p className="text-sm leading-7 text-text-muted">
             {segments.map((seg, si) =>
               seg.kind === 'improvement' ? (
-                <button
+                // A `<span role="button">` (not a real <button>) so the
+                // highlight flows inline and fragments across line breaks like
+                // the filler spans; an atomic <button> would sit centered on
+                // its own line. `box-decoration-clone` rounds each line fragment.
+                <span
                   key={si}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => triggerFlash(seg.momentIndex)}
-                  className="inline cursor-pointer rounded-sm bg-accent/15 px-0.5 text-text transition-colors hover:bg-accent/25 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      triggerFlash(seg.momentIndex);
+                    }
+                  }}
+                  className="cursor-pointer rounded-sm box-decoration-clone bg-accent/25 px-0.5 text-text transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
                   title="Improvement moment — click to view"
                   aria-label={`Jump to improvement moment ${seg.momentIndex + 1}`}
                 >
                   {seg.tokens.map((tok, ti) =>
                     renderTranscriptToken(tok, `${si}-${ti}`),
                   )}
-                </button>
+                </span>
               ) : (
                 seg.tokens.map((tok, ti) =>
                   renderTranscriptToken(tok, `${si}-${ti}`),
