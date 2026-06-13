@@ -54,7 +54,7 @@ function FooterButton({ icon, label, className, ...rest }: FooterButtonProps) {
         'hover:border-border-strong hover:bg-surface-raised',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
         'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface disabled:hover:border-border',
-        'min-[600px]:h-10 min-[600px]:px-3.5 min-[900px]:px-4',
+        'min-[600px]:h-11 min-[600px]:px-3.5 min-[900px]:h-12 min-[900px]:px-4',
         className,
       )}
       {...rest}
