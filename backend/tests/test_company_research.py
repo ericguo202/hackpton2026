@@ -40,12 +40,18 @@ def _fake_response(text: str) -> SimpleNamespace:
     )
 
 
-def _make_fake_client(text: str):
+def _make_fake_client(text: str | list[str]):
+    responses = [text] if isinstance(text, str) else list(text)
+    calls: list[dict] = []
+
     async def _create(**kwargs):
-        return _fake_response(text)
+        calls.append(kwargs)
+        index = min(len(calls) - 1, len(responses) - 1)
+        return _fake_response(responses[index])
 
     return SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create)),
+        calls=calls,
     )
 
 
@@ -67,6 +73,11 @@ _WELL_FORMED_JSON = json.dumps(
             "cross-team coordination with logistics partners",
         ],
     }
+)
+
+_TRUNCATED_JSON = (
+    '{\n  "description": "Acme Robotics builds autonomous warehouse robots '
+    'for logistics teams'
 )
 
 
@@ -223,12 +234,37 @@ async def test_research_company_handles_missing_new_fields(monkeypatch):
     assert brief.sample_question_themes == []
 
 
+async def test_research_company_retries_once_on_truncated_json(monkeypatch):
+    monkeypatch.setattr(company_research.settings, "SERPER_API_KEY", "test-key")
+    _mock_serper(monkeypatch, _fake_serp_payload())
+    fake_client = _make_fake_client([_TRUNCATED_JSON, _WELL_FORMED_JSON])
+    monkeypatch.setattr(
+        "app.services.company_research.get_client",
+        lambda: fake_client,
+    )
+
+    brief = await research_company("Acme Robotics", "Robotics Engineer")
+
+    assert "autonomous warehouse robots" in brief.description
+    assert len(fake_client.calls) == 2
+    retry_messages = fake_client.calls[1]["messages"]
+    assert (
+        "previous response was invalid or truncated JSON"
+        in retry_messages[-1]["content"]
+    )
+    assert retry_messages[0]["content"] == company_research._SYSTEM_INSTRUCTION
+
+
 async def test_research_company_falls_back_on_malformed_json(monkeypatch):
     monkeypatch.setattr(company_research.settings, "SERPER_API_KEY", "test-key")
     _mock_serper(monkeypatch, _fake_serp_payload())
+    fake_client = _make_fake_client([
+        "no json here, just chain of thought nonsense",
+        _TRUNCATED_JSON,
+    ])
     monkeypatch.setattr(
         "app.services.company_research.get_client",
-        lambda: _make_fake_client("no json here, just chain of thought nonsense"),
+        lambda: fake_client,
     )
 
     brief = await research_company("Acme Robotics", "Robotics Engineer")
@@ -239,6 +275,17 @@ async def test_research_company_falls_back_on_malformed_json(monkeypatch):
     assert brief.values == []
     assert brief.role_signals == []
     assert brief.sample_question_themes == []
+    assert len(fake_client.calls) == 2
+
+
+def test_research_system_prompt_contains_hard_json_contract():
+    prompt = company_research._SYSTEM_INSTRUCTION
+
+    assert "HARD JSON CONTRACT" in prompt
+    assert "`description` <= 180 chars" in prompt
+    assert "each `headline` <= 70 chars" in prompt
+    assert "first non-whitespace character MUST" in prompt
+    assert "Never stop mid-string" in prompt
 
 
 async def test_research_company_without_serper_key_raises(monkeypatch):
