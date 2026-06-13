@@ -7,7 +7,7 @@
  * num() / turnAverage in two places.
  */
 
-import type { TurnDetail } from '../../types/history';
+import type { ImprovementMoment, TurnDetail } from '../../types/history';
 
 /** Score dimension keys in display order, paired with their UI labels. */
 export const SCORE_KEYS = [
@@ -72,6 +72,20 @@ export function fillerRateColor(rate: number): string {
   if (rate <= 10) return 'var(--color-rate-ok)';
   if (rate <= 15) return 'var(--color-rate-warn)';
   return 'var(--color-rate-bad)';
+}
+
+/**
+ * The canonical improvement-moments list for a turn, newest schema first with
+ * the legacy `coaching_moments` fallback. Both the transcript highlighter and
+ * the Improvement Moments card derive their array (and therefore each moment's
+ * index) from here, so the transcript→moment link can never drift out of sync.
+ */
+export function improvementMomentsOf(turn: TurnDetail): ImprovementMoment[] {
+  return (
+    turn.feedback_detail?.improvement_moments ??
+    turn.feedback_detail?.coaching_moments ??
+    []
+  );
 }
 
 /**

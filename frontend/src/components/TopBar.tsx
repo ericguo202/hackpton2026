@@ -1,9 +1,6 @@
 /**
- * Shared editorial masthead for Hero and Home.
- *
- * The wordmark is intentionally metadata-style — issue number, section,
- * sub-section — rather than a logo. This sets the "publication" tone
- * established in .impeccable.md (premium, quiet, intentional).
+ * Shared masthead for Hero and Home: the InterviewPie brand lockup on the
+ * left, navigation and account controls on the right.
  *
  * `nav` slot holds inline navigation links (Practice / History) on the
  * signed-in surface. `rightSlot` holds the sign-in link on Hero and the
@@ -19,6 +16,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, matchPath, useLocation } from 'react-router';
 import { LEGAL_LINKS } from '../lib/legalLinks';
+import BrandLockup from './BrandLockup';
 import ThemeToggle from './ThemeToggle';
 
 type Props = {
@@ -42,15 +40,11 @@ export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
 
   return (
     <header className="relative flex items-center justify-between gap-6 px-8 md:px-16 pt-8 pb-4">
-      <div className="flex items-baseline gap-3 text-eyebrow text-sm uppercase tracking-eyebrow text-text-muted">
-        <span className="font-medium text-text tabular-nums">InterviewPie</span>
-        <span aria-hidden className="hidden min-[1130px]:inline">·</span>
-        <span className="hidden min-[1130px]:inline">Interview Practice</span>
-      </div>
+      <BrandLockup />
 
       <div className="flex items-center gap-4">
         {nav && (
-          <nav className="hidden min-[900px]:flex items-baseline gap-6 text-xs uppercase tracking-eyebrow text-text-muted">
+          <nav className="hidden min-[900px]:flex items-baseline gap-6 text-sm font-medium">
             {nav}
           </nav>
         )}
@@ -110,7 +104,7 @@ export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
           onClick={() => setMobileNavOpen(false)}
         >
           {nav && (
-            <nav className="flex flex-col items-start gap-4 text-xs uppercase tracking-eyebrow text-text-muted">
+            <nav className="flex flex-col items-start gap-4 text-sm font-medium">
               {nav}
             </nav>
           )}
@@ -124,7 +118,7 @@ export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
           */}
           <nav
             className={
-              'flex flex-col items-start gap-3 text-eyebrow uppercase tracking-eyebrow text-text-subtle' +
+              'flex flex-col items-start gap-3 text-sm text-text-subtle' +
               (nav ? ' mt-4 border-t border-border pt-4' : '')
             }
           >
@@ -171,7 +165,7 @@ export function TopBarNavLink({ to, matchPatterns, children }: NavLinkProps) {
         'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
         'focus-visible:ring-offset-surface rounded-sm ' +
         (active
-          ? 'text-text font-medium'
+          ? 'text-text underline underline-offset-[6px] decoration-2 decoration-accent'
           : 'text-text-muted hover:text-text')
       }
     >

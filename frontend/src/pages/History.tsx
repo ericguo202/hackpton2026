@@ -30,13 +30,15 @@ import {
 } from 'recharts';
 
 import DimensionMenu from '../components/DimensionMenu';
+import { StrengthsRadarPanel } from '../components/StrengthsRadar';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { Button } from '../components/ui/button';
 import { useMeStats } from '../hooks/useMeStats';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { useSessions } from '../hooks/useSessions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
+import { buildRadarData } from '../lib/radarData';
 import type {
   DimensionAverages,
   FillerWordStat,
@@ -398,6 +400,14 @@ export default function History() {
     [chartData, fillerRange],
   );
 
+  // Strengths radar: six dims averaged over the up-to-5 most recent sessions.
+  // Independent of the line chart's RangeSelector — always its own fixed window.
+  // `chartData` is oldest→newest, so the last ≤5 rows are the most recent.
+  const radar = useMemo(
+    () => (sessions ? buildRadarData(chartData.slice(-5)) : null),
+    [sessions, chartData],
+  );
+
   const hasSessions = (sessions?.length ?? 0) > 0;
   const enoughForChart = chartData.length >= 1;
   // Filler-rate trend only renders once at least one session carries a
@@ -438,7 +448,7 @@ export default function History() {
             Your history
           </p>
           <h1
-            className="anim-reveal font-display font-medium tracking-[-0.02em] leading-[1.05] text-text mb-12 md:mb-16"
+            className="anim-reveal font-display font-semibold tracking-[-0.02em] leading-[1.05] text-text mb-12 md:mb-16"
             style={{ animationDelay: '80ms', fontSize: 'clamp(2rem, 4vw, 3.25rem)' }}
           >
             Progress over time.
@@ -484,7 +494,7 @@ export default function History() {
           >
             <div className="flex items-baseline justify-between gap-4 mb-6">
               <h2
-                className="font-display font-medium text-text"
+                className="font-display font-semibold text-text"
                 style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
               >
                 Score trend
@@ -512,45 +522,24 @@ export default function History() {
             )}
 
             {enoughForChart && (
-              <>
+              <div className="grid grid-cols-1 min-[900px]:grid-cols-3 gap-8 min-[900px]:gap-10">
+                {/* Line chart (2/3): over-time progression, one line per dim. */}
+                <div className="min-[900px]:col-span-2">
                 {/* Dimension toggles (left) + time-window selector (right). The
-                    "Overall" chip shows the per-session overall score (0-100,
-                    rescaled to 0-10 in the chart series). */}
+                    `DimensionMenu` dropdown is used at ALL widths — the inline
+                    pill row was retired because seven pills wrapped into a tall,
+                    overlapping block in the 2/3 column. "Overall" toggles the
+                    per-session overall score (0-100, rescaled to 0-10). */}
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
-                  {/* Desktop (≥900px): inline pills. */}
-                  <div className="hidden min-[900px]:flex flex-wrap gap-2">
-                    <ToggleChip
-                      active={showOverall}
-                      onClick={() => setShowOverall((v) => !v)}
-                      color="var(--color-text)"
-                      label="Overall"
-                    />
-                    {DIMENSIONS.map((d) => (
-                      <ToggleChip
-                        key={d.key}
-                        active={activeDims[d.key]}
-                        onClick={() =>
-                          setActiveDims((prev) => ({ ...prev, [d.key]: !prev[d.key] }))
-                        }
-                        color={d.color}
-                        label={d.label}
-                      />
-                    ))}
-                  </div>
-                  {/* Mobile (<900px): the same toggles collapse into a dropdown
-                      checklist so they don't wrap into a tall pill block. Shares
-                      the same state as the desktop pills above. */}
-                  <div className="min-[900px]:hidden">
-                    <DimensionMenu
-                      showOverall={showOverall}
-                      onToggleOverall={() => setShowOverall((v) => !v)}
-                      dimensions={DIMENSIONS}
-                      activeDims={activeDims}
-                      onToggleDim={(key) =>
-                        setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
-                      }
-                    />
-                  </div>
+                  <DimensionMenu
+                    showOverall={showOverall}
+                    onToggleOverall={() => setShowOverall((v) => !v)}
+                    dimensions={DIMENSIONS}
+                    activeDims={activeDims}
+                    onToggleDim={(key) =>
+                      setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
+                    }
+                  />
                   <RangeSelector
                     total={chartData.length}
                     value={scoreRange}
@@ -618,7 +607,14 @@ export default function History() {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-              </>
+                </div>
+
+                {/* Radar (1/3): six dims averaged over the last ≤5 sessions —
+                    the shape reads as consistent strengths/weaknesses. */}
+                <div className="min-[900px]:col-span-1">
+                  <StrengthsRadarPanel radar={radar} unitLabel="session" />
+                </div>
+              </div>
             )}
           </section>
 
@@ -628,7 +624,7 @@ export default function History() {
           {(hasFillerRate || hasTopFillerWords) && (
             <section id="filler-words" className="anim-reveal mb-10" style={{ animationDelay: '270ms' }}>
               <h2
-                className="font-display font-medium text-text mb-6"
+                className="font-display font-semibold text-text mb-6"
                 style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
               >
                 Filler words
@@ -668,7 +664,7 @@ export default function History() {
           <section id="sessions" className="anim-reveal scroll-mt-8" style={{ animationDelay: '320ms' }}>
             <div className="flex items-baseline justify-between gap-4 mb-2">
               <h2
-                className="font-display font-medium text-text"
+                className="font-display font-semibold text-text"
                 style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
               >
                 Sessions
@@ -686,12 +682,12 @@ export default function History() {
                 <p className="text-sm text-text-muted mb-6">
                   Start a mock interview from Practice to see it here.
                 </p>
-                <FlowHoverButton
+                <Button
                   type="button"
                   onClick={() => navigate('/')}
                 >
                   Start a session
-                </FlowHoverButton>
+                </Button>
               </div>
             )}
 
@@ -773,7 +769,7 @@ function SavedQuestionsSection() {
     <section className="anim-reveal mb-6" style={{ animationDelay: '300ms' }}>
       <div className="mb-2 flex items-baseline justify-between gap-4">
         <h2
-          className="font-display font-medium text-text"
+          className="font-display font-semibold text-text"
           style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)' }}
         >
           Saved questions
@@ -865,9 +861,9 @@ function SavedQuestionRow({
       </span>
 
       <div className="col-span-5 min-[900px]:col-span-3 flex items-center justify-end gap-3">
-        <FlowHoverButton type="button" onClick={onRePractice} disabled={busy}>
+        <Button variant="outline" type="button" onClick={onRePractice} disabled={busy}>
           {busy ? 'Starting…' : 'Re-practice'}
-        </FlowHoverButton>
+        </Button>
         <button
           type="button"
           onClick={onDelete}
@@ -919,8 +915,8 @@ function applyRange<T>(data: T[], range: RangeWindow): T[] {
  * Per-chart segmented control for the visible time window. Renders one pill per
  * `visibleRangeOptions(total)`; the active pill matches `effectiveRange`. Hidden
  * entirely when the only option is `'all'` (<= 5 sessions) — a single-button
- * selector is noise. Styling mirrors `ToggleChip` so the controls read as one
- * family.
+ * selector is noise. Styling mirrors the dropdown trigger so the controls read
+ * as one family.
  */
 function RangeSelector({
   total,
@@ -956,42 +952,6 @@ function RangeSelector({
         );
       })}
     </div>
-  );
-}
-
-function ToggleChip({
-  active,
-  onClick,
-  color,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  color: string;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={
-        'cursor-pointer inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
-        (active
-          ? 'border-border-strong text-text bg-surface-raised'
-          : 'border-border text-text-subtle hover:text-text-muted')
-      }
-    >
-      <span
-        aria-hidden
-        className="inline-block w-2 h-2 rounded-full"
-        style={{
-          background: active ? color : 'transparent',
-          border: active ? 'none' : `1px solid ${color}`,
-        }}
-      />
-      {label}
-    </button>
   );
 }
 

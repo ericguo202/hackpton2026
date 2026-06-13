@@ -60,7 +60,7 @@ function CaseFileColumn({ session }: { session: SessionDetail }) {
         Target role · {session.job_title}
       </p>
 
-      <div className="flex-1 rounded-lg bg-surface-raised p-6">
+      <div className="flex-1 rounded-lg bg-surface-sunken p-6">
         {summary ? (
           <>
             <p className="text-base leading-7 text-text">
@@ -139,7 +139,7 @@ export function ScoresOverviewColumn({
       </div>
 
       {fillerRate != null && (
-        <div className="mt-3 rounded-lg bg-surface-raised p-4">
+        <div className="mt-3 rounded-lg bg-surface-sunken p-4">
           <FillerRateBar rate={fillerRate} variant="block" />
         </div>
       )}
@@ -159,7 +159,7 @@ function ScoreTile({
   const color = SCORE_COLOR_MAP[scoreKey];
   const isDelivery = scoreKey === 'delivery';
   return (
-    <div className="rounded-lg bg-surface-raised p-4 flex flex-col gap-3">
+    <div className="rounded-lg bg-surface-sunken p-4 flex flex-col gap-3">
       <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
         {label}
       </p>

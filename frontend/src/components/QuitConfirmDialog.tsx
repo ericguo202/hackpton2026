@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import { FlowHoverButton } from './ui/flow-hover-button';
+import { Button } from './ui/button';
 
 interface Props {
   open: boolean;
@@ -29,7 +29,7 @@ export function QuitConfirmDialog({ open, onCancel, onConfirm }: Props) {
       onClick={onCancel}
     >
       <div
-        className="mx-4 max-w-md rounded-2xl border border-border bg-surface-raised p-8 shadow-2xl"
+        className="mx-4 max-w-md rounded-2xl border border-border bg-surface-raised p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="quit-title" className="font-display text-xl text-text">
@@ -39,16 +39,14 @@ export function QuitConfirmDialog({ open, onCancel, onConfirm }: Props) {
           Your progress won&apos;t be scored. This session won&apos;t count toward your daily limit.
         </p>
         <div className="mt-6 flex justify-end gap-3">
-          <FlowHoverButton variant="dark" type="button" onClick={onCancel} className="cursor-pointer">
+          <Button variant="outline" type="button" onClick={onCancel}>
             Keep going
-          </FlowHoverButton>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-lg cursor-pointer bg-red-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
-          >
+          </Button>
+          {/* Destructive reuses cherry deliberately (DESIGN.md §5); the
+              label, not a new color, carries the meaning. */}
+          <Button variant="destructive" type="button" onClick={onConfirm}>
             Quit session
-          </button>
+          </Button>
         </div>
       </div>
     </div>

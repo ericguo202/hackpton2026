@@ -27,7 +27,7 @@ import IndustryAutocompleteField from '../components/IndustryAutocompleteField';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import RoleAutocompleteField from '../components/RoleAutocompleteField';
 import SpeechToTextButton from '../components/SpeechToTextButton';
-import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
@@ -230,7 +230,7 @@ function PersonalizeForm({ me, refetch }: FormProps) {
             Profile settings
           </p>
           <h1
-            className="mb-2 font-display font-medium leading-[1.05] tracking-[-0.02em] text-text"
+            className="mb-2 font-display font-semibold leading-[1.05] tracking-[-0.02em] text-text"
             style={{ fontSize: 'clamp(1.8rem, 3vw, 2.75rem)' }}
           >
             Personalize your practice.
@@ -240,13 +240,13 @@ function PersonalizeForm({ me, refetch }: FormProps) {
           </p>
         </div>
 
-        <FlowHoverButton
+        <Button
           type="submit"
           disabled={submitting || !canSubmit}
           className="hidden min-[900px]:inline-flex"
         >
           {submitting ? 'Saving...' : 'Save changes'}
-        </FlowHoverButton>
+        </Button>
       </div>
 
       {error && (
@@ -491,9 +491,9 @@ function PersonalizeForm({ me, refetch }: FormProps) {
       </div>
 
       <div className="mt-6 flex justify-end min-[900px]:hidden">
-        <FlowHoverButton type="submit" disabled={submitting || !canSubmit}>
+        <Button type="submit" disabled={submitting || !canSubmit}>
           {submitting ? 'Saving...' : 'Save changes'}
-        </FlowHoverButton>
+        </Button>
       </div>
     </form>
   );

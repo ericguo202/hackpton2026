@@ -25,7 +25,8 @@ import { Eye, EyeOff } from 'lucide-react';
 import { Suspense, lazy, useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router';
 
-import { FlowHoverButton } from '../components/ui/flow-hover-button';
+import { Button } from '../components/ui/button';
+import { useTheme } from '../hooks/useTheme';
 
 const Dithering = lazy(() =>
   import('@paper-design/shaders-react').then((mod) => ({ default: mod.Dithering })),
@@ -83,6 +84,10 @@ export default function SignIn() {
     typeof window !== 'undefined' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const shaderSpeed = prefersReducedMotion ? 0 : isHovered ? 0.6 : 0.2;
+  // The dither panel multiplies over the page surface, so its ink is the
+  // brand's black-cherry in light mode and the deeper sunken tone in dark.
+  const { theme } = useTheme();
+  const shaderInk = theme === 'dark' ? '#150D0F' : '#1C1214';
 
   function extractFirstError(err: unknown) {
     return (err as { errors?: Array<{ code?: string; message?: string }> })
@@ -276,7 +281,7 @@ export default function SignIn() {
           </button>
           {mode === 'signin' && (
           <div className="flex flex-col gap-5">
-            <h1 className="font-display font-medium tracking-[-0.02em] leading-tight text-text text-4xl md:text-5xl">
+            <h1 className="font-display font-semibold tracking-[-0.02em] leading-tight text-text text-4xl md:text-5xl">
               Welcome back
             </h1>
             <p className="text-text-muted leading-[1.55]">
@@ -367,14 +372,14 @@ export default function SignIn() {
                 </p>
               )}
 
-              <FlowHoverButton
+              <Button
                 type="submit"
                 size="lg"
                 disabled={submitting || !isLoaded}
-                className="w-full py-4"
+                className="w-full"
               >
                 {submitting ? 'Signing in…' : 'Sign in'}
-              </FlowHoverButton>
+              </Button>
             </form>
 
             <div className="relative flex items-center justify-center py-1">
@@ -384,17 +389,17 @@ export default function SignIn() {
               </span>
             </div>
 
-            <FlowHoverButton
-              variant="dark"
+            <Button
+              variant="outline"
               size="lg"
               type="button"
               onClick={handleGoogle}
               disabled={!isLoaded}
-              icon={<GoogleIcon />}
-              className="w-full py-4"
+              className="w-full gap-2"
             >
+              <GoogleIcon />
               Continue with Google
-            </FlowHoverButton>
+            </Button>
 
             <p className="text-center text-sm text-text-muted">
               New here?{' '}
@@ -411,7 +416,7 @@ export default function SignIn() {
 
           {mode === 'reset_request' && (
           <div className="flex flex-col gap-5">
-            <h1 className="font-display font-medium tracking-[-0.02em] leading-tight text-text text-4xl md:text-5xl">
+            <h1 className="font-display font-semibold tracking-[-0.02em] leading-tight text-text text-4xl md:text-5xl">
               Reset your password
             </h1>
             <p className="text-text-muted leading-[1.55]">
@@ -450,14 +455,14 @@ export default function SignIn() {
                 </p>
               )}
 
-              <FlowHoverButton
+              <Button
                 type="submit"
                 size="lg"
                 disabled={submitting || !isLoaded}
-                className="w-full py-4"
+                className="w-full"
               >
                 {submitting ? 'Sending…' : 'Send reset code'}
-              </FlowHoverButton>
+              </Button>
             </form>
 
             <button
@@ -472,7 +477,7 @@ export default function SignIn() {
 
           {mode === 'reset_verify' && (
           <div className="flex flex-col gap-5">
-            <h1 className="font-display font-medium tracking-[-0.02em] leading-tight text-text text-4xl md:text-5xl">
+            <h1 className="font-display font-semibold tracking-[-0.02em] leading-tight text-text text-4xl md:text-5xl">
               Check your email
             </h1>
             <p className="text-text-muted leading-[1.55]">
@@ -548,14 +553,14 @@ export default function SignIn() {
                 </p>
               )}
 
-              <FlowHoverButton
+              <Button
                 type="submit"
                 size="lg"
                 disabled={submitting || !isLoaded}
-                className="w-full py-4"
+                className="w-full"
               >
                 {submitting ? 'Resetting…' : 'Reset password'}
-              </FlowHoverButton>
+              </Button>
             </form>
 
             <button
@@ -581,7 +586,7 @@ export default function SignIn() {
             <div className="absolute inset-0 z-0 pointer-events-none opacity-60 mix-blend-multiply">
               <Dithering
                 colorBack="#00000000"
-                colorFront="#17150f"
+                colorFront={shaderInk}
                 shape="warp"
                 type="4x4"
                 speed={shaderSpeed}

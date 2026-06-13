@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import DeliveryConsentBullets from './DeliveryConsentBullets';
-import { FlowHoverButton } from './ui/flow-hover-button';
+import { Button } from './ui/button';
 
 interface Props {
   open: boolean;
@@ -114,22 +114,22 @@ export default function DeliveryConsentDialog({
         )}
 
         <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <FlowHoverButton
+          <Button
             type="button"
-            variant="dark"
+            variant="outline"
             onClick={onDecline}
             disabled={busy}
           >
             Continue without camera
-          </FlowHoverButton>
-          <FlowHoverButton
+          </Button>
+          <Button
             type="button"
             onClick={onConsent}
             disabled={!checked || busy}
-            icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
           >
+            <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />
             {busy ? 'Saving…' : 'Enable camera & consent'}
-          </FlowHoverButton>
+          </Button>
         </div>
       </div>
     </div>,

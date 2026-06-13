@@ -25,7 +25,7 @@ import type { ExperienceLevel, MeResponse } from '../types/user';
 import IndustryAutocompleteField from './IndustryAutocompleteField';
 import RoleAutocompleteField from './RoleAutocompleteField';
 import SpeechToTextButton from './SpeechToTextButton';
-import { FlowHoverButton } from './ui/flow-hover-button';
+import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import TopBar from './TopBar';
 
@@ -381,26 +381,26 @@ export default function OnboardingForm() {
 
         <div className="flex items-center justify-between">
           {step > 0 ? (
-            <FlowHoverButton variant="dark" type="button" onClick={retreat}>
+            <Button variant="outline" type="button" onClick={retreat}>
               Back
-            </FlowHoverButton>
+            </Button>
           ) : (
             <span />
           )}
 
           {step < TOTAL_STEPS - 1 ? (
-            <FlowHoverButton
+            <Button
               type="button"
               onClick={advance}
               disabled={!canAdvance}
             >
               Continue
-            </FlowHoverButton>
+            </Button>
           ) : (
             <form onSubmit={handleSubmit}>
-              <FlowHoverButton type="submit" disabled={submitting || !canAdvance}>
+              <Button type="submit" disabled={submitting || !canAdvance}>
                 {submitting ? 'Submitting…' : 'Finish setup'}
-              </FlowHoverButton>
+              </Button>
             </form>
           )}
         </div>

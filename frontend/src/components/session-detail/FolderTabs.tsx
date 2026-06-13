@@ -1,12 +1,12 @@
 /**
  * Folder-tab navigation for SessionDetail.
  *
- * Three tabs (Overview · Turn 1 · Turn 2) shaped like binder/file-folder
- * tabs sitting on top of the dark-beige session card. Active tab fills
- * with `accent` ink; inactive tabs are dark beige (matching the card
- * body) so they read as "all one piece of paper with the front file
- * pulled forward." The strip overlaps the card by 1px so there's no
- * visual seam between the active tab and the panel below.
+ * Three tabs (Overview · Turn 1 · Turn 2) keep the binder/file-folder
+ * silhouette on top of the session card, on the theme-following neutrals
+ * (DESIGN.md §5 Folder Tabs): inactive tabs sit in the sunken tone, the
+ * active tab shares the card fill so it fuses seamlessly with the panel
+ * below (the strip overlaps the card by 1px to hide the seam). Labels are
+ * DM Sans 600.
  *
  * `SideNavButton` (also exported here) is the circular ← / → button that
  * sits outside the card on the left/right gutters with a hover tooltip
@@ -79,22 +79,17 @@ export function FolderTabs({ tabs, activeIndex, onChange }: FolderTabsProps) {
             onKeyDown={(e) => handleKeyDown(e, idx)}
             className={
               'min-w-[7rem] cursor-pointer rounded-t-lg border border-b-0 px-5 py-2.5 ' +
-              'text-eyebrow uppercase tracking-eyebrow transition-colors ' +
+              'font-display text-sm font-semibold transition-colors ' +
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ' +
               'focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
               (active
-                // Light: black ink tab on the dark-beige card (high contrast,
-                // by design). Dark: match the card's fill + border so the tab
-                // merges seamlessly instead of jutting out as a lighter block;
-                // the near-black text-accent-fg still sets it apart from the
-                // muted inactive tabs.
-                ? 'border-accent bg-accent text-accent-fg dark:border-border-strong dark:bg-tertiary-200'
-                // Dark: recess the inactive tabs to a grayer manila (300) so
-                // they read as unselected vs the active tab / card (200), then
-                // lift back to the card color on hover. Keeps the literal
-                // `bg-tertiary-200` class so the index.css text re-scope still
-                // resolves the label to dark ink on the light manila.
-                : 'border-border-strong bg-tertiary-200 text-text-muted hover:bg-tertiary-300 hover:text-text dark:bg-tertiary-300 dark:hover:bg-tertiary-200')
+                // Shares the card fill + border so the tab fuses to the panel
+                // ("the front file pulled forward"); the 1px overlap below
+                // hides the card's top border under it.
+                ? 'border-border-strong bg-surface-raised text-text'
+                // Inactive tabs recess into the sunken tone and lift toward
+                // the card fill on hover.
+                : 'border-border-strong bg-surface-sunken text-text-muted hover:bg-surface-raised hover:text-text')
             }
           >
             {tab.label}
@@ -141,7 +136,7 @@ export function SideNavButton({ direction, onClick, targetLabel, hidden = false 
       className={
         'inline-flex h-11 w-11 cursor-pointer items-center justify-center ' +
         'rounded-full border border-border-strong bg-surface-raised text-text ' +
-        'transition-colors hover:bg-tertiary-200 ' +
+        'transition-colors hover:bg-surface-sunken ' +
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ' +
         'focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
       }

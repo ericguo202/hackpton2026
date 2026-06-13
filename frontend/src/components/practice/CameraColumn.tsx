@@ -1,5 +1,5 @@
 import { CameraPreview } from '../CameraPreview';
-import { FlowHoverButton } from '../ui/flow-hover-button';
+import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 
 /** A timed recording-length notice shown UNDER the camera box. `warning` is the
@@ -117,21 +117,21 @@ export function CameraColumn({
 
       {showPreview && (
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-          <FlowHoverButton
-            variant="dark"
+          <Button
             type="button"
             onClick={onSubmitPreview}
             disabled={submitting}
           >
             Submit answer
-          </FlowHoverButton>
-          <FlowHoverButton
+          </Button>
+          <Button
+            variant="outline"
             type="button"
             onClick={onReRecordPreview}
             disabled={submitting}
           >
             Re-record
-          </FlowHoverButton>
+          </Button>
         </div>
       )}
 

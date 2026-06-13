@@ -85,7 +85,7 @@ function IntroColumn({ company, jobTitle }: { company: string; jobTitle: string 
         Session complete
       </p>
       <h2
-        className="mb-3 font-display font-medium leading-[1.05] tracking-[-0.02em] text-text"
+        className="mb-3 font-display font-semibold leading-[1.05] tracking-[-0.02em] text-text"
         style={{ fontSize: 'clamp(2rem, 4vw, 3.25rem)' }}
       >
         Let&apos;s look at how you did.

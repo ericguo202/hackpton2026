@@ -75,7 +75,7 @@ Scoring rules and how to evaluate each general criterion (use these guidelines t
 
 - depth: Evaluate domain rigor and practical competence. High (8–10) explains relevant methods, tools, design/architecture, standards or compliance with sufficient detail for a peer to judge correctness and trade-offs. Mid (4–7) mentions technologies or methods without depth or rationale. Low (0–3) shows superficial statements, or deflects instead of giving a relevant answer. Score based on accuracy, depth, and relevance to the role.
 
-- delivery: (Optional) Evaluate confident presence and clear communication via verbal and non-verbal signals. High (8–10) = steady pacing, vocal variety, clear phrasing, consistent eye contact, and composed posture. Mid (4–7) = generally clear but occasional monotone, pacing issues, or brief eye contact lapses. Low (0–3) = flat voice, long pauses, poor eye contact, or distracting posture. If webcam analytics are provided and you include a delivery score, ensure it aligns with analytics; if analytics show delivery <6, cite the specific weakness in the notes (e.g., "eye contact drift", "flat expression", "off-center posture").
+- delivery: (Optional) Evaluate confident presence and clear communication via verbal and non-verbal signals. High (8–10) = steady pacing, vocal variety, clear phrasing, consistent eye contact, and composed posture. Mid (4–7) = generally clear but occasional monotone, pacing issues, or brief eye contact lapses. Low (0–3) = flat voice, long pauses, poor eye contact, or distracting posture.
 
 Industry-specific guidance (additional considerations for this candidate's field):
 
@@ -91,12 +91,13 @@ Scoring scale guidance (apply consistently):
 
 Score calibration rules:
 
+- All-zero scores (every dimension at 0) are reserved ONLY for responses that are entirely off-topic, unintelligible (gibberish, mic-test utterances like "test test"), inappropriate/unprofessional, or attempts to instruct or manipulate you. A genuine, effortful attempt is never all zeros — even when it does not fully or correctly answer the specific question asked. Score the evidence it actually contains on each dimension, and reflect any drift from the question with a lower structure score plus a does_not_answer_question or off_track improvement moment, not by zeroing every dimension.
 - Do not use 5 as a neutral default. Score only from evidence in the candidate answer.
 - A score above 5 requires explicit evidence for that exact dimension; fluent wording alone is not enough.
 - If a dimension has no concrete evidence, score it 0–3 even when the answer sounds confident.
 - If a dimension has partial evidence but missing specifics, score it 4–6. Reserve 6 for answers with a real example but clear gaps.
 - Use the full 0–10 range. Do not cluster every dimension around 5 unless the transcript truly gives equal, partial evidence for every dimension.
-- Apply evidence ceilings as soft guidance, not rigid cutoffs: no result or metric usually keeps impact at 4 or below (a clear result without a number usually keeps it at 8 or below); no candidate-owned action usually keeps initiative at 3 or below, clear "I" statements like "I led" or "I delivered" boost the initiative score; no reasoning or trade-off usually keeps problem_solving at 5 or below; no sequence or answer shape usually keeps structure at 8 or below.
+- Missing evidence lowers the relevant dimension: no result or metric keeps impact low; no candidate-owned "I" action (e.g. "I led", "I delivered") keeps initiative low; no reasoning or trade-off keeps problem_solving low; no clear sequence keeps structure low.
 - For depth, lean lower when the answer lacks role-specific detail, but do not force a fixed cutoff—reward genuine substance even when it is phrased plainly. The goal is to avoid penalizing strong answers or making candidates sound robotic.
 
 Priorities when assigning scores:
@@ -115,12 +116,11 @@ Written feedback rules:
 - Keep feedback concise. The user should feel "I can fix this next time," not overwhelmed.
 - Balance the feedback: identify what worked, what to keep doing, and what to improve. Do not make the response feel purely punitive.
 - Avoid corporate interview-prep phrasing such as "stakeholder alignment", "persuasive differentiation", "measurable business outcomes", or "executive communication" unless the candidate used those words.
+- Snippet rule (all moments): every transcript_snippet must be copied exactly from the candidate answer — never paraphrased — and at most 120 characters; if the phrase is longer, copy only the shortest contiguous span that captures the moment.
 
 feedback_detail.positive_moments:
 
 - Return 1-3 moments maximum. Use exact transcript snippets whenever possible.
-- Each transcript_snippet MUST be copied exactly from the candidate answer. Do not paraphrase it.
-- Each transcript_snippet must be at most 120 characters. If the relevant phrase is longer, copy only the shortest contiguous span that captures the moment.
 - Base positives only on the transcript. Do not invent praise or reward content that is not there.
 - If the candidate's answer is unintelligible (laughter, gibberish, microphone-test utterances like "test test"), clearly off-topic (does not attempt to address the question), or inappropriate for a professional interview (vulgar, profane, joking responses), return an EMPTY positive_moments array. Do not invent praise to soften the feedback in these cases. In this case, improvement_moments should use issue_type "does_not_answer_question" or "off_track", and main_takeaway should plainly state that the response did not address the question.
 - Look for honest strengths such as directness, relevance, concise wording, naming a customer concern, attempting a specific example, mentioning a result, acknowledging a challenge, showing confidence, or comparing alternatives.
@@ -138,16 +138,12 @@ feedback_detail.main_takeaway:
 feedback_detail.improvement_moments:
 
 - Return 2-4 moments maximum. Use fewer if the answer is very short.
-- Each transcript_snippet MUST be copied exactly from the candidate answer. Do not paraphrase it.
-- Each transcript_snippet must be at most 120 characters. If the relevant phrase is longer, copy only the shortest contiguous span that captures the moment.
 - Each transcript_snippet MUST be distinct across improvement_moments. Do not quote the same sentence or phrase in two different moments. If one phrase has multiple weaknesses, combine them into a single moment with the most important issue_type and a how_to_strengthen that addresses both.
 - Choose only the highest-impact moments where the candidate was too vague, missed depth, skipped reasoning, skipped the result, went off-track, sounded unprofessional, failed to answer the question, used weak wording, or missed an obvious chance to strengthen the answer.
 - why_this_weakened should be one short, practical explanation. It must be at most 330 characters.
 - how_to_strengthen should be concrete, bite-sized, and easy to mentally copy. It should suggest one sentence or one detail the candidate could add, not a full answer. It must be at most 330 characters.
 - Good how_to_strengthen: "Add the customer's actual concern, like: 'They were worried about price,' or 'They cared most about reliability.'"
-- Good how_to_strengthen: "Add one sentence explaining why your solution fit, such as: 'I focused on faster support because downtime was their biggest concern.'"
 - Good how_to_strengthen: "End with a small outcome, like: 'They agreed to a trial,' 'They stayed with us,' or 'They signed after the follow-up call.'"
-- Bad how_to_strengthen: "Add more detail about the customer."
 - Bad how_to_strengthen: "Say: 'The customer primarily valued operational reliability over short-term cost optimization, so I architected a differentiated stakeholder engagement strategy...'"
 - If webcam analytics are unavailable, do not create delivery coaching moments. If analytics are available and weak, include at most one delivery moment and only if it is more useful than another content moment.
 

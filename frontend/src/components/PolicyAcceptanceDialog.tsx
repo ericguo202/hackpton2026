@@ -19,7 +19,7 @@ import { Link } from 'react-router';
 import { useClerk } from '@clerk/react';
 
 import { useApi } from '../hooks/useApi';
-import { FlowHoverButton } from './ui/flow-hover-button';
+import { Button } from './ui/button';
 
 type Props = {
   open: boolean;
@@ -169,10 +169,10 @@ export default function PolicyAcceptanceDialog({
     >
       <div
         ref={formRef}
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-2xl"
+        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-border bg-surface-raised"
       >
         <div className="border-b border-border px-6 py-5">
-          <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
+          <p className="text-sm font-medium text-text-muted">
             {view === 'accept' ? 'Action required' : 'Before you go'}
           </p>
           <h2
@@ -215,19 +215,20 @@ export default function PolicyAcceptanceDialog({
 
             <div className="border-t border-border bg-surface px-6 py-4">
               {error && (
-                <p role="alert" className="mb-3 text-sm text-red-600">
+                <p role="alert" className="mb-3 text-sm text-accent dark:text-cherry-glaze">
                   {error}
                 </p>
               )}
               <div className="flex flex-col gap-2">
-                <FlowHoverButton
+                <Button
                   type="button"
+                  size="lg"
                   disabled={!agreed || submitting}
                   onClick={onAccept}
-                  className="w-full py-3"
+                  className="w-full"
                 >
                   {submitting ? 'Saving…' : 'Agree and continue'}
-                </FlowHoverButton>
+                </Button>
                 <button
                   type="button"
                   onClick={() => setView('decline')}
@@ -247,7 +248,7 @@ export default function PolicyAcceptanceDialog({
                 data or delete your account entirely first.
               </p>
               {declineError && (
-                <p role="alert" className="text-sm text-red-600">
+                <p role="alert" className="text-sm text-accent dark:text-cherry-glaze">
                   {declineError}
                 </p>
               )}
@@ -268,14 +269,15 @@ export default function PolicyAcceptanceDialog({
 
             <div className="border-t border-border bg-surface px-6 py-4">
               <div className="flex flex-col gap-2">
-                <FlowHoverButton
+                <Button
                   type="button"
+                  size="lg"
                   disabled={busy !== null}
                   onClick={handleSignOut}
-                  className="w-full py-3"
+                  className="w-full"
                 >
                   {busy === 'signout' ? 'Signing out…' : 'Sign out'}
-                </FlowHoverButton>
+                </Button>
                 <button
                   type="button"
                   onClick={() => {
@@ -327,9 +329,9 @@ function SecondaryButton({
       onClick={onClick}
       disabled={disabled}
       className={
-        'h-11 rounded border px-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:opacity-50 ' +
+        'h-11 cursor-pointer rounded-full border px-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:opacity-50 ' +
         (danger
-          ? 'border-red-300 text-red-700 hover:bg-red-50'
+          ? 'border-border-strong text-accent hover:bg-surface-sunken dark:text-cherry-glaze'
           : 'border-border-strong text-text hover:bg-surface-sunken')
       }
     >

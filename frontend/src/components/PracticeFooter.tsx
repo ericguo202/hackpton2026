@@ -50,11 +50,11 @@ function FooterButton({ icon, label, className, ...rest }: FooterButtonProps) {
       type="button"
       aria-label={label}
       className={cn(
-        'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-surface px-2 text-sm text-text transition',
+        'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-surface px-3 text-sm text-text transition',
         'hover:border-border-strong hover:bg-surface-raised',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
         'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface disabled:hover:border-border',
-        'min-[600px]:h-10 min-[600px]:px-3 min-[900px]:px-4',
+        'min-[600px]:h-10 min-[600px]:px-3.5 min-[900px]:px-4',
         className,
       )}
       {...rest}
@@ -67,6 +67,9 @@ function FooterButton({ icon, label, className, ...rest }: FooterButtonProps) {
   );
 }
 
+/* Neutral on purpose: cherry in this footer belongs to the recording
+   indicator + "End recording" (one action per surface). The destructive
+   cherry lives on the confirm button inside QuitConfirmDialog. */
 function QuitButton({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -74,10 +77,10 @@ function QuitButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       aria-label="Quit session"
       className={cn(
-        'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg bg-red-600 px-2 text-sm font-medium text-white transition',
-        'hover:bg-red-700',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
-        'min-[600px]:h-11 min-[600px]:px-3 min-[900px]:h-12 min-[900px]:px-5',
+        'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-surface px-3 text-sm font-medium text-text transition',
+        'hover:border-border-strong hover:bg-surface-raised',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
+        'min-[600px]:h-11 min-[600px]:px-3.5 min-[900px]:h-12 min-[900px]:px-5',
       )}
     >
       <LogOut className="h-4 w-4" />
@@ -110,7 +113,7 @@ export function PracticeFooter({
         <span className="flex items-center gap-2 text-sm">
           {recorderState === 'recording' ? (
             <>
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-500" />
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" />
               <span className="text-text">Recording</span>
             </>
           ) : (

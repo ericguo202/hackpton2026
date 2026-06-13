@@ -1,14 +1,16 @@
 /**
- * DimensionMenu — mobile dropdown checklist for a trend chart's series toggles.
+ * DimensionMenu — dropdown checklist for a trend chart's series toggles.
  *
- * On narrow (<900px) viewports the inline series `ToggleChip`s wrap into a tall,
- * cluttered block, so they collapse into this single trigger button + popup of
- * checkboxes. It owns no series state — the host page passes `showOverall` /
- * `activeDims` (the same state its desktop pills mutate) so toggling here or in
- * the pills is one shared selection; only one variant is mounted-visible at a
- * time via Tailwind `hidden`.
+ * A row of inline series pills wraps into a tall, cluttered block once there are
+ * many series (or in a narrow column), so they collapse into this single trigger
+ * button + popup of checkboxes. It owns no series state — the host page passes
+ * `showOverall` / `activeDims` so toggling here mutates the host's one shared
+ * selection.
  *
- * Shared by `History.tsx` (Score trend) and `SavedQuestionDetail.tsx` (Progress).
+ * Both hosts — `History.tsx` (Score trend) and `SavedQuestionDetail.tsx`
+ * (Progress) — use this as the sole toggle control at ALL widths; the inline
+ * pill rows were retired on both because seven pills wrapped into a tall,
+ * overlapping block once the line chart was constrained to the 2/3 column.
  * Generic over the dimension key `K` so each page keeps its own `DimensionKey`
  * union; it's passed its own `dimensions` list rather than importing a const.
  *

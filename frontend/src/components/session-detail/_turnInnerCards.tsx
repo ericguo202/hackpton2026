@@ -22,18 +22,26 @@ import { useId, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import type { TurnDetail } from '../../types/history';
-import { tokenizeTranscript } from '../../lib/fillerWords';
+import type { TranscriptToken } from '../../lib/fillerWords';
+import { segmentTranscriptByImprovements } from '../../lib/transcriptHighlight';
 import FillerRateBar from './FillerRateBar';
-import { SCORE_COLOR_MAP, SCORE_KEYS, formatIssueType, num } from './_helpers';
+import { useMomentFlash } from './_momentFlash';
+import {
+  SCORE_COLOR_MAP,
+  SCORE_KEYS,
+  formatIssueType,
+  improvementMomentsOf,
+  num,
+} from './_helpers';
 
 /* ------------------------------------------------------------------ */
 /* Primitives                                                         */
 /* ------------------------------------------------------------------ */
 
-/** The lighter beige paper-insert card that sits inside the dark folder. */
+/** Sunken inset panel inside the folder card (page → card → well). */
 export function InnerCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg bg-surface-raised p-5 h-full overflow-hidden flex flex-col">
+    <div className="rounded-lg bg-surface-sunken p-5 h-full overflow-hidden flex flex-col">
       {children}
     </div>
   );
@@ -76,9 +84,37 @@ export function ScoreRow({
 /* Whole cards                                                        */
 /* ------------------------------------------------------------------ */
 
+/** Render one transcript token — filler runs get the chart-2 highlight, plain
+ *  runs render as-is. Shared by the plain and improvement-moment spans so
+ *  filler highlights nest inside flagged sentences. */
+function renderTranscriptToken(tok: TranscriptToken, key: string) {
+  if (tok.kind === 'filler') {
+    return (
+      <span
+        key={key}
+        className="rounded-sm px-1"
+        style={{
+          background: 'color-mix(in srgb, var(--color-chart-2) 25%, transparent)',
+          color: 'var(--color-chart-2)',
+        }}
+        title={`Filler word: "${tok.canonical}"`}
+      >
+        {tok.text}
+      </span>
+    );
+  }
+  return <span key={key}>{tok.text}</span>;
+}
+
 export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
   const fillerCount = turn.filler_word_count;
   const hasTranscript = !!turn.transcript_text;
+  const { triggerFlash } = useMomentFlash();
+  const moments = improvementMomentsOf(turn);
+  const segments = segmentTranscriptByImprovements(
+    turn.transcript_text,
+    moments.map((m, i) => ({ snippet: m.transcript_snippet, momentIndex: i })),
+  );
   // Mobile-only collapse. Below 900px the transcript can dominate the page
   // and push the audio/scores/feedback far down. Default collapsed; the
   // `min-[900px]:block` override keeps desktop unaffected.
@@ -125,21 +161,35 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
       >
         {turn.transcript_text ? (
           <p className="text-sm leading-7 text-text-muted">
-            {tokenizeTranscript(turn.transcript_text).map((tok, i) =>
-              tok.kind === 'filler' ? (
+            {segments.map((seg, si) =>
+              seg.kind === 'improvement' ? (
+                // A `<span role="button">` (not a real <button>) so the
+                // highlight flows inline and fragments across line breaks like
+                // the filler spans; an atomic <button> would sit centered on
+                // its own line. `box-decoration-clone` rounds each line fragment.
                 <span
-                  key={i}
-                  className="rounded-sm px-1"
-                  style={{
-                    background: 'color-mix(in srgb, var(--color-chart-2) 25%, transparent)',
-                    color: 'var(--color-chart-2)',
+                  key={si}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => triggerFlash(seg.momentIndex)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      triggerFlash(seg.momentIndex);
+                    }
                   }}
-                  title={`Filler word: "${tok.canonical}"`}
+                  className="cursor-pointer rounded-sm box-decoration-clone bg-accent/25 px-0.5 text-text transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
+                  title="Improvement moment — click to view"
+                  aria-label={`Jump to improvement moment ${seg.momentIndex + 1}`}
                 >
-                  {tok.text}
+                  {seg.tokens.map((tok, ti) =>
+                    renderTranscriptToken(tok, `${si}-${ti}`),
+                  )}
                 </span>
               ) : (
-                <span key={i}>{tok.text}</span>
+                seg.tokens.map((tok, ti) =>
+                  renderTranscriptToken(tok, `${si}-${ti}`),
+                )
               ),
             )}
           </p>
@@ -255,11 +305,9 @@ export function ImprovementMomentsCard({
   evaluationPending?: boolean;
   evaluationFailed?: boolean;
 }) {
-  const moments =
-    turn.feedback_detail?.improvement_moments ??
-    turn.feedback_detail?.coaching_moments ??
-    [];
+  const moments = improvementMomentsOf(turn);
   const headingId = useId();
+  const { flash, domIdFor } = useMomentFlash();
   return (
     <InnerCard>
       <p
@@ -280,10 +328,18 @@ export function ImprovementMomentsCard({
           <p className="text-sm text-text-subtle">No improvement moments flagged.</p>
         ) : (
           <ul className="flex flex-col gap-5" aria-labelledby={headingId}>
-            {moments.map((m, i) => (
+            {moments.map((m, i) => {
+              const isFlashing = flash?.index === i;
+              return (
               <li
-                key={`${m.transcript_snippet}-${i}`}
-                className="border-l-2 border-accent/45 pl-4"
+                key={`${m.transcript_snippet}-${i}${
+                  isFlashing ? `-flash-${flash.nonce}` : ''
+                }`}
+                id={domIdFor(i)}
+                tabIndex={-1}
+                className={`border-l-2 border-accent/45 pl-4 ${
+                  isFlashing ? 'moment-flash' : ''
+                }`}
               >
                 <span className="inline-block rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent">
                   {formatIssueType(m.issue_type)}
@@ -301,7 +357,8 @@ export function ImprovementMomentsCard({
                   {m.how_to_strengthen}
                 </p>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>

@@ -87,7 +87,7 @@ Components under `src/components/session-detail/`:
 - **`FolderTabs.tsx`** — `<button>` tabs `rounded-t-lg border border-b-0` + `-mb-px` overlap (no seam). Full ARIA tabs pattern (←/→/Home/End).
 - **`OverviewPanel.tsx`** — left: company brief (omit empty sections — never "(none)"). Right: six `ScoreTile`s; `ScoresOverviewColumn` is a named export for reuse.
 - **`TurnPanel.tsx`** — **two independent row grids** (NOT one grid w/ `auto-rows-fr` — that matched both rows to the taller, leaving empty gutters).
-- **`_helpers.ts`** — `SCORE_KEYS`, `SCORE_COLOR_MAP`, `num()`, `turnAverage()`. `SCORE_COLOR_MAP` mirrors `History.tsx:DIMENSIONS` — change one, change both.
+- **`_helpers.ts`** — `SCORE_KEYS`, `SCORE_COLOR_MAP`, `num()`, `turnAverage()`, `improvementMomentsOf()`. `SCORE_COLOR_MAP` mirrors `History.tsx:DIMENSIONS` — change one, change both.
 
 **Load-bearing layout facts** (caught/fixed during iteration — don't re-introduce):
 
@@ -98,6 +98,17 @@ Components under `src/components/session-detail/`:
 **Mobile (<900px)**: drops folder strip, chevrons, 2-col layouts → single vertical stack. Nav: horizontal swipe (`|dx|>60 && |dx|>1.5·|dy|`) + bottom Prev/Next row.
 
 **Issue-type chips**: `formatIssueType(raw)` — generic snake_case → Title Case. Don't hard-code a switch (generic handles unknown/legacy).
+
+### Transcript feedback highlighting (shared by Practice + SessionDetail)
+
+The per-turn cards live in **`components/session-detail/_turnInnerCards.tsx`** and are reused by **both** `TurnPanel.tsx` (SessionDetail) and `PracticeTurnPanel.tsx` (Practice) — change the feature once, it lands on both surfaces.
+
+- **Filler highlighting** — `QuestionAnswerCard` renders the transcript via `lib/fillerWords.ts:tokenizeTranscript` (frontend mirror of the backend regex). `renderTranscriptToken` is the shared per-token renderer (chart-2 filler chip vs plain span).
+- **Improvement-moment highlighting + click-to-jump** — flagged sentences are highlighted in cherry (`bg-accent/15`, the same color as the Improvement Moments section) and are clickable: clicking scrolls the matching moment into view and flashes its left border.
+  - **Matching (`lib/transcriptHighlight.ts:segmentTranscriptByImprovements`)** splits the transcript into `plain` / `improvement` segments. Each snippet is located by its **trimmed** value via `indexOf` — mirroring the backend's `_drop_unanchored_moments` (`snippet.strip() in transcript`) guarantee. **Rule: a snippet that doesn't appear verbatim is NOT highlighted** (graceful no-op on legacy/edge data). Overlapping snippet ranges are dropped greedily (earliest wins) so spans never nest into each other. Every segment is itself run through `tokenizeTranscript`, so **filler highlights nest inside** improvement spans (the two layers stack, not fight).
+  - **Index source of truth**: both cards derive the moments array (and therefore each `momentIndex`) from `_helpers.ts:improvementMomentsOf(turn)` (`improvement_moments ?? coaching_moments ?? []`) so the transcript→moment link can't drift.
+  - **Flash channel (`_momentFlash.ts`)** — a per-turn React context (`MomentFlashContext` / `useMomentFlash` / `useProvideMomentFlash(turn.id)`). The transcript card and the moments card sit in separate grid rows, so the click→flash path goes through context, not props. Each panel wraps its content in `<MomentFlashContext.Provider value={useProvideMomentFlash(turn.id)}>`. DOM ids are deterministic (`improvement-moment-${turn.id}-${i}`; `turn.id` is stable for real turns AND Practice replay turns `local-${idx}`). Scroll happens in an effect (post-render) so the target exists after re-key remount; a ref-backed `nonce` lets a repeat click of the **same** snippet replay (the moment `<li>`'s `key` includes the nonce → remount → CSS animation re-runs).
+  - **Animation** — `index.css:.moment-flash` / `@keyframes moment-flash-border` brightens the left border to `--color-accent` + a brief left-edge glow, no `forwards` fill so the resting `border-accent/45` reclaims the property. Included in the `prefers-reduced-motion: reduce` reset (and `scrollIntoView` falls back to `behavior: 'auto'`).
 
 ### Save & re-practice opening questions
 
@@ -114,35 +125,41 @@ Components under `src/components/session-detail/`:
 
 ## Design system
 
-Earth-tone editorial palette on **Inter** (Geist Mono reserved for code). Wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js`, and none should be added**.
+InterviewPie 2026 rebrand (root `DESIGN.md`, "Prep Kitchen"): vanilla surface, cherry action color, amber garnish, **DM Sans 600/700 headings over Inter body** (Geist Mono reserved for code). Wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js`, and none should be added**.
 
 `src/index.css` `@theme { ... }` is the single source of design tokens — never hand-type hex/`px` in components.
 
 ### Color system
 
-Nine scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest). All earth tones. `primary/700` (`#17150f`) is brand "ink". Page bg `primary/100` (`#F1E9D2`).
+Nine legacy scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest), collapsed into one warm-neutral family tinted toward the brand amber hue. `primary/700` (`#271812`) is cocoa "ink". Page bg `primary/100` (`#FDF8F2`, vanilla). Brand tokens live alongside: `--color-cherry` (+`-deep`/`-glaze`/`-tint`) and `--color-amber` (+`-deep`/`-tint`).
+
+**Named rules (DESIGN.md §2):** cherry covers ≤~10% of any screen (primary action, selection, links — two competing cherry elements means one is wrong). Amber is garnish: never type on light surfaces, never a fill under white text; dark mode alone grants it text/focus-ring rights.
 
 ### Token hierarchy — prefer semantic tokens; reach for raw scale only when no alias fits.
 
-| Use case              | Semantic utility               | Resolves to       |
-| --------------------- | ------------------------------ | ----------------- |
-| Page background       | `bg-surface`                   | primary/100       |
-| Card / elevated panel | `bg-surface-raised`            | tertiary/100      |
-| Subtle well / input   | `bg-surface-sunken`            | quaternary/100    |
-| Default border        | `border-border`                | primary/200       |
-| Stronger border       | `border-border-strong`         | primary/300       |
-| Body text             | `text-text`                    | primary/700       |
-| Muted text            | `text-text-muted`              | primary/500       |
-| Subtle / helper text  | `text-text-subtle`             | primary/400       |
-| Primary button        | `bg-accent` + `text-accent-fg` | primary/700 + 100 |
-| Primary button hover  | `hover:bg-accent-hover`        | primary/600       |
-| Focus ring            | `ring-focus-ring`              | primary/700       |
+| Use case              | Semantic utility               | Resolves to (light)    |
+| --------------------- | ------------------------------ | ---------------------- |
+| Page background       | `bg-surface`                   | vanilla `#FDF8F2`      |
+| Card / elevated panel | `bg-surface-raised`            | card white `#FFFFFF`   |
+| Subtle well / input   | `bg-surface-sunken`            | sunken `#F6EDE2`       |
+| Default border        | `border-border`                | warm hairline `#E8DCCB`|
+| Stronger border       | `border-border-strong`         | `#D4C3AC`              |
+| Body text             | `text-text`                    | ink `#271812`          |
+| Muted text            | `text-text-muted`              | `#6E5D50`              |
+| Subtle / helper text  | `text-text-subtle`             | `#7C6B5D`              |
+| Primary button        | `bg-accent` + `text-accent-fg` | cherry `#C41E3A` + white |
+| Primary button hover  | `hover:bg-accent-hover`        | cherry-deep `#A8172F`  |
+| Focus ring            | `ring-focus-ring`              | cherry (amber in dark) |
 
 ### Typography
 
-- `--font-sans`/`--font-ui`/`--font-display` all = **Inter** today. Three-token split is forward-looking — swap one if a role diverges.
-- Base `h1..h6` set `--font-display`, weight 500, tight letter-spacing, responsive `clamp()`. h1/h2 clamp upper bounds (`4.5rem`/`2.75rem`) tuned for wide monitors — don't lower.
-- `--font-mono` = Geist Mono (not `@import`ed; falls back to `ui-monospace`). For offline-demo reliability swap to `@fontsource/inter` (token names unchanged).
+- `--font-display` = **DM Sans** (the wordmark face); `--font-sans`/`--font-ui` = **Inter**. Inter never renders headings.
+- Base `h1..h6` set `--font-display`, **weight 600** (the Wordmark Weight Rule: 700 belongs to the brand name + at most one display statement per page), tight letter-spacing, responsive `clamp()`. h1/h2 clamp upper bounds (`4.5rem`/`2.75rem`) tuned for wide monitors — don't lower.
+- `--font-mono` = Geist Mono (not `@import`ed; falls back to `ui-monospace`).
+
+### Buttons
+
+`ui/button.tsx` is the single button vocabulary: **full pill** (`rounded-full`), cherry `default`/`destructive` (the label, not a new color, carries destructive meaning), bordered `outline` for secondary/cancel actions. `GetStartedButton` (chevron-slide pill) is landing-only. `FlowHoverButton` was retired in rebrand stage 2 — don't reintroduce ink-sweep hovers.
 
 ### Wide-monitor scaling — three coupled mechanisms, touch all three together:
 
@@ -164,25 +181,26 @@ Always visible: `focus-visible:ring-2 focus-visible:ring-focus-ring focus-visibl
 
 ### Dark mode
 
-Class strategy on `<html>` + curated token swap (warm "espresso", NOT an inversion).
+Class strategy on `<html>` + curated token swap (**black cherry** `#1C1214`, NOT an inversion).
 
-- **Mechanism**: `html.dark { … }` overrides **only semantic aliases + six `--color-chart-N`**. Specificity: `html.dark` (0,1,1) beats `@theme`'s `:root` (0,1,0). `@custom-variant dark (&:where(.dark, .dark *))` for one-off `dark:` utilities.
+- **Mechanism**: `html.dark { … }` overrides **only semantic aliases + six `--color-chart-N` + rate bands**. Specificity: `html.dark` (0,1,1) beats `@theme`'s `:root` (0,1,0). `@custom-variant dark (&:where(.dark, .dark *))` for one-off `dark:` utilities.
 - **No-flash init (`index.html`)**: blocking inline script sets `dark` class before first paint. First visit follows OS `prefers-color-scheme`; then `localStorage['theme']` wins.
 - **State**: `src/hooks/useTheme.ts` — `useSyncExternalStore` whose snapshot is the `<html>` class. `ThemeToggle.tsx` in TopBar (always visible).
-- **Manila "case file" exception**: folder card + inactive tabs use fixed `bg-tertiary-200` (light in dark mode). `index.css` re-scopes text tokens to light values for `html.dark .bg-tertiary-200`, then restores dark-palette light text on dark inset panels.
-- **Clerk is theme-aware**: `main.tsx` wraps `ClerkProvider` in a `Root` reading `useTheme()`, builds `appearance` from light/dark `variables`.
-- **Known light-only gaps (deliberate)**: `App.tsx`, `MePing.tsx`, `OnboardingForm.tsx`, `SignIn.tsx` won't fully adapt until migrated to semantic tokens. Calibration camera box uses intentionally-dark raw scales (correct in both themes).
+- Primary buttons stay cherry-with-white in both themes; dark hover **brightens** (`#D63B53`) instead of darkening. Accent-level *text* in dark uses cherry-glaze (`dark:text-cherry-glaze`); focus ring flips to amber.
+- The manila "case file" exception was **retired in rebrand stage 2**: the SessionDetail/Practice folder card is plain `bg-surface-raised`, inner tiles are `bg-surface-sunken`, and the `html.dark .bg-tertiary-200` re-scoping blocks are gone from `index.css`. Don't re-pin light surfaces in dark mode.
+- **Clerk is theme-aware**: `main.tsx` wraps `ClerkProvider` in a `Root` reading `useTheme()`, builds `appearance` from light/dark `variables` (light: white/ink/cherry; dark: black-cherry/cream/cherry-glaze).
+- Calibration camera box uses an intentionally-dark raw hex (`#150D0F`, correct in both themes); SignIn/SignUp recolor the dither shader per theme via `useTheme()`.
 
 ### Tech debt
 
-`App.tsx`, `MePing.tsx`, `OnboardingForm.tsx`, `SignInPage.tsx` still use built-in Tailwind grays/reds/black. Migrate in a single pass, not piecemeal. No `--color-danger`/`--color-success` tokens yet — add to `@theme` when first needed.
+The built-in Tailwind gray/red migration is **done** (rebrand stage 2) — components use semantic tokens throughout. No `--color-danger`/`--color-success` tokens yet — destructive reuses cherry by doctrine; add tokens to `@theme` only if a genuinely separate semantic emerges.
 
 ## Design Context
 
-Mirrored from `frontend/.impeccable.md` (canonical) — keep in sync by hand.
+Canonical sources: root `PRODUCT.md` + `DESIGN.md` (the 2026 "Prep Kitchen" spec); stage briefs in `.impeccable/`.
 
 **Users** — Primary: undergrads prepping internship/new-grad behavioral interviews. Secondary: recent grads doing repeat sessions.
 
-**Design principles**: (1) Studio, not cram — remove chrome before adding. (2) Adult vocabulary — cut hype, exclamation marks, Duolingo-tone. (3) Restraint signals premium — no gradient cards/stat counters/illustrations/mascots. (4) One primary action per surface. (5) Metrics are data, not rewards — no animated fills/green checkmarks.
+**Design principles**: (1) Studio, not cram — remove chrome before adding. (2) Adult vocabulary — cut hype, exclamation marks, Duolingo-tone. (3) Restraint signals premium — no gradients/shadows/stat counters/illustrations/mascots, no bakery kitsch. (4) One primary action per surface, marked in cherry. (5) Metrics are data, not rewards — no animated fills/green checkmarks. (6) Eyebrow labels are a data-label voice (metric displays, one running head per page) — never section scaffolding.
 
-**Hero principles**: typography carries emotional load (Inter ~3.5rem clamp, weight 500 on cream); one action alone in negative space; asymmetric left-aligned; empty space is content.
+**Hero principles**: typography carries emotional load (DM Sans 600/700 display on vanilla); one action alone in negative space; asymmetric left-aligned; empty space is content.

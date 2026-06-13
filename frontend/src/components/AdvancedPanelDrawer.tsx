@@ -17,7 +17,7 @@ import { X } from 'lucide-react';
 import { useEffect } from 'react';
 
 import AdvancedPanel from './AdvancedPanel';
-import { FlowHoverButton } from './ui/flow-hover-button';
+import { Button } from './ui/button';
 
 type Props = {
   open: boolean;
@@ -92,9 +92,9 @@ export default function AdvancedPanelDrawer({
       </div>
 
       <footer className="border-t border-border px-5 py-4 shrink-0">
-        <FlowHoverButton variant="dark" type="button" onClick={onClose}>
+        <Button variant="outline" type="button" onClick={onClose}>
           Back
-        </FlowHoverButton>
+        </Button>
       </footer>
     </aside>
   );
