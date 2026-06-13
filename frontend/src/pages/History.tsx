@@ -492,7 +492,16 @@ function StrengthsRadar({ data, ariaLabel }: { data: RadarPoint[]; ariaLabel: st
   return (
     <div className="w-full" style={{ height: 320 }} role="img" aria-label={ariaLabel}>
       <ResponsiveContainer width="100%" height="100%">
-        <RadarChart data={data} outerRadius="70%" margin={{ top: 16, right: 16, bottom: 16, left: 16 }}>
+        {/* accessibilityLayer={false}: the wrapping div is already role="img"
+            with a full aria-label, so AT sees one static image. recharts 3's
+            default layer would make the SVG surface tabIndex=0/role="application"
+            (redundant here) and paint a focus rectangle on mouse-click. */}
+        <RadarChart
+          data={data}
+          outerRadius="70%"
+          margin={{ top: 16, right: 16, bottom: 16, left: 16 }}
+          accessibilityLayer={false}
+        >
           <PolarGrid stroke="var(--color-border)" />
           <PolarAngleAxis
             dataKey="shortLabel"
@@ -724,47 +733,24 @@ export default function History() {
             )}
 
             {enoughForChart && (
-              <div className="grid grid-cols-1 min-[900px]:grid-cols-5 gap-8 min-[900px]:gap-10">
-                {/* Line chart (60%): over-time progression, one line per dim. */}
-                <div className="min-[900px]:col-span-3">
+              <div className="grid grid-cols-1 min-[900px]:grid-cols-3 gap-8 min-[900px]:gap-10">
+                {/* Line chart (2/3): over-time progression, one line per dim. */}
+                <div className="min-[900px]:col-span-2">
                 {/* Dimension toggles (left) + time-window selector (right). The
-                    "Overall" chip shows the per-session overall score (0-100,
-                    rescaled to 0-10 in the chart series). */}
+                    `DimensionMenu` dropdown is used at ALL widths — the inline
+                    pill row was retired because seven pills wrapped into a tall,
+                    overlapping block in the 2/3 column. "Overall" toggles the
+                    per-session overall score (0-100, rescaled to 0-10). */}
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
-                  {/* Desktop (≥900px): inline pills. */}
-                  <div className="hidden min-[900px]:flex flex-wrap gap-2">
-                    <ToggleChip
-                      active={showOverall}
-                      onClick={() => setShowOverall((v) => !v)}
-                      color="var(--color-text)"
-                      label="Overall"
-                    />
-                    {DIMENSIONS.map((d) => (
-                      <ToggleChip
-                        key={d.key}
-                        active={activeDims[d.key]}
-                        onClick={() =>
-                          setActiveDims((prev) => ({ ...prev, [d.key]: !prev[d.key] }))
-                        }
-                        color={d.color}
-                        label={d.label}
-                      />
-                    ))}
-                  </div>
-                  {/* Mobile (<900px): the same toggles collapse into a dropdown
-                      checklist so they don't wrap into a tall pill block. Shares
-                      the same state as the desktop pills above. */}
-                  <div className="min-[900px]:hidden">
-                    <DimensionMenu
-                      showOverall={showOverall}
-                      onToggleOverall={() => setShowOverall((v) => !v)}
-                      dimensions={DIMENSIONS}
-                      activeDims={activeDims}
-                      onToggleDim={(key) =>
-                        setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
-                      }
-                    />
-                  </div>
+                  <DimensionMenu
+                    showOverall={showOverall}
+                    onToggleOverall={() => setShowOverall((v) => !v)}
+                    dimensions={DIMENSIONS}
+                    activeDims={activeDims}
+                    onToggleDim={(key) =>
+                      setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
+                    }
+                  />
                   <RangeSelector
                     total={chartData.length}
                     value={scoreRange}
@@ -834,9 +820,9 @@ export default function History() {
                 </div>
                 </div>
 
-                {/* Radar (40%): six dims averaged over the last ≤5 sessions —
+                {/* Radar (1/3): six dims averaged over the last ≤5 sessions —
                     the shape reads as consistent strengths/weaknesses. */}
-                <div className="min-[900px]:col-span-2">
+                <div className="min-[900px]:col-span-1">
                   <div className="mb-6">
                     <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle">
                       Strengths &amp; weaknesses
@@ -1159,8 +1145,8 @@ function applyRange<T>(data: T[], range: RangeWindow): T[] {
  * Per-chart segmented control for the visible time window. Renders one pill per
  * `visibleRangeOptions(total)`; the active pill matches `effectiveRange`. Hidden
  * entirely when the only option is `'all'` (<= 5 sessions) — a single-button
- * selector is noise. Styling mirrors `ToggleChip` so the controls read as one
- * family.
+ * selector is noise. Styling mirrors the dropdown trigger so the controls read
+ * as one family.
  */
 function RangeSelector({
   total,
@@ -1196,42 +1182,6 @@ function RangeSelector({
         );
       })}
     </div>
-  );
-}
-
-function ToggleChip({
-  active,
-  onClick,
-  color,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  color: string;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={
-        'cursor-pointer inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
-        (active
-          ? 'border-border-strong text-text bg-surface-raised'
-          : 'border-border text-text-subtle hover:text-text-muted')
-      }
-    >
-      <span
-        aria-hidden
-        className="inline-block w-2 h-2 rounded-full"
-        style={{
-          background: active ? color : 'transparent',
-          border: active ? 'none' : `1px solid ${color}`,
-        }}
-      />
-      {label}
-    </button>
   );
 }
 

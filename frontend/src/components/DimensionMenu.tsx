@@ -1,16 +1,18 @@
 /**
- * DimensionMenu — mobile dropdown checklist for a trend chart's series toggles.
+ * DimensionMenu — dropdown checklist for a trend chart's series toggles.
  *
- * On narrow (<900px) viewports the inline series `ToggleChip`s wrap into a tall,
- * cluttered block, so they collapse into this single trigger button + popup of
- * checkboxes. It owns no series state — the host page passes `showOverall` /
- * `activeDims` (the same state its desktop pills mutate) so toggling here or in
- * the pills is one shared selection; only one variant is mounted-visible at a
- * time via Tailwind `hidden`.
+ * A row of inline series pills wraps into a tall, cluttered block once there are
+ * many series (or in a narrow column), so they collapse into this single trigger
+ * button + popup of checkboxes. It owns no series state — the host page passes
+ * `showOverall` / `activeDims` so toggling here mutates the host's one shared
+ * selection.
  *
- * Shared by `History.tsx` (Score trend) and `SavedQuestionDetail.tsx` (Progress).
- * Generic over the dimension key `K` so each page keeps its own `DimensionKey`
- * union; it's passed its own `dimensions` list rather than importing a const.
+ * Usage differs per host: `History.tsx` (Score trend) uses this as the sole
+ * control at ALL widths (the inline pills were retired there); `SavedQuestionDetail.tsx`
+ * (Progress) still mounts it as the <900px variant alongside desktop pills, swapped
+ * via Tailwind `hidden`. Generic over the dimension key `K` so each page keeps its
+ * own `DimensionKey` union; it's passed its own `dimensions` list rather than
+ * importing a const.
  *
  * No reusable popover exists in the codebase; the close-on-outside-click /
  * Escape behavior is built inline. Styling mirrors the combobox listbox
