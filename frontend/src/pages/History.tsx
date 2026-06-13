@@ -122,8 +122,10 @@ function buildChartData(sessions: SessionListItem[]) {
 }
 
 /** One spoke of the strengths radar. `shortLabel` is the abbreviated tick; the
- *  full `dimension` label is shown in the tooltip. */
-type RadarPoint = { dimension: string; shortLabel: string; value: number };
+ *  full `dimension` label is shown in the tooltip; `color` is the dimension's
+ *  `--color-chart-N` (shared with the line chart) used to tint the axis label
+ *  and vertex dot. */
+type RadarPoint = { dimension: string; shortLabel: string; value: number; color: string };
 
 type RadarResult = {
   data: RadarPoint[];
@@ -157,7 +159,12 @@ function buildRadarData(sessions: SessionListItem[]): RadarResult {
       continue;
     }
     const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    data.push({ dimension: d.label, shortLabel: RADAR_SHORT_LABELS[d.key], value: avg });
+    data.push({
+      dimension: d.label,
+      shortLabel: RADAR_SHORT_LABELS[d.key],
+      value: avg,
+      color: d.color,
+    });
   }
   return { data, windowCount: window.length, deliveryMissing };
 }
@@ -382,7 +389,8 @@ function FillerRateChart({ data }: { data: ChartPoint[] }) {
   );
 }
 
-/** Radar tooltip — single spoke, full dimension label + 0-10 value. */
+/** Radar tooltip — single spoke, full dimension label + 0-10 value, dot tinted
+ *  with the dimension's chart color. */
 function RadarTooltip({ active, payload }: {
   active?: boolean;
   payload?: Array<{ value: number | null; payload: RadarPoint }>;
@@ -395,7 +403,7 @@ function RadarTooltip({ active, payload }: {
         <span
           aria-hidden
           className="inline-block w-2 h-2 rounded-full"
-          style={{ background: 'var(--color-text)' }}
+          style={{ background: ctx.color }}
         />
         <span className="text-text-muted">{ctx.dimension}</span>
         <span className="text-text font-medium tabular-nums ml-auto">
@@ -407,23 +415,88 @@ function RadarTooltip({ active, payload }: {
 }
 
 /**
+ * Angle-axis tick that tints each dimension's label with its chart color
+ * (`colorByLabel`, keyed on the short tick label) — so the spokes carry the same
+ * per-dimension palette as the line chart. recharts clones this element per tick,
+ * injecting `x`/`y`/`textAnchor`/`payload`; `colorByLabel` is preserved.
+ *
+ * Multi-word labels wrap onto stacked lines (whitespace split) so the long side
+ * labels ("Prob. Solving") can't overflow the SVG's right/left edge in the narrow
+ * column — single-word labels render as one line, unchanged.
+ */
+function RadarAngleTick({ x, y, textAnchor, payload, colorByLabel }: {
+  x?: number | string;
+  y?: number | string;
+  textAnchor?: 'start' | 'middle' | 'end' | 'inherit';
+  payload?: { value: string };
+  colorByLabel?: Record<string, string>;
+}) {
+  const label = payload?.value ?? '';
+  const fill = colorByLabel?.[label] ?? 'var(--color-text-muted)';
+  const lines = label.split(' ');
+  const lineHeight = 12; // px, matches the 11px font with a little leading
+  return (
+    <text x={x} y={y} textAnchor={textAnchor} dominantBaseline="central" fontSize={11} fill={fill}>
+      {lines.map((line, i) => (
+        <tspan
+          // reset x each line so every line honors `textAnchor`; first line lifts
+          // the block so the stack stays vertically centered on the spoke.
+          key={line}
+          x={x}
+          dy={i === 0 ? -((lines.length - 1) * lineHeight) / 2 : lineHeight}
+        >
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
+}
+
+/** Vertex dot tinted with its dimension's chart color (matches the axis label). */
+function renderRadarDot(props: {
+  cx?: number;
+  cy?: number;
+  index?: number;
+  payload?: RadarPoint;
+}) {
+  const { cx, cy, index, payload } = props;
+  if (cx == null || cy == null || !payload) return <g key={index} />;
+  return (
+    <circle
+      key={index}
+      cx={cx}
+      cy={cy}
+      r={3}
+      fill={payload.color}
+      stroke="var(--color-surface-raised)"
+      strokeWidth={1}
+    />
+  );
+}
+
+/**
  * Strengths & weaknesses radar — the six rubric dimensions averaged across the
  * user's up-to-5 most recent sessions, collapsed into one profile polygon. Unlike
  * the Score-trend line chart (one line per dimension over time), this reads the
- * SHAPE: a dent on a spoke is a consistent weak area. Single-series ink fill —
- * deliberately NOT cherry (reserved for primary action/selection), and the ink
- * token swaps for dark mode for free. Drops the Delivery spoke when no windowed
- * session recorded webcam (see `buildRadarData`).
+ * SHAPE: a dent on a spoke is a consistent weak area. The polygon is a neutral ink
+ * fill (NOT cherry — reserved for primary action/selection; the ink token swaps for
+ * dark mode for free); per-dimension color lives in the axis labels + vertex dots,
+ * matching the line chart's `--color-chart-N` palette. Exposed to assistive tech as
+ * one labelled image (`role="img"` + `ariaLabel`) since the recharts SVG carries no
+ * screen-reader text of its own. Drops the Delivery spoke when no windowed session
+ * recorded webcam (see `buildRadarData`).
  */
-function StrengthsRadar({ data }: { data: RadarPoint[] }) {
+function StrengthsRadar({ data, ariaLabel }: { data: RadarPoint[]; ariaLabel: string }) {
+  // shortLabel → color, so the cloned per-tick element can look up its hue.
+  const colorByLabel = Object.fromEntries(data.map((d) => [d.shortLabel, d.color]));
   return (
-    <div className="w-full" style={{ height: 320 }}>
+    <div className="w-full" style={{ height: 320 }} role="img" aria-label={ariaLabel}>
       <ResponsiveContainer width="100%" height="100%">
-        <RadarChart data={data} outerRadius="72%" margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+        <RadarChart data={data} outerRadius="70%" margin={{ top: 16, right: 16, bottom: 16, left: 16 }}>
           <PolarGrid stroke="var(--color-border)" />
           <PolarAngleAxis
             dataKey="shortLabel"
-            tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
+            tick={<RadarAngleTick colorByLabel={colorByLabel} />}
           />
           <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
           <Radar
@@ -432,6 +505,7 @@ function StrengthsRadar({ data }: { data: RadarPoint[] }) {
             stroke="var(--color-text)"
             fill="var(--color-text)"
             fillOpacity={0.1}
+            dot={renderRadarDot}
             isAnimationActive={false}
           />
           <Tooltip content={<RadarTooltip />} />
@@ -521,6 +595,20 @@ export default function History() {
     () => (sessions ? buildRadarData(sessions) : null),
     [sessions],
   );
+  // Screen-reader alternative for the radar SVG: read the actual averaged
+  // scores. The chart wrapper carries this via role="img" + aria-label.
+  const radarAriaLabel = useMemo(() => {
+    if (!radar || radar.data.length === 0) return '';
+    const parts = radar.data.map((d) => `${d.dimension} ${d.value.toFixed(1)} out of 10`);
+    const tail = radar.deliveryMissing
+      ? ' Delivery is not shown because no recent session used a webcam.'
+      : '';
+    return (
+      `Strengths and weaknesses radar chart. Average scores across your last ` +
+      `${radar.windowCount} session${radar.windowCount === 1 ? '' : 's'}: ` +
+      `${parts.join(', ')}.${tail}`
+    );
+  }, [radar]);
 
   const hasSessions = (sessions?.length ?? 0) > 0;
   const enoughForChart = chartData.length >= 1;
@@ -636,9 +724,9 @@ export default function History() {
             )}
 
             {enoughForChart && (
-              <div className="grid grid-cols-1 min-[900px]:grid-cols-3 gap-8 min-[900px]:gap-10">
-                {/* Line chart (2/3): over-time progression, one line per dim. */}
-                <div className="min-[900px]:col-span-2">
+              <div className="grid grid-cols-1 min-[900px]:grid-cols-5 gap-8 min-[900px]:gap-10">
+                {/* Line chart (60%): over-time progression, one line per dim. */}
+                <div className="min-[900px]:col-span-3">
                 {/* Dimension toggles (left) + time-window selector (right). The
                     "Overall" chip shows the per-session overall score (0-100,
                     rescaled to 0-10 in the chart series). */}
@@ -746,9 +834,9 @@ export default function History() {
                 </div>
                 </div>
 
-                {/* Radar (1/3): six dims averaged over the last ≤5 sessions —
+                {/* Radar (40%): six dims averaged over the last ≤5 sessions —
                     the shape reads as consistent strengths/weaknesses. */}
-                <div className="min-[900px]:col-span-1">
+                <div className="min-[900px]:col-span-2">
                   <div className="mb-6">
                     <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle">
                       Strengths &amp; weaknesses
@@ -761,7 +849,7 @@ export default function History() {
                   </div>
                   {radar && radar.data.length > 0 && (
                     <>
-                      <StrengthsRadar data={radar.data} />
+                      <StrengthsRadar data={radar.data} ariaLabel={radarAriaLabel} />
                       {radar.deliveryMissing && (
                         <p className="mt-2 text-xs text-text-subtle">
                           Delivery needs webcam — not enough recorded sessions.
