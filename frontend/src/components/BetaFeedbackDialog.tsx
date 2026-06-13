@@ -342,7 +342,7 @@ function RatingField({
     <fieldset className="space-y-3">
       <legend className="text-sm font-semibold text-text">
         {label}
-        <span className="text-accent dark:text-cherry-glaze"> *</span>
+        <span className="text-link"> *</span>
       </legend>
       <div className="grid grid-cols-5 gap-2">
         {RATINGS.map((rating) => (
@@ -388,7 +388,7 @@ function TextareaField({
     <label className="block space-y-2">
       <span className="text-sm font-semibold text-text">
         {label}
-        {required && <span className="text-accent dark:text-cherry-glaze"> *</span>}
+        {required && <span className="text-link"> *</span>}
       </span>
       <textarea
         value={value}

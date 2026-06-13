@@ -78,10 +78,10 @@ export default function SignUp() {
     typeof window !== 'undefined' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const shaderSpeed = prefersReducedMotion ? 0 : isHovered ? 0.6 : 0.2;
-  // The dither panel multiplies over the page surface, so its ink is the
-  // brand's black-cherry in light mode and the deeper sunken tone in dark.
+  // The dither panel multiplies over the page surface, so its ink is a deep
+  // near-black in light mode and the espresso sunken tone in dark.
   const { theme } = useTheme();
-  const shaderInk = theme === 'dark' ? '#150D0F' : '#1C1214';
+  const shaderInk = theme === 'dark' ? '#15100A' : '#1C1214';
 
   // A Google OAuth sign-up rejection (e.g. blocked by the Clerk Allowlist beta
   // gate) doesn't throw on a button click — Clerk records it on the SignUp

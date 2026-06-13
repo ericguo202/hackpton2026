@@ -30,34 +30,34 @@ const baseVariables = {
   fontSize: '0.875rem',
 }
 
-// Light palette — DESIGN.md vanilla/ink/cherry. Clerk popovers are raised
-// surfaces, so the background is card white over the vanilla page.
+// Light palette — DESIGN.md cream/ink/cherry. Clerk popovers are raised
+// surfaces, so the background is card white over the vanilla-cream page.
 const lightVariables = {
   colorPrimary: '#C41E3A',         // cherry; Clerk auto-contrasts to white text
   colorBackground: '#FFFFFF',      // surface-raised (card white)
   colorForeground: '#271812',      // ink
-  colorMuted: '#F6EDE2',           // sunken
+  colorMuted: '#F6EDE2',           // sunken well
   colorMutedForeground: '#6E5D50', // ink-muted
   colorNeutral: '#271812',
   colorInputBackground: '#F6EDE2', // sunken
   colorInputForeground: '#271812',
-  colorBorder: '#E8DCCB',          // border-warm
+  colorBorder: '#E8DCCB',          // warm hairline
   colorShimmer: 'rgba(39, 24, 18, 0.06)',
 }
 
-// Dark palette — mirrors the black-cherry tokens in index.css (html.dark).
-// Accent-level color uses cherry-glaze (the dark-mode accent text tone);
-// raw cherry sits too close to the black-cherry surface for link text.
+// Dark palette — mirrors the warm-espresso tokens in index.css (html.dark).
+// The primary action stays cherry in both themes (CTA never changes color);
+// Clerk auto-contrasts the cherry button to white text.
 const darkVariables = {
-  colorPrimary: '#F2697C',         // cherry-glaze; Clerk auto-contrasts text
-  colorBackground: '#271A1C',      // surface-raised
+  colorPrimary: '#C41E3A',         // cherry; Clerk auto-contrasts to white text
+  colorBackground: '#2A2118',      // surface-raised
   colorForeground: '#F5EADF',      // cream text
-  colorMuted: '#1C1214',           // surface
-  colorMutedForeground: '#C7B2A8', // cream text-muted
+  colorMuted: '#1E1711',           // surface (espresso)
+  colorMutedForeground: '#CBB9A1', // cream text-muted
   colorNeutral: '#F5EADF',         // neutral shades generated from cream
-  colorInputBackground: '#150D0F', // sunken
+  colorInputBackground: '#15100A', // sunken
   colorInputForeground: '#F5EADF',
-  colorBorder: '#3E2F30',
+  colorBorder: '#3A2D20',
   colorShimmer: 'rgba(245, 234, 223, 0.08)',
 }
 

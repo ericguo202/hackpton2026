@@ -139,7 +139,7 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
             <button
               type="button"
               onClick={() => setIsTranscriptOpen((v) => !v)}
-              className="min-[900px]:hidden inline-flex items-center gap-1 text-xs text-accent underline-offset-2 hover:underline"
+              className="min-[900px]:hidden inline-flex items-center gap-1 text-xs text-link underline-offset-2 hover:underline"
               aria-expanded={isTranscriptOpen}
               aria-controls={transcriptId}
             >
@@ -178,7 +178,7 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
                       triggerFlash(seg.momentIndex);
                     }
                   }}
-                  className="cursor-pointer rounded-sm box-decoration-clone bg-accent/25 px-0.5 text-text transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
+                  className="cursor-pointer rounded-sm box-decoration-clone bg-highlight/25 px-0.5 text-text transition-colors hover:bg-highlight/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
                   title="Improvement moment — click to view"
                   aria-label={`Jump to improvement moment ${seg.momentIndex + 1}`}
                 >
@@ -337,11 +337,11 @@ export function ImprovementMomentsCard({
                 }`}
                 id={domIdFor(i)}
                 tabIndex={-1}
-                className={`border-l-2 border-accent/45 pl-4 ${
+                className={`border-l-2 border-highlight/45 pl-4 ${
                   isFlashing ? 'moment-flash' : ''
                 }`}
               >
-                <span className="inline-block rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent">
+                <span className="inline-block rounded-full bg-highlight/10 px-2 py-0.5 text-xs text-text dark:text-highlight">
                   {formatIssueType(m.issue_type)}
                 </span>
                 <p className="mt-2 mb-1 text-xs text-text-subtle">You said</p>

@@ -125,30 +125,32 @@ The per-turn cards live in **`components/session-detail/_turnInnerCards.tsx`** a
 
 ## Design system
 
-InterviewPie 2026 rebrand (root `DESIGN.md`, "Prep Kitchen"): vanilla surface, cherry action color, amber garnish, **DM Sans 600/700 headings over Inter body** (Geist Mono reserved for code). Wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js`, and none should be added**.
+InterviewPie 2026 rebrand (root `DESIGN.md`, "Prep Kitchen"; stage 3 "Baked, not bloody"): warm vanilla-cream surface, cherry action color, amber garnish/identity, **DM Sans 600/700 headings over Inter body** (Geist Mono reserved for code). Wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js`, and none should be added**.
 
 `src/index.css` `@theme { ... }` is the single source of design tokens — never hand-type hex/`px` in components.
 
 ### Color system
 
-Nine legacy scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest), collapsed into one warm-neutral family tinted toward the brand amber hue. `primary/700` (`#271812`) is cocoa "ink". Page bg `primary/100` (`#FDF8F2`, vanilla). Brand tokens live alongside: `--color-cherry` (+`-deep`/`-glaze`/`-tint`) and `--color-amber` (+`-deep`/`-tint`).
+Nine legacy scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest), collapsed into one warm-neutral family tinted toward the brand amber hue. `primary/700` (`#271812`) is cocoa "ink". The page bg is the semantic `--color-surface` = warm vanilla-cream `#F5E7CF` (NOT `primary/100`, which stays `#FDF8F2` as a raw-scale anchor). Brand tokens live alongside: `--color-cherry` (+`-deep`/`-glaze`/`-tint`) and `--color-amber` (+`-deep`/`-tint`). **Emphasis is split from the action accent (stage 3):** `--color-link` (cherry→amber in dark) for links/inline accent/active-underline; `--color-highlight` (amber both themes) for the improvement-moment system. `--color-accent` stays cherry for buttons/selection.
 
-**Named rules (DESIGN.md §2):** cherry covers ≤~10% of any screen (primary action, selection, links — two competing cherry elements means one is wrong). Amber is garnish: never type on light surfaces, never a fill under white text; dark mode alone grants it text/focus-ring rights.
+**Named rules (DESIGN.md §2):** cherry covers ≤~10% of any screen and usually less — it's the action color (primary + destructive buttons, selection fill); two competing cherry elements means one is wrong. Amber is garnish in light (never type/white-fill; fills, washes, chart ink only) and **leads in dark** (earns text rights ≥9:1, carries links + active-underline + focus ring). The only red kept in dark mode is the one CTA, destructive buttons, error alerts, and danger labels (cherry-glaze) — never decorative.
 
 ### Token hierarchy — prefer semantic tokens; reach for raw scale only when no alias fits.
 
 | Use case              | Semantic utility               | Resolves to (light)    |
 | --------------------- | ------------------------------ | ---------------------- |
-| Page background       | `bg-surface`                   | vanilla `#FDF8F2`      |
+| Page background       | `bg-surface`                   | vanilla-cream `#F5E7CF`|
 | Card / elevated panel | `bg-surface-raised`            | card white `#FFFFFF`   |
 | Subtle well / input   | `bg-surface-sunken`            | sunken `#F6EDE2`       |
 | Default border        | `border-border`                | warm hairline `#E8DCCB`|
 | Stronger border       | `border-border-strong`         | `#D4C3AC`              |
 | Body text             | `text-text`                    | ink `#271812`          |
 | Muted text            | `text-text-muted`              | `#6E5D50`              |
-| Subtle / helper text  | `text-text-subtle`             | `#7C6B5D`              |
+| Subtle / helper text  | `text-text-subtle`             | `#685440`              |
 | Primary button        | `bg-accent` + `text-accent-fg` | cherry `#C41E3A` + white |
 | Primary button hover  | `hover:bg-accent-hover`        | cherry-deep `#A8172F`  |
+| Link / inline accent  | `text-link` / `decoration-link`| cherry `#C41E3A` (→ amber in dark) |
+| Improvement highlight | `bg-highlight/NN` / `border-highlight` | amber `#FFA630` (both themes) |
 | Focus ring            | `ring-focus-ring`              | cherry (amber in dark) |
 
 ### Typography
@@ -181,14 +183,14 @@ Always visible: `focus-visible:ring-2 focus-visible:ring-focus-ring focus-visibl
 
 ### Dark mode
 
-Class strategy on `<html>` + curated token swap (**black cherry** `#1C1214`, NOT an inversion).
+Class strategy on `<html>` + curated token swap (**warm espresso** `#1E1711`, no maroon cast, NOT an inversion).
 
 - **Mechanism**: `html.dark { … }` overrides **only semantic aliases + six `--color-chart-N` + rate bands**. Specificity: `html.dark` (0,1,1) beats `@theme`'s `:root` (0,1,0). `@custom-variant dark (&:where(.dark, .dark *))` for one-off `dark:` utilities.
 - **No-flash init (`index.html`)**: blocking inline script sets `dark` class before first paint. First visit follows OS `prefers-color-scheme`; then `localStorage['theme']` wins.
 - **State**: `src/hooks/useTheme.ts` — `useSyncExternalStore` whose snapshot is the `<html>` class. `ThemeToggle.tsx` in TopBar (always visible).
-- Primary buttons stay cherry-with-white in both themes; dark hover **brightens** (`#D63B53`) instead of darkening. Accent-level *text* in dark uses cherry-glaze (`dark:text-cherry-glaze`); focus ring flips to amber.
+- Primary + destructive buttons stay cherry-with-white in both themes; dark hover **brightens** (`#D63B53`) instead of darkening. Inline links/accent text use `text-link` (cherry in light, **amber in dark** — the stage-3 swap that retired ambient `dark:text-cherry-glaze`); the focus ring flips to amber. `cherry-glaze` is now reserved for semantic red that must stay red in dark: error alerts (`role="alert"`) and danger labels.
 - The manila "case file" exception was **retired in rebrand stage 2**: the SessionDetail/Practice folder card is plain `bg-surface-raised`, inner tiles are `bg-surface-sunken`, and the `html.dark .bg-tertiary-200` re-scoping blocks are gone from `index.css`. Don't re-pin light surfaces in dark mode.
-- **Clerk is theme-aware**: `main.tsx` wraps `ClerkProvider` in a `Root` reading `useTheme()`, builds `appearance` from light/dark `variables` (light: white/ink/cherry; dark: black-cherry/cream/cherry-glaze).
+- **Clerk is theme-aware**: `main.tsx` wraps `ClerkProvider` in a `Root` reading `useTheme()`, builds `appearance` from light/dark `variables` (light: white/ink/cherry; dark: espresso/cream/cherry — `colorPrimary` is cherry in both themes since the CTA never changes color).
 - Calibration camera box uses an intentionally-dark raw hex (`#150D0F`, correct in both themes); SignIn/SignUp recolor the dither shader per theme via `useTheme()`.
 
 ### Tech debt
@@ -203,4 +205,4 @@ Canonical sources: root `PRODUCT.md` + `DESIGN.md` (the 2026 "Prep Kitchen" spec
 
 **Design principles**: (1) Studio, not cram — remove chrome before adding. (2) Adult vocabulary — cut hype, exclamation marks, Duolingo-tone. (3) Restraint signals premium — no gradients/shadows/stat counters/illustrations/mascots, no bakery kitsch. (4) One primary action per surface, marked in cherry. (5) Metrics are data, not rewards — no animated fills/green checkmarks. (6) Eyebrow labels are a data-label voice (metric displays, one running head per page) — never section scaffolding.
 
-**Hero principles**: typography carries emotional load (DM Sans 600/700 display on vanilla); one action alone in negative space; asymmetric left-aligned; empty space is content.
+**Hero principles**: typography carries emotional load (DM Sans 600/700 display on the vanilla-cream surface); one action alone in negative space; asymmetric left-aligned; empty space is content.
