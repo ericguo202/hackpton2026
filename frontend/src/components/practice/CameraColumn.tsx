@@ -64,16 +64,17 @@ export function CameraColumn({
           column-ratio toggle (33/67 ↔ 25/50/25) never resizes the box and
           there's horizontal breathing room when the transcript column opens
           (camera column is 50vw, box is 45vw → ~2.5vw gutter on each side).
-          Dark `bg-accent` so the empty/declined states read as a powered-down
-          video panel instead of blending into the cream page surface. */}
-      <div className="aspect-video w-full overflow-hidden rounded-lg bg-accent min-[900px]:w-[45vw]">
+          The empty/declined panel reads as a powered-down screen by inverting
+          the surface: a dark ink panel on the cream light theme, a near-white
+          panel on the espresso dark theme — so it never blends into the page. */}
+      <div className="aspect-video w-full overflow-hidden rounded-lg bg-primary-700 dark:bg-primary-100 min-[900px]:w-[45vw]">
         {showPreview && replayUrl ? (
           <video src={replayUrl} controls className="h-full w-full object-cover" />
         ) : videoStream ? (
           <CameraPreview stream={videoStream} />
         ) : (
           <div className="flex h-full w-full items-center justify-center p-6">
-            <p className="text-center text-sm text-accent-fg">
+            <p className="text-center text-sm text-primary-100 dark:text-primary-700">
               {submitting
                 ? isFinalTurn
                   ? 'Evaluating your recording…'

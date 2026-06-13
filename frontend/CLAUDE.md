@@ -53,9 +53,9 @@ Interview half of `Practice.tsx` is **chrome-free, full-viewport** (TopBar gated
 
 1. **Body grid** — desktop `min-[900px]:grid`, `grid-template-columns` flips `[33%_67%]` (transcript closed) ↔ `[25%_50%_25%]` (open). Mobile → vertical `flex flex-col`. Columns under `components/practice/`:
    - **`QuestionColumn.tsx`** — question text + `<audio>`. Sole consumer of `replayKey` (audio remounts to retrigger `autoPlay` on Re-record / footer Restart-turn).
-   - **`CameraColumn.tsx`** — 16:9 box at **fixed `w-[45vw]` desktop** / `w-full` mobile. The 45vw lock is load-bearing: camera width never changes when transcript opens (grid columns flex around the box). Submit/Re-record below, disabled while `submitting`.
+   - **`CameraColumn.tsx`** — 16:9 box at **fixed `w-[45vw]` desktop** / `w-full` mobile. The 45vw lock is load-bearing: camera width never changes when transcript opens (grid columns flex around the box). Submit/Re-record below, disabled while `submitting`. The empty/declined placeholder panel **inverts the surface** (`bg-primary-700 dark:bg-primary-100` with text flipped to match, ~14:1) so it reads as a powered-down screen — dark in light mode, near-white in dark mode — never the old cherry fill.
    - **`TranscriptColumn.tsx`** — `min-[900px]:border-l` / `border-t` mobile. X close hidden on mobile (footer toggles).
-2. **`PracticeFooter.tsx`** — sticky bottom bar. End recording / Restart turn / Show-hide question / Show-hide transcript / Quit. `FooterButton` hides text via `min-[900px]:inline` (mobile = icon-only).
+2. **`PracticeFooter.tsx`** — sticky bottom bar. End recording / Restart turn / Show-hide question / Show-hide transcript / Quit. `FooterButton` hides text via `min-[900px]:inline` (mobile = icon-only). **Button colors are the documented Ten-Percent-Cherry exception:** the primary *End recording* wears amber (`bg-highlight` + `text-primary-700` dark ink — raw scale so it stays dark in dark mode, ~8.8:1), and the destructive *Quit* carries the danger cherry (`bg-accent` + white, 5.9:1). The small pulsing "Recording" dot stays cherry (conventional record indicator).
 
 **`QuitConfirmDialog.tsx`** — owns its ESC effect (only while `open`); backdrop click → `onCancel`.
 
@@ -149,6 +149,7 @@ Nine legacy scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest),
 | Subtle / helper text  | `text-text-subtle`             | `#685440`              |
 | Primary button        | `bg-accent` + `text-accent-fg` | cherry `#C41E3A` + white |
 | Primary button hover  | `hover:bg-accent-hover`        | cherry-deep `#A8172F`  |
+| Amber action button   | `bg-highlight` + `text-primary-700` | amber `#FFA630` + dark ink (both themes; Practice *End recording* only) |
 | Link / inline accent  | `text-link` / `decoration-link`| cherry `#C41E3A` (→ amber in dark) |
 | Improvement highlight | `bg-highlight/NN` / `border-highlight` | amber `#FFA630` (both themes) |
 | Focus ring            | `ring-focus-ring`              | cherry (amber in dark) |
