@@ -34,6 +34,10 @@ import {
   ScoresSection,
   WhatWorkedCard,
 } from '../session-detail/_turnInnerCards';
+import {
+  MomentFlashContext,
+  useProvideMomentFlash,
+} from '../session-detail/_momentFlash';
 import { ImproveNextCard } from './ImproveNextCard';
 import { VideoReplayCard } from './VideoReplayCard';
 
@@ -65,8 +69,10 @@ export function PracticeTurnPanel({
   const evaluationFailed = turn.scores.structure === null;
   const evaluationPending = evaluationFailed && !sessionCompleted;
   const isOpeningTurn = turnNum === 1 && !turn.is_followup;
+  const flash = useProvideMomentFlash(turn.id);
 
   return (
+    <MomentFlashContext.Provider value={flash}>
     <div className="flex flex-col gap-4 p-6">
       {isOpeningTurn && sessionId && (
         <div className="flex justify-end">
@@ -124,5 +130,6 @@ export function PracticeTurnPanel({
         />
       </div>
     </div>
+    </MomentFlashContext.Provider>
   );
 }

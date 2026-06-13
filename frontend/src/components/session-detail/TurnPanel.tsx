@@ -21,6 +21,7 @@
 
 import type { TurnDetail } from '../../types/history';
 import SaveQuestionButton from '../SaveQuestionButton';
+import { MomentFlashContext, useProvideMomentFlash } from './_momentFlash';
 import {
   DeliveryFeedbackSection,
   InnerCard,
@@ -52,8 +53,10 @@ export default function TurnPanel({
   const evaluationPending = evaluationFailed && !sessionCompleted;
   // The opening question (turn 1, non-followup) is the only saveable one.
   const isOpeningTurn = turn.turn_number === 1 && !turn.is_followup;
+  const flash = useProvideMomentFlash(turn.id);
 
   return (
+    <MomentFlashContext.Provider value={flash}>
     <div className="flex flex-col gap-4 p-6">
       {isOpeningTurn && sessionId && (
         <div className="flex justify-end">
@@ -93,5 +96,6 @@ export default function TurnPanel({
         />
       </div>
     </div>
+    </MomentFlashContext.Provider>
   );
 }

@@ -87,7 +87,7 @@ Components under `src/components/session-detail/`:
 - **`FolderTabs.tsx`** — `<button>` tabs `rounded-t-lg border border-b-0` + `-mb-px` overlap (no seam). Full ARIA tabs pattern (←/→/Home/End).
 - **`OverviewPanel.tsx`** — left: company brief (omit empty sections — never "(none)"). Right: six `ScoreTile`s; `ScoresOverviewColumn` is a named export for reuse.
 - **`TurnPanel.tsx`** — **two independent row grids** (NOT one grid w/ `auto-rows-fr` — that matched both rows to the taller, leaving empty gutters).
-- **`_helpers.ts`** — `SCORE_KEYS`, `SCORE_COLOR_MAP`, `num()`, `turnAverage()`. `SCORE_COLOR_MAP` mirrors `History.tsx:DIMENSIONS` — change one, change both.
+- **`_helpers.ts`** — `SCORE_KEYS`, `SCORE_COLOR_MAP`, `num()`, `turnAverage()`, `improvementMomentsOf()`. `SCORE_COLOR_MAP` mirrors `History.tsx:DIMENSIONS` — change one, change both.
 
 **Load-bearing layout facts** (caught/fixed during iteration — don't re-introduce):
 
@@ -98,6 +98,17 @@ Components under `src/components/session-detail/`:
 **Mobile (<900px)**: drops folder strip, chevrons, 2-col layouts → single vertical stack. Nav: horizontal swipe (`|dx|>60 && |dx|>1.5·|dy|`) + bottom Prev/Next row.
 
 **Issue-type chips**: `formatIssueType(raw)` — generic snake_case → Title Case. Don't hard-code a switch (generic handles unknown/legacy).
+
+### Transcript feedback highlighting (shared by Practice + SessionDetail)
+
+The per-turn cards live in **`components/session-detail/_turnInnerCards.tsx`** and are reused by **both** `TurnPanel.tsx` (SessionDetail) and `PracticeTurnPanel.tsx` (Practice) — change the feature once, it lands on both surfaces.
+
+- **Filler highlighting** — `QuestionAnswerCard` renders the transcript via `lib/fillerWords.ts:tokenizeTranscript` (frontend mirror of the backend regex). `renderTranscriptToken` is the shared per-token renderer (chart-2 filler chip vs plain span).
+- **Improvement-moment highlighting + click-to-jump** — flagged sentences are highlighted in cherry (`bg-accent/15`, the same color as the Improvement Moments section) and are clickable: clicking scrolls the matching moment into view and flashes its left border.
+  - **Matching (`lib/transcriptHighlight.ts:segmentTranscriptByImprovements`)** splits the transcript into `plain` / `improvement` segments. Each snippet is located by its **trimmed** value via `indexOf` — mirroring the backend's `_drop_unanchored_moments` (`snippet.strip() in transcript`) guarantee. **Rule: a snippet that doesn't appear verbatim is NOT highlighted** (graceful no-op on legacy/edge data). Overlapping snippet ranges are dropped greedily (earliest wins) so spans never nest into each other. Every segment is itself run through `tokenizeTranscript`, so **filler highlights nest inside** improvement spans (the two layers stack, not fight).
+  - **Index source of truth**: both cards derive the moments array (and therefore each `momentIndex`) from `_helpers.ts:improvementMomentsOf(turn)` (`improvement_moments ?? coaching_moments ?? []`) so the transcript→moment link can't drift.
+  - **Flash channel (`_momentFlash.ts`)** — a per-turn React context (`MomentFlashContext` / `useMomentFlash` / `useProvideMomentFlash(turn.id)`). The transcript card and the moments card sit in separate grid rows, so the click→flash path goes through context, not props. Each panel wraps its content in `<MomentFlashContext.Provider value={useProvideMomentFlash(turn.id)}>`. DOM ids are deterministic (`improvement-moment-${turn.id}-${i}`; `turn.id` is stable for real turns AND Practice replay turns `local-${idx}`). Scroll happens in an effect (post-render) so the target exists after re-key remount; a ref-backed `nonce` lets a repeat click of the **same** snippet replay (the moment `<li>`'s `key` includes the nonce → remount → CSS animation re-runs).
+  - **Animation** — `index.css:.moment-flash` / `@keyframes moment-flash-border` brightens the left border to `--color-accent` + a brief left-edge glow, no `forwards` fill so the resting `border-accent/45` reclaims the property. Included in the `prefers-reduced-motion: reduce` reset (and `scrollIntoView` falls back to `behavior: 'auto'`).
 
 ### Save & re-practice opening questions
 

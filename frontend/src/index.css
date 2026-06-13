@@ -352,11 +352,30 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
   animation: crossfade-in 180ms cubic-bezier(0.76, 0, 0.24, 1) both;
 }
 
+/* Confirmation flash when a transcript improvement-snippet is clicked: briefly
+   brighten the moment's left border to full accent and pulse a short left-edge
+   glow, then settle back to the resting border-accent/45 (no `forwards` fill so
+   the static class reclaims the property when the animation ends). */
+@keyframes moment-flash-border {
+  0% {
+    border-left-color: var(--color-accent);
+    box-shadow: -3px 0 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  100% {
+    box-shadow: -3px 0 0 0 transparent;
+  }
+}
+
+.moment-flash {
+  animation: moment-flash-border 700ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .anim-reveal,
   .anim-slide-in-left,
   .anim-slide-in-right,
-  .anim-crossfade {
+  .anim-crossfade,
+  .moment-flash {
     animation: none;
     opacity: 1;
   }
