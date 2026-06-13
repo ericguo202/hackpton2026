@@ -7,12 +7,12 @@
  * `showOverall` / `activeDims` so toggling here mutates the host's one shared
  * selection.
  *
- * Usage differs per host: `History.tsx` (Score trend) uses this as the sole
- * control at ALL widths (the inline pills were retired there); `SavedQuestionDetail.tsx`
- * (Progress) still mounts it as the <900px variant alongside desktop pills, swapped
- * via Tailwind `hidden`. Generic over the dimension key `K` so each page keeps its
- * own `DimensionKey` union; it's passed its own `dimensions` list rather than
- * importing a const.
+ * Both hosts — `History.tsx` (Score trend) and `SavedQuestionDetail.tsx`
+ * (Progress) — use this as the sole toggle control at ALL widths; the inline
+ * pill rows were retired on both because seven pills wrapped into a tall,
+ * overlapping block once the line chart was constrained to the 2/3 column.
+ * Generic over the dimension key `K` so each page keeps its own `DimensionKey`
+ * union; it's passed its own `dimensions` list rather than importing a const.
  *
  * No reusable popover exists in the codebase; the close-on-outside-click /
  * Escape behavior is built inline. Styling mirrors the combobox listbox

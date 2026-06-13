@@ -23,11 +23,6 @@ import {
   LabelList,
   Line,
   LineChart,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -35,6 +30,7 @@ import {
 } from 'recharts';
 
 import DimensionMenu from '../components/DimensionMenu';
+import { StrengthsRadarPanel } from '../components/StrengthsRadar';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
@@ -42,6 +38,7 @@ import { useMeStats } from '../hooks/useMeStats';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { useSessions } from '../hooks/useSessions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
+import { buildRadarData } from '../lib/radarData';
 import type {
   DimensionAverages,
   FillerWordStat,
@@ -64,18 +61,6 @@ const DIMENSIONS = [
 ] as const;
 
 type DimensionKey = (typeof DIMENSIONS)[number]['key'];
-
-// Abbreviated angle-axis tick labels — the radar lives in a narrow 1/3-width
-// column, so the long "Problem Solving" label would clip. The full label is
-// kept for the tooltip; only the spoke tick uses the short form.
-const RADAR_SHORT_LABELS: Record<DimensionKey, string> = {
-  structure:       'Structure',
-  problem_solving: 'Prob. Solving',
-  impact:          'Impact',
-  initiative:      'Initiative',
-  depth:           'Depth',
-  delivery:        'Delivery',
-};
 
 /** Wire-format Decimal-as-string → number, with null passthrough. */
 function num(v: string | null | undefined): number | null {
@@ -119,54 +104,6 @@ function buildChartData(sessions: SessionListItem[]) {
       created_at: s.created_at,
     };
   });
-}
-
-/** One spoke of the strengths radar. `shortLabel` is the abbreviated tick; the
- *  full `dimension` label is shown in the tooltip; `color` is the dimension's
- *  `--color-chart-N` (shared with the line chart) used to tint the axis label
- *  and vertex dot. */
-type RadarPoint = { dimension: string; shortLabel: string; value: number; color: string };
-
-type RadarResult = {
-  data: RadarPoint[];
-  /** How many sessions actually fed the averages (≤5). */
-  windowCount: number;
-  /** True when the Delivery spoke was dropped (no webcam in the window). */
-  deliveryMissing: boolean;
-};
-
-/**
- * Average each dimension across the up-to-5 most recent sessions for the radar.
- *
- * Sessions arrive newest-first, so the window is `slice(0, 5)`. Each dimension
- * is averaged over only its non-null per-session values (equal session weight),
- * mirroring the backend's `_per_dimension_averages`: a webcam-off session has
- * `averages.delivery === null` and simply doesn't contribute. A dimension with
- * no values at all is OMITTED from the data array — so when no windowed session
- * recorded webcam, Delivery drops out entirely (5-axis radar) rather than
- * plotting a misleading 0.
- */
-function buildRadarData(sessions: SessionListItem[]): RadarResult {
-  const window = sessions.slice(0, 5);
-  const data: RadarPoint[] = [];
-  let deliveryMissing = false;
-  for (const d of DIMENSIONS) {
-    const vals = window
-      .map((s) => num(s.averages[d.key]))
-      .filter((v): v is number => v !== null);
-    if (vals.length === 0) {
-      if (d.key === 'delivery') deliveryMissing = true;
-      continue;
-    }
-    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    data.push({
-      dimension: d.label,
-      shortLabel: RADAR_SHORT_LABELS[d.key],
-      value: avg,
-      color: d.color,
-    });
-  }
-  return { data, windowCount: window.length, deliveryMissing };
 }
 
 function StatCell({
@@ -389,141 +326,6 @@ function FillerRateChart({ data }: { data: ChartPoint[] }) {
   );
 }
 
-/** Radar tooltip — single spoke, full dimension label + 0-10 value, dot tinted
- *  with the dimension's chart color. */
-function RadarTooltip({ active, payload }: {
-  active?: boolean;
-  payload?: Array<{ value: number | null; payload: RadarPoint }>;
-}) {
-  if (!active || !payload || payload.length === 0) return null;
-  const ctx = payload[0].payload;
-  return (
-    <div className="rounded-md bg-surface-raised border border-border px-3 py-2 shadow-sm">
-      <div className="flex items-center gap-2 text-xs">
-        <span
-          aria-hidden
-          className="inline-block w-2 h-2 rounded-full"
-          style={{ background: ctx.color }}
-        />
-        <span className="text-text-muted">{ctx.dimension}</span>
-        <span className="text-text font-medium tabular-nums ml-auto">
-          {ctx.value.toFixed(1)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Angle-axis tick that tints each dimension's label with its chart color
- * (`colorByLabel`, keyed on the short tick label) — so the spokes carry the same
- * per-dimension palette as the line chart. recharts clones this element per tick,
- * injecting `x`/`y`/`textAnchor`/`payload`; `colorByLabel` is preserved.
- *
- * Multi-word labels wrap onto stacked lines (whitespace split) so the long side
- * labels ("Prob. Solving") can't overflow the SVG's right/left edge in the narrow
- * column — single-word labels render as one line, unchanged.
- */
-function RadarAngleTick({ x, y, textAnchor, payload, colorByLabel }: {
-  x?: number | string;
-  y?: number | string;
-  textAnchor?: 'start' | 'middle' | 'end' | 'inherit';
-  payload?: { value: string };
-  colorByLabel?: Record<string, string>;
-}) {
-  const label = payload?.value ?? '';
-  const fill = colorByLabel?.[label] ?? 'var(--color-text-muted)';
-  const lines = label.split(' ');
-  const lineHeight = 12; // px, matches the 11px font with a little leading
-  return (
-    <text x={x} y={y} textAnchor={textAnchor} dominantBaseline="central" fontSize={11} fill={fill}>
-      {lines.map((line, i) => (
-        <tspan
-          // reset x each line so every line honors `textAnchor`; first line lifts
-          // the block so the stack stays vertically centered on the spoke.
-          key={line}
-          x={x}
-          dy={i === 0 ? -((lines.length - 1) * lineHeight) / 2 : lineHeight}
-        >
-          {line}
-        </tspan>
-      ))}
-    </text>
-  );
-}
-
-/** Vertex dot tinted with its dimension's chart color (matches the axis label). */
-function renderRadarDot(props: {
-  cx?: number;
-  cy?: number;
-  index?: number;
-  payload?: RadarPoint;
-}) {
-  const { cx, cy, index, payload } = props;
-  if (cx == null || cy == null || !payload) return <g key={index} />;
-  return (
-    <circle
-      key={index}
-      cx={cx}
-      cy={cy}
-      r={3}
-      fill={payload.color}
-      stroke="var(--color-surface-raised)"
-      strokeWidth={1}
-    />
-  );
-}
-
-/**
- * Strengths & weaknesses radar — the six rubric dimensions averaged across the
- * user's up-to-5 most recent sessions, collapsed into one profile polygon. Unlike
- * the Score-trend line chart (one line per dimension over time), this reads the
- * SHAPE: a dent on a spoke is a consistent weak area. The polygon is a neutral ink
- * fill (NOT cherry — reserved for primary action/selection; the ink token swaps for
- * dark mode for free); per-dimension color lives in the axis labels + vertex dots,
- * matching the line chart's `--color-chart-N` palette. Exposed to assistive tech as
- * one labelled image (`role="img"` + `ariaLabel`) since the recharts SVG carries no
- * screen-reader text of its own. Drops the Delivery spoke when no windowed session
- * recorded webcam (see `buildRadarData`).
- */
-function StrengthsRadar({ data, ariaLabel }: { data: RadarPoint[]; ariaLabel: string }) {
-  // shortLabel → color, so the cloned per-tick element can look up its hue.
-  const colorByLabel = Object.fromEntries(data.map((d) => [d.shortLabel, d.color]));
-  return (
-    <div className="w-full" style={{ height: 320 }} role="img" aria-label={ariaLabel}>
-      <ResponsiveContainer width="100%" height="100%">
-        {/* accessibilityLayer={false}: the wrapping div is already role="img"
-            with a full aria-label, so AT sees one static image. recharts 3's
-            default layer would make the SVG surface tabIndex=0/role="application"
-            (redundant here) and paint a focus rectangle on mouse-click. */}
-        <RadarChart
-          data={data}
-          outerRadius="70%"
-          margin={{ top: 16, right: 16, bottom: 16, left: 16 }}
-          accessibilityLayer={false}
-        >
-          <PolarGrid stroke="var(--color-border)" />
-          <PolarAngleAxis
-            dataKey="shortLabel"
-            tick={<RadarAngleTick colorByLabel={colorByLabel} />}
-          />
-          <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
-          <Radar
-            name="Average"
-            dataKey="value"
-            stroke="var(--color-text)"
-            fill="var(--color-text)"
-            fillOpacity={0.1}
-            dot={renderRadarDot}
-            isAnimationActive={false}
-          />
-          <Tooltip content={<RadarTooltip />} />
-        </RadarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 function SessionRow({
   session,
   ordinal,
@@ -600,24 +402,11 @@ export default function History() {
 
   // Strengths radar: six dims averaged over the up-to-5 most recent sessions.
   // Independent of the line chart's RangeSelector — always its own fixed window.
+  // `chartData` is oldest→newest, so the last ≤5 rows are the most recent.
   const radar = useMemo(
-    () => (sessions ? buildRadarData(sessions) : null),
-    [sessions],
+    () => (sessions ? buildRadarData(chartData.slice(-5)) : null),
+    [sessions, chartData],
   );
-  // Screen-reader alternative for the radar SVG: read the actual averaged
-  // scores. The chart wrapper carries this via role="img" + aria-label.
-  const radarAriaLabel = useMemo(() => {
-    if (!radar || radar.data.length === 0) return '';
-    const parts = radar.data.map((d) => `${d.dimension} ${d.value.toFixed(1)} out of 10`);
-    const tail = radar.deliveryMissing
-      ? ' Delivery is not shown because no recent session used a webcam.'
-      : '';
-    return (
-      `Strengths and weaknesses radar chart. Average scores across your last ` +
-      `${radar.windowCount} session${radar.windowCount === 1 ? '' : 's'}: ` +
-      `${parts.join(', ')}.${tail}`
-    );
-  }, [radar]);
 
   const hasSessions = (sessions?.length ?? 0) > 0;
   const enoughForChart = chartData.length >= 1;
@@ -823,26 +612,7 @@ export default function History() {
                 {/* Radar (1/3): six dims averaged over the last ≤5 sessions —
                     the shape reads as consistent strengths/weaknesses. */}
                 <div className="min-[900px]:col-span-1">
-                  <div className="mb-6">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle">
-                      Strengths &amp; weaknesses
-                    </p>
-                    {radar && radar.windowCount > 0 && (
-                      <p className="mt-1 text-xs text-text-subtle tabular-nums">
-                        Last {radar.windowCount} session{radar.windowCount === 1 ? '' : 's'}
-                      </p>
-                    )}
-                  </div>
-                  {radar && radar.data.length > 0 && (
-                    <>
-                      <StrengthsRadar data={radar.data} ariaLabel={radarAriaLabel} />
-                      {radar.deliveryMissing && (
-                        <p className="mt-2 text-xs text-text-subtle">
-                          Delivery needs webcam — not enough recorded sessions.
-                        </p>
-                      )}
-                    </>
-                  )}
+                  <StrengthsRadarPanel radar={radar} unitLabel="session" />
                 </div>
               </div>
             )}

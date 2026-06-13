@@ -29,12 +29,14 @@ import {
 } from 'recharts';
 
 import DimensionMenu from '../components/DimensionMenu';
+import { StrengthsRadarPanel } from '../components/StrengthsRadar';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useSavedQuestionDetail } from '../hooks/useSavedQuestionDetail';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
+import { buildRadarData } from '../lib/radarData';
 import type {
   SavedQuestionAttempt,
   SavedQuestionDetail as SavedQuestionDetailType,
@@ -145,34 +147,6 @@ function ChartTooltip({ active, payload }: {
   );
 }
 
-function ToggleChip({ active, onClick, color, label }: {
-  active: boolean;
-  onClick: () => void;
-  color: string;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={
-        'cursor-pointer inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
-        (active
-          ? 'border-border-strong text-text bg-surface-raised'
-          : 'border-border text-text-subtle hover:text-text-muted')
-      }
-    >
-      <span
-        aria-hidden
-        className="inline-block h-2 w-2 rounded-full"
-        style={{ background: active ? color : 'transparent', border: active ? 'none' : `1px solid ${color}` }}
-      />
-      {label}
-    </button>
-  );
-}
-
 export default function SavedQuestionDetail() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -194,6 +168,17 @@ export default function SavedQuestionDetail() {
   const chartData = useMemo(
     () => (saved ? buildChartData(saved.attempts) : []),
     [saved],
+  );
+
+  // Strengths radar: six dims averaged over the last ≤5 EVALUATED attempts of
+  // this question — the same comparable set the line chart plots (failed/pending
+  // attempts carry no opening scores and are already dropped from `chartData`).
+  // `chartData` is oldest→newest, so the last ≤5 rows are the most recent. Each
+  // ChartPoint already exposes the six dim keys (null when a dim has no score, so
+  // a webcam-off attempt doesn't drag Delivery down).
+  const radar = useMemo(
+    () => (saved ? buildRadarData(chartData.slice(-5)) : null),
+    [saved, chartData],
   );
 
   // 4xx (not found / not owned) → bounce home with a flash; 5xx stays inline.
@@ -339,28 +324,14 @@ export default function SavedQuestionDetail() {
                     Re-practice this question to start a trend.
                   </p>
                 ) : (
-                  <>
-                    {/* Desktop (≥900px): inline pills. */}
-                    <div className="mb-6 hidden min-[900px]:flex flex-wrap gap-2">
-                      <ToggleChip
-                        active={showOverall}
-                        onClick={() => setShowOverall((v) => !v)}
-                        color="var(--color-text)"
-                        label="Overall"
-                      />
-                      {DIMENSIONS.map((d) => (
-                        <ToggleChip
-                          key={d.key}
-                          active={activeDims[d.key]}
-                          onClick={() => setActiveDims((prev) => ({ ...prev, [d.key]: !prev[d.key] }))}
-                          color={d.color}
-                          label={d.label}
-                        />
-                      ))}
-                    </div>
-                    {/* Mobile (<900px): the same toggles collapse into a dropdown
-                        checklist so they don't wrap into a tall pill block. */}
-                    <div className="mb-6 min-[900px]:hidden">
+                  <div className="grid grid-cols-1 min-[900px]:grid-cols-3 gap-8 min-[900px]:gap-10">
+                    {/* Line chart (2/3): opening-answer scores per attempt. */}
+                    <div className="min-[900px]:col-span-2">
+                    {/* Dimension toggles — the `DimensionMenu` dropdown is used at
+                        ALL widths (the inline pill row was retired: seven pills
+                        wrapped into a tall, overlapping block in the 2/3 column).
+                        "Overall" toggles the attempt's opening-answer average. */}
+                    <div className="mb-6">
                       <DimensionMenu
                         showOverall={showOverall}
                         onToggleOverall={() => setShowOverall((v) => !v)}
@@ -425,7 +396,14 @@ export default function SavedQuestionDetail() {
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
-                  </>
+                    </div>
+
+                    {/* Radar (1/3): six dims averaged over the last ≤5 evaluated
+                        attempts of this saved question. */}
+                    <div className="min-[900px]:col-span-1">
+                      <StrengthsRadarPanel radar={radar} unitLabel="attempt" />
+                    </div>
+                  </div>
                 )}
               </section>
 
