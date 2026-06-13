@@ -102,6 +102,22 @@ role-targeted search about that company's behavioral interview style /
 culture for the candidate's target job title, return ONLY a JSON object
 with these eight keys (no markdown, no prose, no thinking):
 
+HARD JSON CONTRACT:
+- Output exactly one JSON object. The first non-whitespace character MUST
+  be `{{` and the last non-whitespace character MUST be `}}`.
+- Use double-quoted JSON strings and arrays only. No comments, trailing
+  commas, markdown fences, prose, or explanations outside the object.
+- Include exactly the eight keys shown below. Do not add source URLs,
+  citations, nested objects, or extra metadata.
+- Keep every field short so the object always completes:
+  `description` <= 180 chars; each `headline` <= 70 chars; each `value`
+  <= 50 chars; each `role_signals` item <= 60 chars; each
+  `sample_question_themes` item <= 60 chars; `match_reason` <= 80 chars.
+- If evidence is weak, use `[]` for optional arrays instead of writing a
+  long explanation.
+- Before finalizing, mentally validate that every `{{`, `[`, and `"` is
+  closed. Never stop mid-string. Never continue after the final `}}`.
+
 {{
   "description": "one or two sentences describing what the company does",
   "headlines": ["2 to 3 short recent-activity bullets", "...", "..."],
@@ -304,6 +320,49 @@ def _sanitize_string_list(raw: object, *, limit: int) -> list[str]:
     return out
 
 
+def _load_research_payload(text: str) -> dict:
+    payload = json.loads(extract_json_object(text))
+    if not isinstance(payload, dict):
+        raise ValueError("Research response JSON root must be an object")
+    return payload
+
+
+async def _create_research_completion(
+    client,
+    *,
+    user_content: str,
+    retry_after: str | None = None,
+) -> str:
+    messages = [
+        {"role": "system", "content": _SYSTEM_INSTRUCTION},
+        {"role": "user", "content": user_content},
+    ]
+    if retry_after is not None:
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Your previous response was invalid or truncated JSON. "
+                    "Regenerate the complete JSON object only, using the "
+                    "same search results above. Follow the HARD JSON "
+                    "CONTRACT exactly: first character `{`, last character "
+                    "`}`, all strings closed, no markdown, no prose, no "
+                    "extra keys. If needed, shorten optional arrays so the "
+                    "JSON completes."
+                ),
+            }
+        )
+
+    response = await client.chat.completions.create(
+        model=RESEARCH_MODEL,
+        messages=messages,
+        temperature=0.2,
+        response_format={"type": "json_object"},
+        timeout=60.0,
+    )
+    return response.choices[0].message.content or ""
+
+
 async def research_company(
     company: str,
     job_title: str,
@@ -383,20 +442,26 @@ async def research_company(
         f"SEARCH RESULTS — ROLE-SPECIFIC ({role_query}):\n{digest_role}"
     )
 
-    response = await client.chat.completions.create(
-        model=RESEARCH_MODEL,
-        messages=[
-            {"role": "system", "content": _SYSTEM_INSTRUCTION},
-            {"role": "user", "content": user_content},
-        ],
-        temperature=0.2,
-        response_format={"type": "json_object"},
-        timeout=60.0,
-    )
-    text = response.choices[0].message.content or ""
-
     try:
-        payload = json.loads(extract_json_object(text))
+        text = await _create_research_completion(
+            client,
+            user_content=user_content,
+        )
+        try:
+            payload = _load_research_payload(text)
+        except (ValueError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Research summarization returned invalid JSON for %s; "
+                "retrying once: %s",
+                company,
+                exc,
+            )
+            retry_text = await _create_research_completion(
+                client,
+                user_content=user_content,
+                retry_after=text,
+            )
+            payload = _load_research_payload(retry_text)
 
         # Layer 2 — Gemini self-flag. Catches tangential matches and
         # prompt-injection inputs whose search results happen to
