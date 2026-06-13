@@ -127,6 +127,7 @@ export function CameraColumn({
       {showPreview && (
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <Button
+            variant="amber"
             type="button"
             onClick={onSubmitPreview}
             disabled={submitting}

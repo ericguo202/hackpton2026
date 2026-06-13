@@ -84,9 +84,10 @@ export function ScoreRow({
 /* Whole cards                                                        */
 /* ------------------------------------------------------------------ */
 
-/** Render one transcript token — filler runs get the chart-2 highlight, plain
- *  runs render as-is. Shared by the plain and improvement-moment spans so
- *  filler highlights nest inside flagged sentences. */
+/** Render one transcript token — filler runs get the steel-blue filler
+ *  highlight, plain runs render as-is. Shared by the plain and
+ *  improvement-moment spans so filler highlights nest inside flagged
+ *  sentences (steel-blue reads cleanly inside the critique-red wash). */
 function renderTranscriptToken(tok: TranscriptToken, key: string) {
   if (tok.kind === 'filler') {
     return (
@@ -94,8 +95,8 @@ function renderTranscriptToken(tok: TranscriptToken, key: string) {
         key={key}
         className="rounded-sm px-1"
         style={{
-          background: 'color-mix(in srgb, var(--color-chart-2) 25%, transparent)',
-          color: 'var(--color-chart-2)',
+          background: 'color-mix(in srgb, var(--color-filler) 25%, transparent)',
+          color: 'var(--color-filler)',
         }}
         title={`Filler word: "${tok.canonical}"`}
       >
@@ -178,7 +179,7 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
                       triggerFlash(seg.momentIndex);
                     }
                   }}
-                  className="cursor-pointer rounded-sm box-decoration-clone bg-highlight/25 px-0.5 text-text transition-colors hover:bg-highlight/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
+                  className="cursor-pointer rounded-sm box-decoration-clone bg-critique/25 px-0.5 text-text transition-colors hover:bg-critique/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
                   title="Improvement moment — click to view"
                   aria-label={`Jump to improvement moment ${seg.momentIndex + 1}`}
                 >
@@ -337,11 +338,11 @@ export function ImprovementMomentsCard({
                 }`}
                 id={domIdFor(i)}
                 tabIndex={-1}
-                className={`border-l-2 border-highlight/45 pl-4 ${
+                className={`border-l-2 border-critique/45 pl-4 ${
                   isFlashing ? 'moment-flash' : ''
                 }`}
               >
-                <span className="inline-block rounded-full bg-highlight/10 px-2 py-0.5 text-xs text-text dark:text-highlight">
+                <span className="inline-block rounded-full bg-critique/10 px-2 py-0.5 text-xs text-text dark:text-critique">
                   {formatIssueType(m.issue_type)}
                 </span>
                 <p className="mt-2 mb-1 text-xs text-text-subtle">You said</p>

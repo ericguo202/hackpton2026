@@ -103,12 +103,12 @@ Components under `src/components/session-detail/`:
 
 The per-turn cards live in **`components/session-detail/_turnInnerCards.tsx`** and are reused by **both** `TurnPanel.tsx` (SessionDetail) and `PracticeTurnPanel.tsx` (Practice) — change the feature once, it lands on both surfaces.
 
-- **Filler highlighting** — `QuestionAnswerCard` renders the transcript via `lib/fillerWords.ts:tokenizeTranscript` (frontend mirror of the backend regex). `renderTranscriptToken` is the shared per-token renderer (chart-2 filler chip vs plain span).
-- **Improvement-moment highlighting + click-to-jump** — flagged sentences are highlighted in cherry (`bg-accent/15`, the same color as the Improvement Moments section) and are clickable: clicking scrolls the matching moment into view and flashes its left border.
+- **Filler highlighting** — `QuestionAnswerCard` renders the transcript via `lib/fillerWords.ts:tokenizeTranscript` (frontend mirror of the backend regex). `renderTranscriptToken` is the shared per-token renderer (steel-blue `--color-filler` chip vs plain span; `ImproveNextCard`'s filler-distribution bars use the same token).
+- **Improvement-moment highlighting + click-to-jump** — flagged sentences are highlighted in brick-red `--color-critique` (`bg-critique/25`, the same color as the Improvement Moments section border/chip) and are clickable: clicking scrolls the matching moment into view and flashes its left border. `--color-critique` is decoupled from action-cherry on purpose — it pairs with the green "What worked" and reads in dark mode where amber didn't.
   - **Matching (`lib/transcriptHighlight.ts:segmentTranscriptByImprovements`)** splits the transcript into `plain` / `improvement` segments. Each snippet is located by its **trimmed** value via `indexOf` — mirroring the backend's `_drop_unanchored_moments` (`snippet.strip() in transcript`) guarantee. **Rule: a snippet that doesn't appear verbatim is NOT highlighted** (graceful no-op on legacy/edge data). Overlapping snippet ranges are dropped greedily (earliest wins) so spans never nest into each other. Every segment is itself run through `tokenizeTranscript`, so **filler highlights nest inside** improvement spans (the two layers stack, not fight).
   - **Index source of truth**: both cards derive the moments array (and therefore each `momentIndex`) from `_helpers.ts:improvementMomentsOf(turn)` (`improvement_moments ?? coaching_moments ?? []`) so the transcript→moment link can't drift.
   - **Flash channel (`_momentFlash.ts`)** — a per-turn React context (`MomentFlashContext` / `useMomentFlash` / `useProvideMomentFlash(turn.id)`). The transcript card and the moments card sit in separate grid rows, so the click→flash path goes through context, not props. Each panel wraps its content in `<MomentFlashContext.Provider value={useProvideMomentFlash(turn.id)}>`. DOM ids are deterministic (`improvement-moment-${turn.id}-${i}`; `turn.id` is stable for real turns AND Practice replay turns `local-${idx}`). Scroll happens in an effect (post-render) so the target exists after re-key remount; a ref-backed `nonce` lets a repeat click of the **same** snippet replay (the moment `<li>`'s `key` includes the nonce → remount → CSS animation re-runs).
-  - **Animation** — `index.css:.moment-flash` / `@keyframes moment-flash-border` brightens the left border to `--color-accent` + a brief left-edge glow, no `forwards` fill so the resting `border-accent/45` reclaims the property. Included in the `prefers-reduced-motion: reduce` reset (and `scrollIntoView` falls back to `behavior: 'auto'`).
+  - **Animation** — `index.css:.moment-flash` / `@keyframes moment-flash-border` brightens the left border to `--color-critique` + a brief left-edge glow, no `forwards` fill so the resting `border-critique/45` reclaims the property. Included in the `prefers-reduced-motion: reduce` reset (and `scrollIntoView` falls back to `behavior: 'auto'`).
 
 ### Save & re-practice opening questions
 
@@ -131,7 +131,7 @@ InterviewPie 2026 rebrand (root `DESIGN.md`, "Prep Kitchen"; stage 3 "Baked, not
 
 ### Color system
 
-Nine legacy scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest), collapsed into one warm-neutral family tinted toward the brand amber hue. `primary/700` (`#271812`) is cocoa "ink". The page bg is the semantic `--color-surface` = warm vanilla-cream `#F5E7CF` (NOT `primary/100`, which stays `#FDF8F2` as a raw-scale anchor). Brand tokens live alongside: `--color-cherry` (+`-deep`/`-glaze`/`-tint`) and `--color-amber` (+`-deep`/`-tint`). **Emphasis is split from the action accent (stage 3):** `--color-link` (cherry→amber in dark) for links/inline accent/active-underline; `--color-highlight` (amber both themes) for the improvement-moment system. `--color-accent` stays cherry for buttons/selection.
+Nine legacy scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest), collapsed into one warm-neutral family tinted toward the brand amber hue. `primary/700` (`#271812`) is cocoa "ink". The page bg is the semantic `--color-surface` = warm vanilla-cream `#F5E7CF` (NOT `primary/100`, which stays `#FDF8F2` as a raw-scale anchor). Brand tokens live alongside: `--color-cherry` (+`-deep`/`-glaze`/`-tint`) and `--color-amber` (+`-deep`/`-tint`). **Emphasis is split from the action accent (stage 3):** `--color-link` (cherry→amber in dark) for links/inline accent/active-underline; `--color-highlight` (amber both themes) for amber emphasis — the `amber` Button variant (Practice *End recording*/*Submit answer*) and the "Improve next" coaching-card borders; `--color-critique` (brick-red, `#B8253C`→`#E5556B` dark) for the improvement-moment system; `--color-filler` (steel-blue, `#2C5285`→`#7FB0E0` dark) for filler highlights. `--color-accent` stays cherry for buttons/selection.
 
 **Named rules (DESIGN.md §2):** cherry covers ≤~10% of any screen and usually less — it's the action color (primary + destructive buttons, selection fill); two competing cherry elements means one is wrong. Amber is garnish in light (never type/white-fill; fills, washes, chart ink only) and **leads in dark** (earns text rights ≥9:1, carries links + active-underline + focus ring). The only red kept in dark mode is the one CTA, destructive buttons, error alerts, and danger labels (cherry-glaze) — never decorative.
 
@@ -149,9 +149,11 @@ Nine legacy scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest),
 | Subtle / helper text  | `text-text-subtle`             | `#685440`              |
 | Primary button        | `bg-accent` + `text-accent-fg` | cherry `#C41E3A` + white |
 | Primary button hover  | `hover:bg-accent-hover`        | cherry-deep `#A8172F`  |
-| Amber action button   | `bg-highlight` + `text-primary-700` | amber `#FFA630` + dark ink (both themes; Practice *End recording* only) |
+| Amber action button   | `bg-highlight` + `text-primary-700` (or `<Button variant="amber">`) | amber `#FFA630` + dark ink (both themes; Practice *End recording* + *Submit answer*) |
 | Link / inline accent  | `text-link` / `decoration-link`| cherry `#C41E3A` (→ amber in dark) |
-| Improvement highlight | `bg-highlight/NN` / `border-highlight` | amber `#FFA630` (both themes) |
+| Improvement highlight | `bg-critique/NN` / `border-critique` / `dark:text-critique` | brick-red `#B8253C` (→ `#E5556B` dark) |
+| "Improve next" border | `border-highlight/45`          | amber `#FFA630` (both themes) |
+| Filler highlight      | `var(--color-filler)` (chip + bars) | steel-blue `#2C5285` (→ `#7FB0E0` dark) |
 | Focus ring            | `ring-focus-ring`              | cherry (amber in dark) |
 
 ### Typography

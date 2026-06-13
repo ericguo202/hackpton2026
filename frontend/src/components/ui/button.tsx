@@ -8,6 +8,11 @@
  * `default` is the cherry action button — one per surface (the Ten-Percent
  * Cherry Rule). `destructive` reuses cherry deliberately; the label, not a
  * new color, carries the meaning ("Delete session", never bare "Delete").
+ * `amber` is the documented Ten-Percent-Cherry exception (DESIGN.md §2): an
+ * amber action fill carrying DARK INK (never white) — used where a routine
+ * primary action sits next to a destructive/red one, so cherry stays unique
+ * to danger. Currently the Practice "Submit answer" button, matching the
+ * amber "End recording" control in the footer.
  */
 
 import * as React from 'react'
@@ -23,6 +28,9 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-accent text-accent-fg hover:bg-accent-hover',
         destructive: 'bg-accent text-accent-fg hover:bg-accent-hover',
+        // Amber fill, dark ink (raw `primary-700` so it stays dark in dark
+        // mode rather than flipping to cream and failing on amber). ~8.8:1.
+        amber: 'bg-highlight text-primary-700 hover:bg-amber-deep',
         outline:
           'border border-border bg-surface-raised text-text hover:border-border-strong hover:bg-surface-sunken',
         secondary:
