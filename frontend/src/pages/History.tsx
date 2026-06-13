@@ -23,6 +23,11 @@ import {
   LabelList,
   Line,
   LineChart,
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -59,6 +64,18 @@ const DIMENSIONS = [
 ] as const;
 
 type DimensionKey = (typeof DIMENSIONS)[number]['key'];
+
+// Abbreviated angle-axis tick labels — the radar lives in a narrow 1/3-width
+// column, so the long "Problem Solving" label would clip. The full label is
+// kept for the tooltip; only the spoke tick uses the short form.
+const RADAR_SHORT_LABELS: Record<DimensionKey, string> = {
+  structure:       'Structure',
+  problem_solving: 'Prob. Solving',
+  impact:          'Impact',
+  initiative:      'Initiative',
+  depth:           'Depth',
+  delivery:        'Delivery',
+};
 
 /** Wire-format Decimal-as-string → number, with null passthrough. */
 function num(v: string | null | undefined): number | null {
@@ -102,6 +119,47 @@ function buildChartData(sessions: SessionListItem[]) {
       created_at: s.created_at,
     };
   });
+}
+
+/** One spoke of the strengths radar. `shortLabel` is the abbreviated tick; the
+ *  full `dimension` label is shown in the tooltip. */
+type RadarPoint = { dimension: string; shortLabel: string; value: number };
+
+type RadarResult = {
+  data: RadarPoint[];
+  /** How many sessions actually fed the averages (≤5). */
+  windowCount: number;
+  /** True when the Delivery spoke was dropped (no webcam in the window). */
+  deliveryMissing: boolean;
+};
+
+/**
+ * Average each dimension across the up-to-5 most recent sessions for the radar.
+ *
+ * Sessions arrive newest-first, so the window is `slice(0, 5)`. Each dimension
+ * is averaged over only its non-null per-session values (equal session weight),
+ * mirroring the backend's `_per_dimension_averages`: a webcam-off session has
+ * `averages.delivery === null` and simply doesn't contribute. A dimension with
+ * no values at all is OMITTED from the data array — so when no windowed session
+ * recorded webcam, Delivery drops out entirely (5-axis radar) rather than
+ * plotting a misleading 0.
+ */
+function buildRadarData(sessions: SessionListItem[]): RadarResult {
+  const window = sessions.slice(0, 5);
+  const data: RadarPoint[] = [];
+  let deliveryMissing = false;
+  for (const d of DIMENSIONS) {
+    const vals = window
+      .map((s) => num(s.averages[d.key]))
+      .filter((v): v is number => v !== null);
+    if (vals.length === 0) {
+      if (d.key === 'delivery') deliveryMissing = true;
+      continue;
+    }
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    data.push({ dimension: d.label, shortLabel: RADAR_SHORT_LABELS[d.key], value: avg });
+  }
+  return { data, windowCount: window.length, deliveryMissing };
 }
 
 function StatCell({
@@ -324,6 +382,65 @@ function FillerRateChart({ data }: { data: ChartPoint[] }) {
   );
 }
 
+/** Radar tooltip — single spoke, full dimension label + 0-10 value. */
+function RadarTooltip({ active, payload }: {
+  active?: boolean;
+  payload?: Array<{ value: number | null; payload: RadarPoint }>;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const ctx = payload[0].payload;
+  return (
+    <div className="rounded-md bg-surface-raised border border-border px-3 py-2 shadow-sm">
+      <div className="flex items-center gap-2 text-xs">
+        <span
+          aria-hidden
+          className="inline-block w-2 h-2 rounded-full"
+          style={{ background: 'var(--color-text)' }}
+        />
+        <span className="text-text-muted">{ctx.dimension}</span>
+        <span className="text-text font-medium tabular-nums ml-auto">
+          {ctx.value.toFixed(1)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Strengths & weaknesses radar — the six rubric dimensions averaged across the
+ * user's up-to-5 most recent sessions, collapsed into one profile polygon. Unlike
+ * the Score-trend line chart (one line per dimension over time), this reads the
+ * SHAPE: a dent on a spoke is a consistent weak area. Single-series ink fill —
+ * deliberately NOT cherry (reserved for primary action/selection), and the ink
+ * token swaps for dark mode for free. Drops the Delivery spoke when no windowed
+ * session recorded webcam (see `buildRadarData`).
+ */
+function StrengthsRadar({ data }: { data: RadarPoint[] }) {
+  return (
+    <div className="w-full" style={{ height: 320 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <RadarChart data={data} outerRadius="72%" margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+          <PolarGrid stroke="var(--color-border)" />
+          <PolarAngleAxis
+            dataKey="shortLabel"
+            tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
+          />
+          <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
+          <Radar
+            name="Average"
+            dataKey="value"
+            stroke="var(--color-text)"
+            fill="var(--color-text)"
+            fillOpacity={0.1}
+            isAnimationActive={false}
+          />
+          <Tooltip content={<RadarTooltip />} />
+        </RadarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 function SessionRow({
   session,
   ordinal,
@@ -396,6 +513,13 @@ export default function History() {
   const fillerData = useMemo(
     () => applyRange(chartData, effectiveRange(fillerRange, chartData.length)),
     [chartData, fillerRange],
+  );
+
+  // Strengths radar: six dims averaged over the up-to-5 most recent sessions.
+  // Independent of the line chart's RangeSelector — always its own fixed window.
+  const radar = useMemo(
+    () => (sessions ? buildRadarData(sessions) : null),
+    [sessions],
   );
 
   const hasSessions = (sessions?.length ?? 0) > 0;
@@ -512,7 +636,9 @@ export default function History() {
             )}
 
             {enoughForChart && (
-              <>
+              <div className="grid grid-cols-1 min-[900px]:grid-cols-3 gap-8 min-[900px]:gap-10">
+                {/* Line chart (2/3): over-time progression, one line per dim. */}
+                <div className="min-[900px]:col-span-2">
                 {/* Dimension toggles (left) + time-window selector (right). The
                     "Overall" chip shows the per-session overall score (0-100,
                     rescaled to 0-10 in the chart series). */}
@@ -618,7 +744,33 @@ export default function History() {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-              </>
+                </div>
+
+                {/* Radar (1/3): six dims averaged over the last ≤5 sessions —
+                    the shape reads as consistent strengths/weaknesses. */}
+                <div className="min-[900px]:col-span-1">
+                  <div className="mb-6">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle">
+                      Strengths &amp; weaknesses
+                    </p>
+                    {radar && radar.windowCount > 0 && (
+                      <p className="mt-1 text-xs text-text-subtle tabular-nums">
+                        Last {radar.windowCount} session{radar.windowCount === 1 ? '' : 's'}
+                      </p>
+                    )}
+                  </div>
+                  {radar && radar.data.length > 0 && (
+                    <>
+                      <StrengthsRadar data={radar.data} />
+                      {radar.deliveryMissing && (
+                        <p className="mt-2 text-xs text-text-subtle">
+                          Delivery needs webcam — not enough recorded sessions.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
             )}
           </section>
 
