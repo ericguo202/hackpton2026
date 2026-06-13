@@ -182,7 +182,7 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
                       triggerFlash(seg.momentIndex);
                     }
                   }}
-                  className="cursor-pointer rounded-sm box-decoration-clone bg-critique/25 px-0.5 text-text transition-colors hover:bg-critique/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
+                  className="cursor-pointer rounded-sm box-decoration-clone bg-critique/25 px-0.5 text-text transition-colors hover:bg-critique/40 dark:bg-critique/40 dark:hover:bg-critique-hover/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
                   title="Improvement moment — click to view"
                   aria-label={`Jump to improvement moment ${seg.momentIndex + 1}`}
                 >
