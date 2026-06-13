@@ -84,10 +84,13 @@ export function ScoreRow({
 /* Whole cards                                                        */
 /* ------------------------------------------------------------------ */
 
-/** Render one transcript token — filler runs get the steel-blue filler
- *  highlight, plain runs render as-is. Shared by the plain and
- *  improvement-moment spans so filler highlights nest inside flagged
- *  sentences (steel-blue reads cleanly inside the critique-red wash). */
+/** Render one transcript token — filler runs get a yellow highlighter wash
+ *  (the second-tier "could improve" note, below the critique-red "should fix"),
+ *  plain runs render as-is. A true highlighter: yellow sits BEHIND the normal
+ *  ink/cream text (not as the text color — yellow type fails contrast), so it
+ *  reads cleanly even nested inside a critique-red improvement span. The wash
+ *  runs a little heavier than the red (40% vs 25%) because yellow needs more
+ *  opacity than red to register. */
 function renderTranscriptToken(tok: TranscriptToken, key: string) {
   if (tok.kind === 'filler') {
     return (
@@ -95,8 +98,8 @@ function renderTranscriptToken(tok: TranscriptToken, key: string) {
         key={key}
         className="rounded-sm px-1"
         style={{
-          background: 'color-mix(in srgb, var(--color-filler) 25%, transparent)',
-          color: 'var(--color-filler)',
+          background: 'color-mix(in srgb, var(--color-filler) 40%, transparent)',
+          color: 'var(--color-text)',
         }}
         title={`Filler word: "${tok.canonical}"`}
       >

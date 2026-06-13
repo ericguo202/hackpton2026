@@ -152,13 +152,18 @@
                          pairs with the forest-green "What worked" as a red/green
                          traffic light and stays legible in dark mode.
        --color-filler    filler-word highlight (transcript chip + distribution
-                         bars). A cool STEEL-BLUE so fillers separate cleanly
-                         from the warm critique-red, the cream/espresso surface,
-                         and body text (it is deliberately not a score hue). */
+                         bars). YELLOW — the second-tier "could improve" note
+                         that sits below the critique-red "should fix": red and
+                         yellow read as a needs-work pair (green/blue = strength).
+                         A deep gold in light (dark enough that thin chart bars
+                         clear 3:1 on cream and the chip text stays readable),
+                         a bright yellow in dark; hue kept ~48-50 (minimal orange
+                         so it never reads as the amber identity color). Used as
+                         a highlighter wash under normal ink, never as type. */
   --color-link:           var(--color-cherry);
   --color-highlight:      var(--color-amber);
   --color-critique:       #B8253C;
-  --color-filler:         #2C5285;  /* steel-blue; 4.6:1 as chip text on its own /25 wash */
+  --color-filler:         #9A7C0A;  /* deep gold; thin chart bars clear 3.4:1 on cream */
 
   /* ---------- Chart series ----------
      Six categorically distinct hues, ~60° apart at moderate saturation so
@@ -258,12 +263,13 @@ html.dark {
      action + destructive buttons, so the surface reads baked/warm, not bloody.
      --color-highlight is already amber in both themes (see @theme above), so it
      needs no dark override. --color-critique and --color-filler brighten here so
-     the improvement-moment wash/chip/border and the filler chip stay legible on
-     the espresso surface (text-critique chip + text-filler clear AA). */
+     the improvement-moment wash/chip/border and the filler highlighter stay
+     legible on the espresso surface (the dark:text-critique chip clears AA, and
+     cream text over the yellow filler wash clears AA). */
   --color-link:           var(--color-amber);
   --color-focus-ring:     var(--color-amber);
   --color-critique:       #E5556B;
-  --color-filler:         #7FB0E0;
+  --color-filler:         #F2D84E;  /* bright yellow on the dark surface */
 
   /* Chart series brightened so each clears ~4.5:1 on the dark surface and the
      six hues stay categorically distinct (~60° apart). */
