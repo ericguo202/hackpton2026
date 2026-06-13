@@ -364,10 +364,13 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
 
 /* recharts 3 makes the chart SVG surface focusable (tabIndex=0) to power
    keyboard data-point navigation — a real a11y feature we keep. The side
-   effect is the browser's default focus ring painting a rectangle when the
-   surface is focused by a mouse click. Drop the ring for pointer focus, keep
-   it for keyboard users (:focus-visible) so keyboard nav stays discoverable. */
-.recharts-surface:focus:not(:focus-visible) {
+   effect is the browser's default focus ring (white/rounded on our dark
+   surface) painting a rectangle when the chart is focused by a mouse click.
+   Match the surface AND any focusable descendant, and drop the ring only for
+   POINTER focus — keyboard focus (:focus-visible) keeps it so keyboard nav
+   stays discoverable. */
+.recharts-wrapper:focus:not(:focus-visible),
+.recharts-wrapper :focus:not(:focus-visible) {
   outline: none;
 }
 
