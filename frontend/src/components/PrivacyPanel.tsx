@@ -14,7 +14,9 @@ import { useState } from 'react';
 
 import {
   analyticsEnabled,
+  analyticsMode,
   getAnalyticsConsent,
+  getAnalyticsRegion,
   gpcOptOut,
   setAnalyticsConsent,
   trackEvent,
@@ -41,11 +43,18 @@ export default function PrivacyPanel({
   onRevoke,
 }: Props) {
   const [checked, setChecked] = useState(false);
-  const [analyticsConsent, setLocalAnalyticsConsent] = useState<
+  // Tracked only to force a re-render after a toggle; the displayed state is the
+  // *effective* mode (region default + explicit choice + GPC), read live below.
+  const [, setLocalAnalyticsConsent] = useState<
     'granted' | 'denied' | null
   >(() => analyticsEnabled() ? getAnalyticsConsent() : null);
   // Browser-level opt-out (GPC) overrides the toggle below — honored as binding.
   const gpc = gpcOptOut();
+  // off / full / cookieless, resolved from region + stored choice + GPC.
+  const mode = analyticsEnabled() ? analyticsMode() : 'off';
+  const on = mode !== 'off';
+  const cookieless = mode === 'cookieless';
+  const defaultOn = analyticsEnabled() && getAnalyticsRegion() !== 'strict';
 
   function updateProductAnalytics(requested: boolean) {
     if (!requested) {
@@ -70,9 +79,24 @@ export default function PrivacyPanel({
           </p>
           <p className="mt-2 text-xs leading-5 text-text-subtle">
             Tracks page views and product actions without resumes, transcripts,
-            bios, company names, audio, video, or raw session IDs. Nothing is
-            sent to Google unless you enable it here.
+            bios, company names, audio, video, or raw session IDs.
+            {defaultOn
+              ? cookieless
+                ? ' Based on your location, only aggregate, cookieless analytics'
+                  + ' runs by default — you can turn it off here.'
+                : ' Based on your location, analytics runs by default — you can turn'
+                  + ' it off here.'
+              : ' Nothing is sent to Google unless you enable it here.'}
           </p>
+          {!gpc && (
+            <p className="mt-2 text-xs font-medium leading-5 text-text">
+              {on
+                ? cookieless
+                  ? 'Currently on (aggregate, cookieless).'
+                  : 'Currently on.'
+                : 'Currently off.'}
+            </p>
+          )}
           {gpc && (
             <p className="mt-2 text-xs leading-5 text-text-muted">
               Your browser is sending a Global Privacy Control signal, so
@@ -82,7 +106,7 @@ export default function PrivacyPanel({
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               type="button"
-              variant={analyticsConsent === 'granted' && !gpc ? 'default' : 'outline'}
+              variant={on && !gpc ? 'default' : 'outline'}
               disabled={gpc}
               onClick={() => updateProductAnalytics(true)}
               data-analytics-id="analytics_privacy_enable"
@@ -92,7 +116,7 @@ export default function PrivacyPanel({
             </Button>
             <Button
               type="button"
-              variant={analyticsConsent === 'denied' ? 'default' : 'outline'}
+              variant={!on ? 'default' : 'outline'}
               onClick={() => updateProductAnalytics(false)}
               data-analytics-id="analytics_privacy_disable"
               data-analytics-label="Disable product analytics"

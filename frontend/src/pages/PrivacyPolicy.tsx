@@ -212,12 +212,19 @@ export default function PrivacyPolicy() {
               short schedule (see &ldquo;Data retention and storage&rdquo;).
             </li>
             <li>
-              <strong>Product analytics.</strong> If you allow analytics, we use
-              Google Analytics to collect page views and product-action events,
-              such as clicking a button or completing a setup step. We configure
-              these events to avoid sending résumé text, bios, transcripts,
-              interview questions, company or job-title text, audio, video,
-              webcam-derived metrics, email addresses, or raw session IDs.
+              <strong>Product analytics.</strong> We use Google Analytics to
+              collect page views and product-action events, such as clicking a
+              button or completing a setup step. We configure these events to
+              avoid sending résumé text, bios, transcripts, interview questions,
+              company or job-title text, audio, video, webcam-derived metrics,
+              email addresses, or raw session IDs. <strong>Whether this is on by
+              default depends on your location</strong> (see &ldquo;Your choices
+              and rights&rdquo;): in the EU, EEA, and UK we collect nothing until
+              you opt in; in the United States we collect full analytics by
+              default; and in Australia, New Zealand, and Singapore we collect
+              only aggregate, cookie-free analytics by default. You can opt out
+              (or in) at any time, and we honor Global Privacy Control browser
+              signals as an opt-out everywhere.
             </li>
           </ul>
           <p>
@@ -253,10 +260,21 @@ export default function PrivacyPolicy() {
           <p>
             Where the EU/UK GDPR applies, our lawful bases are: performance of our
             contract with you (to provide the Service you request); your consent
-            (for optional webcam delivery analytics and Google Analytics product
-            analytics, which you can withdraw at any time); and our legitimate
+            (for optional webcam delivery analytics, and for Google Analytics
+            product analytics, which in the EU, EEA, and UK we collect only after
+            you opt in and which you can withdraw at any time); and our legitimate
             interests (to secure the Service, prevent abuse, and improve the
             product), balanced against your rights.
+          </p>
+          <p>
+            Outside the EU/EEA/UK, where the law permits, we rely on a notice-and-
+            opt-out model for product analytics rather than prior consent: in the
+            United States on our legitimate interest in understanding and improving
+            the Service (we do not sell or share this data for cross-context
+            behavioral advertising), and in Australia, New Zealand, and Singapore on
+            a comparable basis using only aggregate, cookie-free analytics. You can
+            opt out at any time using the in-app control or a Global Privacy Control
+            browser signal.
           </p>
         </Section>
 
@@ -412,6 +430,13 @@ export default function PrivacyPolicy() {
               <strong>Withdraw consent.</strong> You can turn off and delete
               webcam delivery analytics at any time from the app&rsquo;s privacy
               settings.
+            </li>
+            <li>
+              <strong>Opt out of product analytics.</strong> You can turn Google
+              Analytics off at any time from the app&rsquo;s privacy settings,
+              regardless of your location. We also treat a{' '}
+              <strong>Global Privacy Control</strong> browser signal as a binding
+              opt-out, which overrides the in-app setting.
             </li>
           </ul>
           <p>
