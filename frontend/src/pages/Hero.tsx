@@ -39,20 +39,20 @@ export default function Hero() {
         {/* Beat 1 — hero: type column + the score pie (brand visual). */}
         <section
           aria-labelledby="hero-heading"
-          className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-8 md:px-16 pt-8 pb-20 md:pt-12 md:pb-28"
+          className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-8 md:px-16 pt-8 pb-12 md:pt-12 md:pb-28 min-h-[calc(100svh-5.25rem)] min-[900px]:min-h-0"
         >
           <div className="grid items-center gap-12 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(21rem,26rem)] min-[900px]:gap-16">
             <div>
               <h1
                 id="hero-heading"
-                className="anim-reveal mb-6 md:mb-8 text-[2.25rem] lg:text-[2.625rem] xl:text-[3.25rem]"
+                className="anim-reveal mb-6 md:mb-8 text-[3.25rem] min-[900px]:text-[2.25rem] lg:text-[2.625rem] xl:text-[3.25rem]"
                 style={{ animationDelay: '0ms', textWrap: 'balance', marginTop: 0 }}
               >
                 Practice the interview, not the panic.
               </h1>
 
               <p
-                className="anim-reveal max-w-[56ch] text-base lg:text-lg xl:text-xl leading-[1.55] text-text-muted mb-8"
+                className="anim-reveal max-w-[56ch] text-xl min-[900px]:text-base lg:text-lg xl:text-xl leading-[1.55] text-text-muted mb-8"
                 style={{ animationDelay: '90ms' }}
               >
                 Speak your answer out loud. Get six scores, the exact quotes
