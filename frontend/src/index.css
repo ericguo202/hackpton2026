@@ -114,22 +114,62 @@
   --color-amber-deep:   #D28414;
   --color-amber-tint:   #FFF1DC;  /* chip / soft-callout background */
 
-  /* ---------- Semantic aliases (prefer these in components) ---------- */
-  --color-surface:        #F5E7CF;
-  --color-surface-raised: var(--color-tertiary-100);
+  /* ---------- Semantic aliases (prefer these in components) ----------
+     Light surface is the warm vanilla-cream #F5E7CF. Ink clears 14:1 on it and
+     muted (#6E5D50) clears 5.2:1, so those keep their original values; only the
+     subtle tier was darkened (#7C6B5D was 4.2:1 on this cream — sub-AA — now
+     #685440 at 5.9:1) to hold WCAG AA. Stage 3 ("Baked, not bloody") changes
+     are otherwise unchanged: the dark base is warm espresso, and the emphasis
+     accents (link/highlight, below) carry amber instead of ambient red. */
+  --color-surface:        #F5E7CF;  /* warm vanilla-cream page bg */
+  --color-surface-raised: var(--color-tertiary-100);  /* white cards lift off the cream */
   --color-surface-sunken: var(--color-quaternary-100);
   --color-border:         var(--color-primary-200);
   --color-border-strong:  var(--color-primary-300);
   --color-text:           var(--color-primary-700);
-  --color-text-muted:     var(--color-primary-500);
-  /* text-subtle sits between primary-400 and primary-500: primary-400
-     (#9C8874) on the vanilla surface fails AA; this value clears 4.8:1
-     while staying softer than text-muted. */
-  --color-text-subtle:    #7C6B5D;
+  --color-text-muted:     var(--color-primary-500);  /* #6E5D50, 5.2:1 on the cream */
+  --color-text-subtle:    #685440;  /* darkened from #7C6B5D for AA (5.9:1 on cream/sunken) */
   --color-accent:         var(--color-cherry);
   --color-accent-fg:      #FFFFFF;
   --color-accent-hover:   var(--color-cherry-deep);
   --color-focus-ring:     var(--color-cherry);
+
+  /* ---------- Emphasis accents (split from the action accent, stage 3) ----------
+     Cherry stays the ACTION color (--color-accent: buttons, selection, the
+     recording dot). Inline accent text/links and the per-turn feedback system
+     are pulled onto their own tokens so red stops being the ambient note on
+     every page:
+       --color-link      links + inline accent text + required asterisks.
+                         Cherry in light (a familiar link color on white cards),
+                         amber in dark (10:1 on espresso; replaces cherry-glaze).
+       --color-highlight AMBER emphasis in BOTH themes — the `amber` Button
+                         variant (Practice End recording / Submit answer) and
+                         the "Improve next" coaching-card borders. A highlighter,
+                         never type on light (see Amber-Is-Garnish rule).
+       --color-critique  the improvement-moment system (transcript click-to-jump
+                         wash, issue-type chips, moment border + flash). A
+                         dedicated brick-RED, decoupled from action-cherry, that
+                         pairs with the forest-green "What worked" as a red/green
+                         traffic light and stays legible in dark mode.
+       --color-critique-hover  the transcript wash's hover tint. Only meaningful
+                         in DARK, where the resting wash was raised to /40 for
+                         contrast and hover lifts to this LIGHTER red so the
+                         hover affordance is still felt. In light it equals
+                         --color-critique (light hover stays a plain /40 of it).
+       --color-filler    filler-word highlight (transcript chip + distribution
+                         bars). YELLOW — the second-tier "could improve" note
+                         that sits below the critique-red "should fix": red and
+                         yellow read as a needs-work pair (green/blue = strength).
+                         A deep gold in light (dark enough that thin chart bars
+                         clear 3:1 on cream and the chip text stays readable),
+                         a bright yellow in dark; hue kept ~48-50 (minimal orange
+                         so it never reads as the amber identity color). Used as
+                         a highlighter wash under normal ink, never as type. */
+  --color-link:           var(--color-cherry);
+  --color-highlight:      var(--color-amber);
+  --color-critique:       #B8253C;
+  --color-critique-hover: #B8253C;  /* light: same as critique (dark overrides) */
+  --color-filler:         #9A7C0A;  /* deep gold; thin chart bars clear 3.4:1 on cream */
 
   /* ---------- Chart series ----------
      Six categorically distinct hues, ~60° apart at moderate saturation so
@@ -209,24 +249,34 @@
 html.dark {
   color-scheme: dark;
 
-  --color-surface:        #1C1214;  /* page bg — black cherry      */
-  --color-surface-raised: #271A1C;  /* cards: lifted above surface */
-  --color-surface-sunken: #150D0F;  /* wells/inputs: below surface */
+  --color-surface:        #1E1711;  /* page bg — warm espresso (no maroon cast) */
+  --color-surface-raised: #2A2118;  /* cards: lifted above surface */
+  --color-surface-sunken: #15100A;  /* wells/inputs: below surface */
 
-  --color-border:         #3E2F30;
-  --color-border-strong:  #523F40;
+  --color-border:         #3A2D20;
+  --color-border-strong:  #4E3E2C;
 
   --color-text:           #F5EADF;
-  --color-text-muted:     #C7B2A8;
-  --color-text-subtle:    #A38F85;
+  --color-text-muted:     #CBB9A1;  /* warm taupe (was maroon-cast); 8.3:1 on cards */
+  --color-text-subtle:    #A8937B;  /* 5.4:1 on cards */
 
   --color-accent:         var(--color-cherry);
   --color-accent-fg:      #FFFFFF;
   --color-accent-hover:   #D63B53;  /* brighten, don't darken, on dark */
 
-  /* Amber gains text/indicator rights in dark mode only (10:1 on the
-     surface); as a focus ring it outpunches cherry against black cherry. */
+  /* Amber leads the dark theme: it carries inline accent text/links and the
+     focus ring (≥9:1 on espresso). Cherry now appears only on the one primary
+     action + destructive buttons, so the surface reads baked/warm, not bloody.
+     --color-highlight is already amber in both themes (see @theme above), so it
+     needs no dark override. --color-critique and --color-filler brighten here so
+     the improvement-moment wash/chip/border and the filler highlighter stay
+     legible on the espresso surface (the dark:text-critique chip clears AA, and
+     cream text over the yellow filler wash clears AA). */
+  --color-link:           var(--color-amber);
   --color-focus-ring:     var(--color-amber);
+  --color-critique:       #E5556B;
+  --color-critique-hover: #F08193;  /* lighter red — transcript wash hover lift */
+  --color-filler:         #F2D84E;  /* bright yellow on the dark surface */
 
   /* Chart series brightened so each clears ~4.5:1 on the dark surface and the
      six hues stay categorically distinct (~60° apart). */
@@ -353,13 +403,13 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
 }
 
 /* Confirmation flash when a transcript improvement-snippet is clicked: briefly
-   brighten the moment's left border to full accent and pulse a short left-edge
-   glow, then settle back to the resting border-accent/45 (no `forwards` fill so
-   the static class reclaims the property when the animation ends). */
+   brighten the moment's left border to full critique-red and pulse a short
+   left-edge glow, then settle back to the resting border-critique/45 (no
+   `forwards` fill so the static class reclaims the property when it ends). */
 @keyframes moment-flash-border {
   0% {
-    border-left-color: var(--color-accent);
-    box-shadow: -3px 0 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+    border-left-color: var(--color-critique);
+    box-shadow: -3px 0 0 0 color-mix(in srgb, var(--color-critique) 55%, transparent);
   }
   100% {
     box-shadow: -3px 0 0 0 transparent;

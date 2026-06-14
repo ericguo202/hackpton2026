@@ -53,9 +53,9 @@ Interview half of `Practice.tsx` is **chrome-free, full-viewport** (TopBar gated
 
 1. **Body grid** — desktop `min-[900px]:grid`, `grid-template-columns` flips `[33%_67%]` (transcript closed) ↔ `[25%_50%_25%]` (open). Mobile → vertical `flex flex-col`. Columns under `components/practice/`:
    - **`QuestionColumn.tsx`** — question text + `<audio>`. Sole consumer of `replayKey` (audio remounts to retrigger `autoPlay` on Re-record / footer Restart-turn).
-   - **`CameraColumn.tsx`** — 16:9 box at **fixed `w-[45vw]` desktop** / `w-full` mobile. The 45vw lock is load-bearing: camera width never changes when transcript opens (grid columns flex around the box). Submit/Re-record below, disabled while `submitting`.
+   - **`CameraColumn.tsx`** — 16:9 box at **fixed `w-[45vw]` desktop** / `w-full` mobile. The 45vw lock is load-bearing: camera width never changes when transcript opens (grid columns flex around the box). Submit/Re-record below, disabled while `submitting`. The empty/declined placeholder panel **inverts the surface** (`bg-primary-700 dark:bg-primary-100` with text flipped to match, ~14:1) so it reads as a powered-down screen — dark in light mode, near-white in dark mode — never the old cherry fill.
    - **`TranscriptColumn.tsx`** — `min-[900px]:border-l` / `border-t` mobile. X close hidden on mobile (footer toggles).
-2. **`PracticeFooter.tsx`** — sticky bottom bar. End recording / Restart turn / Show-hide question / Show-hide transcript / Quit. `FooterButton` hides text via `min-[900px]:inline` (mobile = icon-only).
+2. **`PracticeFooter.tsx`** — sticky bottom bar. End recording / Restart turn / Show-hide question / Show-hide transcript / Quit. `FooterButton` hides text via `min-[900px]:inline` (mobile = icon-only). **Button colors are the documented Ten-Percent-Cherry exception:** the primary *End recording* wears amber (`bg-highlight` + `text-primary-700` dark ink — raw scale so it stays dark in dark mode, ~8.8:1), and the destructive *Quit* carries the danger cherry (`bg-accent` + white, 5.9:1). The small pulsing "Recording" dot stays cherry (conventional record indicator).
 
 **`QuitConfirmDialog.tsx`** — owns its ESC effect (only while `open`); backdrop click → `onCancel`.
 
@@ -103,12 +103,12 @@ Components under `src/components/session-detail/`:
 
 The per-turn cards live in **`components/session-detail/_turnInnerCards.tsx`** and are reused by **both** `TurnPanel.tsx` (SessionDetail) and `PracticeTurnPanel.tsx` (Practice) — change the feature once, it lands on both surfaces.
 
-- **Filler highlighting** — `QuestionAnswerCard` renders the transcript via `lib/fillerWords.ts:tokenizeTranscript` (frontend mirror of the backend regex). `renderTranscriptToken` is the shared per-token renderer (chart-2 filler chip vs plain span).
-- **Improvement-moment highlighting + click-to-jump** — flagged sentences are highlighted in cherry (`bg-accent/15`, the same color as the Improvement Moments section) and are clickable: clicking scrolls the matching moment into view and flashes its left border.
+- **Filler highlighting** — `QuestionAnswerCard` renders the transcript via `lib/fillerWords.ts:tokenizeTranscript` (frontend mirror of the backend regex). `renderTranscriptToken` is the shared per-token renderer (yellow `--color-filler` highlighter — a /40 wash behind normal `text-text`, NOT yellow type — vs plain span; `ImproveNextCard`'s filler-distribution bars use the same token as a solid fill).
+- **Improvement-moment highlighting + click-to-jump** — flagged sentences are highlighted in brick-red `--color-critique` (`bg-critique/25`, the same color as the Improvement Moments section border/chip) and are clickable: clicking scrolls the matching moment into view and flashes its left border. `--color-critique` is decoupled from action-cherry on purpose — it pairs with the green "What worked" and reads in dark mode where amber didn't. **Dark-mode wash tuning:** the resting wash was too faint on espresso, so `dark:bg-critique/40` raises it to the level light mode only hit on hover, and `dark:hover:bg-critique-hover/40` lifts hover to a lighter red (`--color-critique-hover` = `#F08193`) so the hover affordance is still felt. Light mode keeps the plain `/25 → /40` ramp.
   - **Matching (`lib/transcriptHighlight.ts:segmentTranscriptByImprovements`)** splits the transcript into `plain` / `improvement` segments. Each snippet is located by its **trimmed** value via `indexOf` — mirroring the backend's `_drop_unanchored_moments` (`snippet.strip() in transcript`) guarantee. **Rule: a snippet that doesn't appear verbatim is NOT highlighted** (graceful no-op on legacy/edge data). Overlapping snippet ranges are dropped greedily (earliest wins) so spans never nest into each other. Every segment is itself run through `tokenizeTranscript`, so **filler highlights nest inside** improvement spans (the two layers stack, not fight).
   - **Index source of truth**: both cards derive the moments array (and therefore each `momentIndex`) from `_helpers.ts:improvementMomentsOf(turn)` (`improvement_moments ?? coaching_moments ?? []`) so the transcript→moment link can't drift.
   - **Flash channel (`_momentFlash.ts`)** — a per-turn React context (`MomentFlashContext` / `useMomentFlash` / `useProvideMomentFlash(turn.id)`). The transcript card and the moments card sit in separate grid rows, so the click→flash path goes through context, not props. Each panel wraps its content in `<MomentFlashContext.Provider value={useProvideMomentFlash(turn.id)}>`. DOM ids are deterministic (`improvement-moment-${turn.id}-${i}`; `turn.id` is stable for real turns AND Practice replay turns `local-${idx}`). Scroll happens in an effect (post-render) so the target exists after re-key remount; a ref-backed `nonce` lets a repeat click of the **same** snippet replay (the moment `<li>`'s `key` includes the nonce → remount → CSS animation re-runs).
-  - **Animation** — `index.css:.moment-flash` / `@keyframes moment-flash-border` brightens the left border to `--color-accent` + a brief left-edge glow, no `forwards` fill so the resting `border-accent/45` reclaims the property. Included in the `prefers-reduced-motion: reduce` reset (and `scrollIntoView` falls back to `behavior: 'auto'`).
+  - **Animation** — `index.css:.moment-flash` / `@keyframes moment-flash-border` brightens the left border to `--color-critique` + a brief left-edge glow, no `forwards` fill so the resting `border-critique/45` reclaims the property. Included in the `prefers-reduced-motion: reduce` reset (and `scrollIntoView` falls back to `behavior: 'auto'`).
 
 ### Save & re-practice opening questions
 
@@ -125,30 +125,35 @@ The per-turn cards live in **`components/session-detail/_turnInnerCards.tsx`** a
 
 ## Design system
 
-InterviewPie 2026 rebrand (root `DESIGN.md`, "Prep Kitchen"): vanilla surface, cherry action color, amber garnish, **DM Sans 600/700 headings over Inter body** (Geist Mono reserved for code). Wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js`, and none should be added**.
+InterviewPie 2026 rebrand (root `DESIGN.md`, "Prep Kitchen"; stage 3 "Baked, not bloody"): warm vanilla-cream surface, cherry action color, amber garnish/identity, **DM Sans 600/700 headings over Inter body** (Geist Mono reserved for code). Wired through Tailwind 4's `@theme` block in `src/index.css` — **no `tailwind.config.js`, and none should be added**.
 
 `src/index.css` `@theme { ... }` is the single source of design tokens — never hand-type hex/`px` in components.
 
 ### Color system
 
-Nine legacy scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest), collapsed into one warm-neutral family tinted toward the brand amber hue. `primary/700` (`#271812`) is cocoa "ink". Page bg `primary/100` (`#FDF8F2`, vanilla). Brand tokens live alongside: `--color-cherry` (+`-deep`/`-glaze`/`-tint`) and `--color-amber` (+`-deep`/`-tint`).
+Nine legacy scales (`primary`…`grey`), stops `100`(lightest)→`700`(darkest), collapsed into one warm-neutral family tinted toward the brand amber hue. `primary/700` (`#271812`) is cocoa "ink". The page bg is the semantic `--color-surface` = warm vanilla-cream `#F5E7CF` (NOT `primary/100`, which stays `#FDF8F2` as a raw-scale anchor). Brand tokens live alongside: `--color-cherry` (+`-deep`/`-glaze`/`-tint`) and `--color-amber` (+`-deep`/`-tint`). **Emphasis is split from the action accent (stage 3):** `--color-link` (cherry→amber in dark) for links/inline accent/active-underline; `--color-highlight` (amber both themes) for amber emphasis — the `amber` Button variant (Practice *End recording*/*Submit answer*) and the "Improve next" coaching-card borders; `--color-critique` (brick-red, `#B8253C`→`#E5556B` dark) for the improvement-moment system; `--color-filler` (yellow — deep gold `#9A7C0A` light → bright `#F2D84E` dark) for filler highlights, the second-tier "could improve" note ranked below the red. `--color-accent` stays cherry for buttons/selection.
 
-**Named rules (DESIGN.md §2):** cherry covers ≤~10% of any screen (primary action, selection, links — two competing cherry elements means one is wrong). Amber is garnish: never type on light surfaces, never a fill under white text; dark mode alone grants it text/focus-ring rights.
+**Named rules (DESIGN.md §2):** cherry covers ≤~10% of any screen and usually less — it's the action color (primary + destructive buttons, selection fill); two competing cherry elements means one is wrong. Amber is garnish in light (never type/white-fill; fills, washes, chart ink only) and **leads in dark** (earns text rights ≥9:1, carries links + active-underline + focus ring). The only red kept in dark mode is the one CTA, destructive buttons, error alerts, and danger labels (cherry-glaze) — never decorative.
 
 ### Token hierarchy — prefer semantic tokens; reach for raw scale only when no alias fits.
 
 | Use case              | Semantic utility               | Resolves to (light)    |
 | --------------------- | ------------------------------ | ---------------------- |
-| Page background       | `bg-surface`                   | vanilla `#FDF8F2`      |
+| Page background       | `bg-surface`                   | vanilla-cream `#F5E7CF`|
 | Card / elevated panel | `bg-surface-raised`            | card white `#FFFFFF`   |
 | Subtle well / input   | `bg-surface-sunken`            | sunken `#F6EDE2`       |
 | Default border        | `border-border`                | warm hairline `#E8DCCB`|
 | Stronger border       | `border-border-strong`         | `#D4C3AC`              |
 | Body text             | `text-text`                    | ink `#271812`          |
 | Muted text            | `text-text-muted`              | `#6E5D50`              |
-| Subtle / helper text  | `text-text-subtle`             | `#7C6B5D`              |
+| Subtle / helper text  | `text-text-subtle`             | `#685440`              |
 | Primary button        | `bg-accent` + `text-accent-fg` | cherry `#C41E3A` + white |
 | Primary button hover  | `hover:bg-accent-hover`        | cherry-deep `#A8172F`  |
+| Amber action button   | `bg-highlight` + `text-primary-700` (or `<Button variant="amber">`) | amber `#FFA630` + dark ink (both themes; Practice *End recording* + *Submit answer*) |
+| Link / inline accent  | `text-link` / `decoration-link`| cherry `#C41E3A` (→ amber in dark) |
+| Improvement highlight | `bg-critique/NN` / `border-critique` / `dark:text-critique` | brick-red `#B8253C` (→ `#E5556B` dark) |
+| "Improve next" border | `border-highlight/45`          | amber `#FFA630` (both themes) |
+| Filler highlight      | `--color-filler` /40 wash + `text-text` (chip); solid for bars | yellow: deep gold `#9A7C0A` (→ bright `#F2D84E` dark) |
 | Focus ring            | `ring-focus-ring`              | cherry (amber in dark) |
 
 ### Typography
@@ -181,14 +186,14 @@ Always visible: `focus-visible:ring-2 focus-visible:ring-focus-ring focus-visibl
 
 ### Dark mode
 
-Class strategy on `<html>` + curated token swap (**black cherry** `#1C1214`, NOT an inversion).
+Class strategy on `<html>` + curated token swap (**warm espresso** `#1E1711`, no maroon cast, NOT an inversion).
 
 - **Mechanism**: `html.dark { … }` overrides **only semantic aliases + six `--color-chart-N` + rate bands**. Specificity: `html.dark` (0,1,1) beats `@theme`'s `:root` (0,1,0). `@custom-variant dark (&:where(.dark, .dark *))` for one-off `dark:` utilities.
 - **No-flash init (`index.html`)**: blocking inline script sets `dark` class before first paint. First visit follows OS `prefers-color-scheme`; then `localStorage['theme']` wins.
 - **State**: `src/hooks/useTheme.ts` — `useSyncExternalStore` whose snapshot is the `<html>` class. `ThemeToggle.tsx` in TopBar (always visible).
-- Primary buttons stay cherry-with-white in both themes; dark hover **brightens** (`#D63B53`) instead of darkening. Accent-level *text* in dark uses cherry-glaze (`dark:text-cherry-glaze`); focus ring flips to amber.
+- Primary + destructive buttons stay cherry-with-white in both themes; dark hover **brightens** (`#D63B53`) instead of darkening. Inline links/accent text use `text-link` (cherry in light, **amber in dark** — the stage-3 swap that retired ambient `dark:text-cherry-glaze`); the focus ring flips to amber. `cherry-glaze` is now reserved for semantic red that must stay red in dark: error alerts (`role="alert"`) and danger labels.
 - The manila "case file" exception was **retired in rebrand stage 2**: the SessionDetail/Practice folder card is plain `bg-surface-raised`, inner tiles are `bg-surface-sunken`, and the `html.dark .bg-tertiary-200` re-scoping blocks are gone from `index.css`. Don't re-pin light surfaces in dark mode.
-- **Clerk is theme-aware**: `main.tsx` wraps `ClerkProvider` in a `Root` reading `useTheme()`, builds `appearance` from light/dark `variables` (light: white/ink/cherry; dark: black-cherry/cream/cherry-glaze).
+- **Clerk is theme-aware**: `main.tsx` wraps `ClerkProvider` in a `Root` reading `useTheme()`, builds `appearance` from light/dark `variables` (light: white/ink/cherry; dark: espresso/cream/cherry — `colorPrimary` is cherry in both themes since the CTA never changes color).
 - Calibration camera box uses an intentionally-dark raw hex (`#150D0F`, correct in both themes); SignIn/SignUp recolor the dither shader per theme via `useTheme()`.
 
 ### Tech debt
@@ -203,4 +208,4 @@ Canonical sources: root `PRODUCT.md` + `DESIGN.md` (the 2026 "Prep Kitchen" spec
 
 **Design principles**: (1) Studio, not cram — remove chrome before adding. (2) Adult vocabulary — cut hype, exclamation marks, Duolingo-tone. (3) Restraint signals premium — no gradients/shadows/stat counters/illustrations/mascots, no bakery kitsch. (4) One primary action per surface, marked in cherry. (5) Metrics are data, not rewards — no animated fills/green checkmarks. (6) Eyebrow labels are a data-label voice (metric displays, one running head per page) — never section scaffolding.
 
-**Hero principles**: typography carries emotional load (DM Sans 600/700 display on vanilla); one action alone in negative space; asymmetric left-aligned; empty space is content.
+**Hero principles**: typography carries emotional load (DM Sans 600/700 display on the vanilla-cream surface); one action alone in negative space; asymmetric left-aligned; empty space is content.

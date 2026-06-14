@@ -84,9 +84,13 @@ export function ScoreRow({
 /* Whole cards                                                        */
 /* ------------------------------------------------------------------ */
 
-/** Render one transcript token — filler runs get the chart-2 highlight, plain
- *  runs render as-is. Shared by the plain and improvement-moment spans so
- *  filler highlights nest inside flagged sentences. */
+/** Render one transcript token — filler runs get a yellow highlighter wash
+ *  (the second-tier "could improve" note, below the critique-red "should fix"),
+ *  plain runs render as-is. A true highlighter: yellow sits BEHIND the normal
+ *  ink/cream text (not as the text color — yellow type fails contrast), so it
+ *  reads cleanly even nested inside a critique-red improvement span. The wash
+ *  runs a little heavier than the red (40% vs 25%) because yellow needs more
+ *  opacity than red to register. */
 function renderTranscriptToken(tok: TranscriptToken, key: string) {
   if (tok.kind === 'filler') {
     return (
@@ -94,8 +98,8 @@ function renderTranscriptToken(tok: TranscriptToken, key: string) {
         key={key}
         className="rounded-sm px-1"
         style={{
-          background: 'color-mix(in srgb, var(--color-chart-2) 25%, transparent)',
-          color: 'var(--color-chart-2)',
+          background: 'color-mix(in srgb, var(--color-filler) 40%, transparent)',
+          color: 'var(--color-text)',
         }}
         title={`Filler word: "${tok.canonical}"`}
       >
@@ -139,7 +143,7 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
             <button
               type="button"
               onClick={() => setIsTranscriptOpen((v) => !v)}
-              className="min-[900px]:hidden inline-flex items-center gap-1 text-xs text-accent underline-offset-2 hover:underline"
+              className="min-[900px]:hidden inline-flex items-center gap-1 text-xs text-link underline-offset-2 hover:underline"
               aria-expanded={isTranscriptOpen}
               aria-controls={transcriptId}
             >
@@ -178,7 +182,7 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
                       triggerFlash(seg.momentIndex);
                     }
                   }}
-                  className="cursor-pointer rounded-sm box-decoration-clone bg-accent/25 px-0.5 text-text transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
+                  className="cursor-pointer rounded-sm box-decoration-clone bg-critique/25 px-0.5 text-text transition-colors hover:bg-critique/40 dark:bg-critique/40 dark:hover:bg-critique-hover/40 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
                   title="Improvement moment — click to view"
                   aria-label={`Jump to improvement moment ${seg.momentIndex + 1}`}
                 >
@@ -337,11 +341,11 @@ export function ImprovementMomentsCard({
                 }`}
                 id={domIdFor(i)}
                 tabIndex={-1}
-                className={`border-l-2 border-accent/45 pl-4 ${
+                className={`border-l-2 border-critique/45 pl-4 ${
                   isFlashing ? 'moment-flash' : ''
                 }`}
               >
-                <span className="inline-block rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent">
+                <span className="inline-block rounded-full bg-critique/10 px-2 py-0.5 text-xs text-text dark:text-critique">
                   {formatIssueType(m.issue_type)}
                 </span>
                 <p className="mt-2 mb-1 text-xs text-text-subtle">You said</p>

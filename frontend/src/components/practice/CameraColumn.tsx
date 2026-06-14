@@ -60,56 +60,65 @@ export function CameraColumn({
         className,
       )}
     >
-      {/* Camera box: full width on mobile, locked to 45vw on desktop so the
-          column-ratio toggle (33/67 ↔ 25/50/25) never resizes the box and
-          there's horizontal breathing room when the transcript column opens
-          (camera column is 50vw, box is 45vw → ~2.5vw gutter on each side).
-          Dark `bg-accent` so the empty/declined states read as a powered-down
-          video panel instead of blending into the cream page surface. */}
-      <div className="aspect-video w-full overflow-hidden rounded-lg bg-accent min-[900px]:w-[45vw]">
-        {showPreview && replayUrl ? (
-          <video src={replayUrl} controls className="h-full w-full object-cover" />
-        ) : videoStream ? (
-          <CameraPreview stream={videoStream} />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center p-6">
-            <p className="text-center text-sm text-accent-fg">
-              {submitting
-                ? isFinalTurn
-                  ? 'Evaluating your recording…'
-                  : 'Audio/video recording will restart when the follow-up question finishes playing.'
-                : recorderState === 'idle'
-                  ? 'Recording will start once the question audio ends.'
-                  : 'Webcam not enabled — audio recorded only.'}
-            </p>
-          </div>
+      {/* Box wrapper, sized to the box. `relative` so the under-box notices
+          can hang off the BOTTOM of the box on desktop (absolute, `top-full`)
+          instead of joining the column's centered flow — that keeps the camera
+          box itself vertically centered on the page whether or not a notice is
+          showing, so it no longer jumps up when the notice appears. On mobile
+          the notices stay in normal flow (`mt-4`). */}
+      <div className="relative w-full min-[900px]:w-[45vw]">
+        {/* Camera box: full width on mobile, locked to 45vw on desktop so the
+            column-ratio toggle (33/67 ↔ 25/50/25) never resizes the box and
+            there's horizontal breathing room when the transcript column opens
+            (camera column is 50vw, box is 45vw → ~2.5vw gutter on each side).
+            The empty/declined panel reads as a powered-down screen by inverting
+            the surface: a dark ink panel on the cream light theme, a near-white
+            panel on the espresso dark theme — so it never blends into the page. */}
+        <div className="aspect-video w-full overflow-hidden rounded-lg bg-primary-700 dark:bg-primary-100">
+          {showPreview && replayUrl ? (
+            <video src={replayUrl} controls className="h-full w-full object-cover" />
+          ) : videoStream ? (
+            <CameraPreview stream={videoStream} />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center p-6">
+              <p className="text-center text-sm text-primary-100 dark:text-primary-700">
+                {submitting
+                  ? isFinalTurn
+                    ? 'Evaluating your recording…'
+                    : 'Audio/video recording will restart when the follow-up question finishes playing.'
+                  : recorderState === 'idle'
+                    ? 'Recording will start once the question audio ends.'
+                    : 'Webcam not enabled — audio recorded only.'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Pre-start heads-up — UNDER the box, while the first question plays.
+            Mutually exclusive with `recordingNotice` (idle vs. recording). */}
+        {firstTurnHint && (
+          <p className="mt-4 w-full text-center text-sm text-text-muted min-[900px]:absolute min-[900px]:inset-x-0 min-[900px]:top-full">
+            Each answer can be up to 5 minutes — recording stops automatically.
+          </p>
+        )}
+
+        {/* Recording-length notice — UNDER the box, matching its width, never
+            overlaid. Only present while recording (Practice gates the value). */}
+        {recordingNotice && (
+          <p
+            role="status"
+            aria-live="polite"
+            className={cn(
+              'mt-4 w-full text-center text-sm min-[900px]:absolute min-[900px]:inset-x-0 min-[900px]:top-full',
+              recordingNotice.tone === 'countdown'
+                ? 'font-medium text-text'
+                : 'text-text-muted',
+            )}
+          >
+            {recordingNotice.text}
+          </p>
         )}
       </div>
-
-      {/* Pre-start heads-up — UNDER the box, while the first question plays.
-          Mutually exclusive with `recordingNotice` (idle vs. recording). */}
-      {firstTurnHint && (
-        <p className="w-full text-center text-sm text-text-muted min-[900px]:w-[45vw]">
-          Each answer can be up to 5 minutes — recording stops automatically.
-        </p>
-      )}
-
-      {/* Recording-length notice — UNDER the box, matching its width, never
-          overlaid. Only present while recording (Practice gates the value). */}
-      {recordingNotice && (
-        <p
-          role="status"
-          aria-live="polite"
-          className={cn(
-            'w-full text-center text-sm min-[900px]:w-[45vw]',
-            recordingNotice.tone === 'countdown'
-              ? 'font-medium text-text'
-              : 'text-text-muted',
-          )}
-        >
-          {recordingNotice.text}
-        </p>
-      )}
 
       {showPreview && !replayUrl && audioUrl && (
         <audio src={audioUrl} controls className="w-full min-[900px]:w-[45vw]" />
@@ -118,6 +127,7 @@ export function CameraColumn({
       {showPreview && (
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <Button
+            variant="amber"
             type="button"
             onClick={onSubmitPreview}
             disabled={submitting}

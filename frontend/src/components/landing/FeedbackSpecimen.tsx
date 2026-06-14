@@ -29,19 +29,25 @@ export default function FeedbackSpecimen({ className = '' }: { className?: strin
           Tell me about a time you had to deliver under a tight deadline.
         </p>
 
-        <div className="mt-5">
-          <span className="inline-block rounded-full border border-transparent bg-amber-tint px-3 py-1 text-xs font-medium text-primary-700 dark:border-amber/40 dark:bg-transparent dark:text-amber">
+        {/* Mirrors the in-app Improvement Moments card
+            (components/session-detail/_turnInnerCards.tsx): left critique
+            border, red issue-type chip, "You said" snippet, then the
+            weakened/strengthen pair. */}
+        <div className="mt-5 border-l-2 border-critique/45 pl-4">
+          <span className="inline-block rounded-full bg-critique/10 px-2 py-0.5 text-xs text-text dark:text-critique">
             Missing result
           </span>
-          <blockquote className="mt-3 border-y border-border py-3 text-[0.9375rem] leading-relaxed text-text">
+          <p className="mt-2 mb-1 text-xs text-text-subtle">You said</p>
+          <p className="mb-3 text-sm italic leading-6 text-text">
             “…and we basically got it done somehow.”
-          </blockquote>
-          <p className="mt-3 text-sm leading-relaxed text-text-muted">
+          </p>
+          <p className="mb-1.5 text-sm leading-6 text-text-muted">
+            <span className="font-medium text-text">Why this weakened the answer: </span>
             It closes the story without saying what shipped or what changed.
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-text">
-            <span className="font-medium">Try instead:</span> end with the
-            outcome and one number. What shipped, by when, measured how.
+          <p className="text-sm leading-6 text-text-muted">
+            <span className="font-medium text-text">How to strengthen it: </span>
+            End with the outcome and one number — what shipped, by when, measured how.
           </p>
         </div>
 

@@ -82,7 +82,7 @@ export function ImproveNextCard({
         ) : (
           <ul className="flex flex-col gap-5">
             {blocks.map((block) => (
-              <li key={block.title} className="border-l-2 border-accent/45 pl-4">
+              <li key={block.title} className="border-l-2 border-highlight/45 pl-4">
                 <p className="mb-1 text-sm font-medium text-text">{block.title}</p>
                 <p className="text-sm leading-6 text-text-muted">{block.detail}</p>
                 {block.action && (
@@ -220,7 +220,7 @@ function FillerBreakdownChart({ entries }: { entries: FillerEntry[] }) {
             tickLine={false}
             width={64}
           />
-          <Bar dataKey="count" fill="var(--color-chart-2)" radius={[0, 3, 3, 0]} barSize={12}>
+          <Bar dataKey="count" fill="var(--color-filler)" radius={[0, 3, 3, 0]} barSize={12}>
             <LabelList
               dataKey="count"
               position="right"

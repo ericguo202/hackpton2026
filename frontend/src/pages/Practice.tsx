@@ -665,7 +665,7 @@ function PracticeSession({
     } else if (elapsedSeconds >= RECORDING_WARNING_SECONDS) {
       recordingNotice = {
         tone: 'warning',
-        text: 'Heads up — recording auto-stops at the 5-minute limit.',
+        text: 'One minute warning — recording auto-stops at the 5-minute limit.',
       };
     }
   }

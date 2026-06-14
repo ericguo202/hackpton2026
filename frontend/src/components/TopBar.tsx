@@ -165,7 +165,7 @@ export function TopBarNavLink({ to, matchPatterns, children }: NavLinkProps) {
         'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
         'focus-visible:ring-offset-surface rounded-sm ' +
         (active
-          ? 'text-text underline underline-offset-[6px] decoration-2 decoration-accent'
+          ? 'text-text underline underline-offset-[6px] decoration-2 decoration-link'
           : 'text-text-muted hover:text-text')
       }
     >

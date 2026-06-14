@@ -54,7 +54,7 @@ function FooterButton({ icon, label, className, ...rest }: FooterButtonProps) {
         'hover:border-border-strong hover:bg-surface-raised',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
         'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface disabled:hover:border-border',
-        'min-[600px]:h-10 min-[600px]:px-3.5 min-[900px]:px-4',
+        'min-[600px]:h-11 min-[600px]:px-3.5 min-[900px]:h-12 min-[900px]:px-4',
         className,
       )}
       {...rest}
@@ -67,9 +67,10 @@ function FooterButton({ icon, label, className, ...rest }: FooterButtonProps) {
   );
 }
 
-/* Neutral on purpose: cherry in this footer belongs to the recording
-   indicator + "End recording" (one action per surface). The destructive
-   cherry lives on the confirm button inside QuitConfirmDialog. */
+/* Destructive: quitting discards the in-progress session, so this carries the
+   danger cherry (white text on cherry, 5.9:1) — the one red action in the
+   footer now that End recording wears amber. The confirm step still lives in
+   QuitConfirmDialog. */
 function QuitButton({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -77,8 +78,8 @@ function QuitButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       aria-label="Quit session"
       className={cn(
-        'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-surface px-3 text-sm font-medium text-text transition',
-        'hover:border-border-strong hover:bg-surface-raised',
+        'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-full border border-accent bg-accent px-3 text-sm font-medium text-accent-fg transition',
+        'hover:border-accent-hover hover:bg-accent-hover',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
         'min-[600px]:h-11 min-[600px]:px-3.5 min-[900px]:h-12 min-[900px]:px-5',
       )}
@@ -140,7 +141,12 @@ export function PracticeFooter({
             label="End recording"
             onClick={onEnd}
             disabled={!canEnd}
-            className="border-accent bg-accent text-accent-fg hover:border-accent-hover hover:bg-accent-hover"
+            // Amber (brand garnish) leads this primary action — dark ink on the
+            // amber fill (~8.8:1). Ink is the raw scale (`primary-700`), not the
+            // `text` token, so it stays dark in dark mode instead of flipping to
+            // cream (cream-on-amber would fail contrast). Cherry is reserved for
+            // the destructive Quit button below.
+            className="border-highlight bg-highlight text-primary-700 hover:border-amber-deep hover:bg-amber-deep"
           />
           <FooterButton
             icon={<RotateCcw />}

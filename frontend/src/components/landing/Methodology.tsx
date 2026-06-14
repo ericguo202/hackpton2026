@@ -19,11 +19,11 @@ const DIMENSIONS = [
 const FACTS = [
   {
     lead: 'Graded for your field and level.',
-    body: 'Questions and scoring criteria adjust across 15 industry groups and six experience levels. A consulting intern and a staff engineer are graded on different evidence.',
+    body: 'Questions and scoring criteria adjust across 15 industry groups and six experience levels. A consulting intern and a senior engineer are graded on different evidence.',
   },
   {
     lead: 'Feedback quotes you.',
-    body: 'Every piece of praise or critique is anchored to an exact phrase from your transcript. If it can’t point to your words, it’s dropped.',
+    body: 'Every piece of praise or critique is anchored to an exact phrase from your transcript, which you can refer back to.',
   },
   {
     lead: 'Filler words are counted, not guessed.',
