@@ -30,8 +30,10 @@ export default function AnalyticsConsentBanner() {
 
   if (!visible) return null;
 
-  function choose(granted: boolean) {
-    setAnalyticsConsent(granted);
+  function choose(requested: boolean) {
+    // Use the effective persisted value — a grant the browser couldn't store
+    // stays denied, so we don't fire grant events for analytics that isn't on.
+    const granted = setAnalyticsConsent(requested);
     if (granted) {
       trackEvent('analytics_consent_granted');
       trackPageView(window.location.pathname);

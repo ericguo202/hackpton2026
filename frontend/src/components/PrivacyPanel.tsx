@@ -47,11 +47,13 @@ export default function PrivacyPanel({
   // Browser-level opt-out (GPC) overrides the toggle below — honored as binding.
   const gpc = gpcOptOut();
 
-  function updateProductAnalytics(granted: boolean) {
-    if (!granted) {
+  function updateProductAnalytics(requested: boolean) {
+    if (!requested) {
       trackEvent('analytics_consent_revoked');
     }
-    setAnalyticsConsent(granted);
+    // Reflect the effective persisted value, not the request — if the browser
+    // refuses to store the grant, the toggle shows denied (analytics stays off).
+    const granted = setAnalyticsConsent(requested);
     setLocalAnalyticsConsent(granted ? 'granted' : 'denied');
     if (granted) {
       trackEvent('analytics_consent_granted');

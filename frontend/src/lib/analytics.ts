@@ -137,8 +137,14 @@ export function initAnalytics() {
   }
 }
 
-export function setAnalyticsConsent(granted: boolean) {
-  if (!analyticsEnabled() || typeof window === 'undefined') return;
+/**
+ * Persist + apply the consent choice. Returns the *effective* persisted value:
+ * if the browser refuses local persistence we fall back to denied, and the
+ * return lets callers sync their UI to reality instead of assuming the write
+ * took. (A grant we can't persist would silently re-prompt next load.)
+ */
+export function setAnalyticsConsent(granted: boolean): boolean {
+  if (!analyticsEnabled() || typeof window === 'undefined') return false;
   try {
     window.localStorage.setItem(
       ANALYTICS_CONSENT_STORAGE_KEY,
@@ -169,6 +175,8 @@ export function setAnalyticsConsent(granted: boolean) {
       ad_personalization: 'denied',
     });
   }
+
+  return granted;
 }
 
 export function getAnalyticsConsent(): 'granted' | 'denied' | null {
