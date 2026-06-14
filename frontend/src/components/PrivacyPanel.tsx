@@ -12,6 +12,13 @@
 import { ShieldCheck, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
+import {
+  analyticsEnabled,
+  getAnalyticsConsent,
+  setAnalyticsConsent,
+  trackEvent,
+  trackPageView,
+} from '../lib/analytics';
 import DeliveryConsentBullets from './DeliveryConsentBullets';
 import { Button } from './ui/button';
 
@@ -33,9 +40,56 @@ export default function PrivacyPanel({
   onRevoke,
 }: Props) {
   const [checked, setChecked] = useState(false);
+  const [analyticsConsent, setLocalAnalyticsConsent] = useState<
+    'granted' | 'denied' | null
+  >(() => analyticsEnabled() ? getAnalyticsConsent() : null);
+
+  function updateProductAnalytics(granted: boolean) {
+    if (!granted) {
+      trackEvent('analytics_consent_revoked');
+    }
+    setAnalyticsConsent(granted);
+    setLocalAnalyticsConsent(granted ? 'granted' : 'denied');
+    if (granted) {
+      trackEvent('analytics_consent_granted');
+      trackPageView(window.location.pathname);
+    }
+  }
 
   return (
     <div className="space-y-4">
+      {analyticsEnabled() && (
+        <div className="rounded border border-border bg-surface-sunken px-3 py-3">
+          <p className="text-sm font-medium text-text">
+            Google Analytics
+          </p>
+          <p className="mt-2 text-xs leading-5 text-text-subtle">
+            Tracks page views and product actions without resumes, transcripts,
+            bios, company names, audio, video, or raw session IDs.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant={analyticsConsent === 'granted' ? 'default' : 'outline'}
+              onClick={() => updateProductAnalytics(true)}
+              data-analytics-id="analytics_privacy_enable"
+              data-analytics-label="Enable product analytics"
+            >
+              Enable analytics
+            </Button>
+            <Button
+              type="button"
+              variant={analyticsConsent === 'denied' ? 'default' : 'outline'}
+              onClick={() => updateProductAnalytics(false)}
+              data-analytics-id="analytics_privacy_disable"
+              data-analytics-label="Disable product analytics"
+            >
+              Disable analytics
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-3">
         <ShieldCheck
           className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"

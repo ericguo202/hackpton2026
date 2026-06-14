@@ -38,6 +38,7 @@ import { useApi } from '../hooks/useApi';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
+import { trackEvent } from '../lib/analytics';
 import {
   DELIVERY_ANALYTICS_NOTICE_VERSION,
   hasActiveDeliveryAnalyticsConsent,
@@ -188,7 +189,9 @@ export default function Home() {
   // Mic preflight + POST /sessions + navigate to /practice. Camera enabling is
   // decided in Practice from the persisted consent on `me`, so this doesn't
   // need to know the consent choice — it just creates the session.
-  async function createAndGoToSession() {
+  async function createAndGoToSession(
+    deliveryAnalyticsWillBeEnabled = deliveryConsentActive,
+  ) {
     const trimmed = company.trim();
     if (!trimmed) return;
 
@@ -214,6 +217,12 @@ export default function Home() {
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(voiceId ? { voice_id: voiceId } : {}),
         }),
+      });
+      trackEvent('practice_session_started', {
+        has_custom_voice: Boolean(voiceId),
+        auto_submit_enabled: autoSubmit,
+        delivery_analytics_enabled: deliveryAnalyticsWillBeEnabled,
+        user_tier: me?.tier ?? 'unknown',
       });
       const state: PracticeLocationState = {
         sessionId: data.session_id,
@@ -272,6 +281,7 @@ export default function Home() {
         }),
       });
       await refetchMe();
+      trackEvent('delivery_analytics_consent_granted');
       return true;
     } catch (err) {
       setConsentError(
@@ -291,6 +301,7 @@ export default function Home() {
         method: 'DELETE',
       });
       await refetchMe();
+      trackEvent('delivery_analytics_consent_revoked');
     } catch (err) {
       setConsentError(
         err instanceof ApiError ? extractApiErrorDetail(err) : (err as Error).message,
@@ -306,12 +317,12 @@ export default function Home() {
     const ok = await grantConsent();
     if (!ok) return;
     setConsentModalOpen(false);
-    void createAndGoToSession();
+    void createAndGoToSession(true);
   }
 
   function handleDeclineAndStart() {
     setConsentModalOpen(false);
-    void createAndGoToSession();
+    void createAndGoToSession(false);
   }
 
   const targetRoleBadge = me?.target_role ? (

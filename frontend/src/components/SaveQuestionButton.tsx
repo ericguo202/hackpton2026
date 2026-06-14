@@ -21,6 +21,7 @@ import { Bookmark, BookmarkCheck } from 'lucide-react';
 
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
+import { trackEvent } from '../lib/analytics';
 
 const SAVED_QUESTION_CAP = 5;
 
@@ -57,6 +58,7 @@ export default function SaveQuestionButton({
     try {
       await save(sessionId);
       setJustSaved(true);
+      trackEvent('saved_question_created');
     } catch (err) {
       // 409 = at cap, 422 = not evaluated. Surface the server's copy.
       setError(
