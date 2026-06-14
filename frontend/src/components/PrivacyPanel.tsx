@@ -15,6 +15,7 @@ import { useState } from 'react';
 import {
   analyticsEnabled,
   getAnalyticsConsent,
+  gpcOptOut,
   setAnalyticsConsent,
   trackEvent,
   trackPageView,
@@ -43,6 +44,8 @@ export default function PrivacyPanel({
   const [analyticsConsent, setLocalAnalyticsConsent] = useState<
     'granted' | 'denied' | null
   >(() => analyticsEnabled() ? getAnalyticsConsent() : null);
+  // Browser-level opt-out (GPC) overrides the toggle below — honored as binding.
+  const gpc = gpcOptOut();
 
   function updateProductAnalytics(granted: boolean) {
     if (!granted) {
@@ -65,12 +68,20 @@ export default function PrivacyPanel({
           </p>
           <p className="mt-2 text-xs leading-5 text-text-subtle">
             Tracks page views and product actions without resumes, transcripts,
-            bios, company names, audio, video, or raw session IDs.
+            bios, company names, audio, video, or raw session IDs. Nothing is
+            sent to Google unless you enable it here.
           </p>
+          {gpc && (
+            <p className="mt-2 text-xs leading-5 text-text-muted">
+              Your browser is sending a Global Privacy Control signal, so
+              analytics stays off regardless of this setting.
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               type="button"
-              variant={analyticsConsent === 'granted' ? 'default' : 'outline'}
+              variant={analyticsConsent === 'granted' && !gpc ? 'default' : 'outline'}
+              disabled={gpc}
               onClick={() => updateProductAnalytics(true)}
               data-analytics-id="analytics_privacy_enable"
               data-analytics-label="Enable product analytics"

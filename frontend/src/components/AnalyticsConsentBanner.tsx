@@ -1,18 +1,32 @@
 import { useState } from 'react';
 
+import { useMe } from '../hooks/useMe';
 import {
   analyticsEnabled,
   getAnalyticsConsent,
+  gpcOptOut,
   setAnalyticsConsent,
   trackEvent,
   trackPageView,
 } from '../lib/analytics';
+import { needsPolicyAcceptance } from '../lib/policyAcceptance';
 import { Button } from './ui/button';
 
 export default function AnalyticsConsentBanner() {
-  const [visible, setVisible] = useState(
-    () => analyticsEnabled() && getAnalyticsConsent() === null,
-  );
+  const { me } = useMe();
+  const [dismissed, setDismissed] = useState(false);
+
+  // Strict opt-in: only prompt when analytics is configured, the browser isn't
+  // already opting out via GPC, and the user hasn't chosen yet. Also hold off
+  // while the forced policy-acceptance modal is up (`needsPolicyAcceptance`) so
+  // the two never stack — the banner appears once that gate clears (`me`
+  // refetches after acceptance, flipping this to false and re-rendering us).
+  const visible =
+    !dismissed
+    && analyticsEnabled()
+    && !gpcOptOut()
+    && getAnalyticsConsent() === null
+    && !needsPolicyAcceptance(me);
 
   if (!visible) return null;
 
@@ -22,7 +36,7 @@ export default function AnalyticsConsentBanner() {
       trackEvent('analytics_consent_granted');
       trackPageView(window.location.pathname);
     }
-    setVisible(false);
+    setDismissed(true);
   }
 
   return (
@@ -30,8 +44,9 @@ export default function AnalyticsConsentBanner() {
       <div className="flex flex-col gap-4 min-[720px]:flex-row min-[720px]:items-center min-[720px]:justify-between">
         <p className="text-sm leading-6 text-text-subtle">
           InterviewPie uses Google Analytics to understand page views and product
-          actions. We do not send resumes, transcripts, bios, company names,
-          audio, video, or raw session IDs.
+          actions. Nothing is sent to Google unless you accept. We do not send
+          resumes, transcripts, bios, company names, audio, video, or raw session
+          IDs.
         </p>
         <div className="flex shrink-0 items-center gap-2">
           <Button
