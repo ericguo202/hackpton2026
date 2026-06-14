@@ -9,8 +9,15 @@ type GtagCommand =
 
 declare global {
   interface Window {
-    dataLayer?: unknown[];
+    dataLayer?: IArguments[];
     gtag?: (...args: GtagCommand) => void;
+    __ipAnalyticsDebug?: () => {
+      enabled: boolean;
+      measurementId: string | null;
+      consent: 'granted' | 'denied' | null;
+      scriptSrc: string | null;
+      dataLayer: unknown[];
+    };
   }
 }
 
@@ -20,6 +27,7 @@ const MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID as string | undefi
 const SCRIPT_ID = 'interviewpie-ga4';
 
 let initialized = false;
+const DEBUG_ANALYTICS = import.meta.env.VITE_GA_DEBUG === 'true';
 
 export function analyticsEnabled(): boolean {
   return Boolean(MEASUREMENT_ID);
@@ -43,10 +51,20 @@ function sanitizeParams(params: AnalyticsParams = {}): AnalyticsParams {
 
 function gtag(...args: GtagCommand) {
   window.dataLayer = window.dataLayer ?? [];
-  window.gtag = window.gtag ?? function gtagShim(...shimArgs: GtagCommand) {
-    window.dataLayer?.push(shimArgs);
+  window.gtag = window.gtag ?? function gtagShim() {
+    // Match Google's install snippet shape so Tag Assistant sees normal gtag commands.
+    // eslint-disable-next-line prefer-rest-params
+    window.dataLayer?.push(arguments);
   };
+  if (DEBUG_ANALYTICS) {
+    console.debug('[analytics]', args);
+  }
   window.gtag(...args);
+}
+
+function configureAnalytics() {
+  if (!MEASUREMENT_ID) return;
+  gtag('config', MEASUREMENT_ID, { send_page_view: false });
 }
 
 function storedConsentGranted(): boolean {
@@ -68,7 +86,7 @@ export function initAnalytics() {
     ad_personalization: 'denied',
   });
   gtag('js', new Date());
-  gtag('config', MEASUREMENT_ID, { send_page_view: false });
+  configureAnalytics();
 
   if (!document.getElementById(SCRIPT_ID)) {
     const script = document.createElement('script');
@@ -76,6 +94,18 @@ export function initAnalytics() {
     script.async = true;
     script.src = `https://www.googletagmanager.com/gtag/js?id=${MEASUREMENT_ID}`;
     document.head.appendChild(script);
+  }
+
+  if (import.meta.env.DEV) {
+    window.__ipAnalyticsDebug = () => ({
+      enabled: analyticsEnabled(),
+      measurementId: MEASUREMENT_ID ?? null,
+      consent: getAnalyticsConsent(),
+      scriptSrc: document.getElementById(SCRIPT_ID) instanceof HTMLScriptElement
+        ? (document.getElementById(SCRIPT_ID) as HTMLScriptElement).src
+        : null,
+      dataLayer: Array.from(window.dataLayer ?? []).slice(-25),
+    });
   }
 }
 
@@ -97,6 +127,7 @@ export function setAnalyticsConsent(granted: boolean) {
     ad_user_data: 'denied',
     ad_personalization: 'denied',
   });
+  if (granted) configureAnalytics();
 }
 
 export function getAnalyticsConsent(): 'granted' | 'denied' | null {
@@ -114,6 +145,7 @@ export function trackPageView(pathname: string, params: AnalyticsParams = {}) {
   initAnalytics();
   const pagePath = normalizeAnalyticsPath(pathname);
   gtag('event', 'page_view', sanitizeParams({
+    send_to: MEASUREMENT_ID,
     page_path: pagePath,
     page_location: `${window.location.origin}${pagePath}`,
     page_title: document.title,
@@ -124,7 +156,10 @@ export function trackPageView(pathname: string, params: AnalyticsParams = {}) {
 export function trackEvent(name: string, params: AnalyticsParams = {}) {
   if (!MEASUREMENT_ID) return;
   initAnalytics();
-  gtag('event', name, sanitizeParams(params));
+  gtag('event', name, sanitizeParams({
+    send_to: MEASUREMENT_ID,
+    ...params,
+  }));
 }
 
 export function trackUiClick(params: AnalyticsParams = {}) {
