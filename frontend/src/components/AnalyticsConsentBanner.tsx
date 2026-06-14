@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 
 import { useMe } from '../hooks/useMe';
 import {
@@ -19,8 +20,9 @@ export default function AnalyticsConsentBanner() {
   // Strict opt-in: only prompt when analytics is configured, the browser isn't
   // already opting out via GPC, and the user hasn't chosen yet. Also hold off
   // while the forced policy-acceptance modal is up (`needsPolicyAcceptance`) so
-  // the two never stack — the banner appears once that gate clears (`me`
-  // refetches after acceptance, flipping this to false and re-rendering us).
+  // the two never stack. When the user accepts, `PolicyAcceptanceGate` refetches
+  // `me`; `useMe` broadcasts that fresh row to this (separate) instance, so
+  // `needsPolicyAcceptance` flips to false here and the banner appears.
   const visible =
     !dismissed
     && analyticsEnabled()
@@ -44,11 +46,20 @@ export default function AnalyticsConsentBanner() {
   return (
     <div className="fixed inset-x-4 bottom-4 z-[80] mx-auto max-w-3xl rounded-lg border border-border-strong bg-surface-raised p-4 text-text shadow-xl">
       <div className="flex flex-col gap-4 min-[720px]:flex-row min-[720px]:items-center min-[720px]:justify-between">
-        <p className="text-sm leading-6 text-text-subtle">
+        <p className="text-xs leading-5 text-text-subtle">
           InterviewPie uses Google Analytics to understand page views and product
           actions. Nothing is sent to Google unless you accept. We do not send
           resumes, transcripts, bios, company names, audio, video, or raw session
-          IDs.
+          IDs. See our{' '}
+          <Link
+            to="/legal/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4 transition-colors hover:text-text"
+          >
+            Privacy Policy
+          </Link>
+          .
         </p>
         <div className="flex shrink-0 items-center gap-2">
           <Button
