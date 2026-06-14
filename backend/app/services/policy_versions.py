@@ -14,7 +14,7 @@ from app.db.models.user import User
 
 
 CURRENT_TERMS_VERSION = 1
-CURRENT_PRIVACY_VERSION = 1
+CURRENT_PRIVACY_VERSION = 2
 
 
 def has_accepted_current_policies(user: User) -> bool:

@@ -15,9 +15,13 @@ No test runner wired up. If you add one, prefer Vitest.
 
 ## Required env (`frontend/.env`)
 
+See `frontend/.env.example` for a copy-paste template.
+
 ```
 VITE_API_URL=http://localhost:8000        # defaulted in lib/api.ts; override for deployed backend
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_...    # throws in main.tsx if missing
+VITE_GA_MEASUREMENT_ID=G-XXXXXXXXXX       # optional; unset = analytics fully disabled. Strict opt-in even when set
+VITE_GA_DEBUG=false                       # optional; "true" → console.debug every gtag command in dev
 ```
 
 ## Stack notes (non-obvious versions)

@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
+import { trackEvent } from '../lib/analytics';
 import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPolicy';
 import { joinSpoken } from '../lib/joinSpoken';
 import type { ExperienceLevel, MeResponse } from '../types/user';
@@ -196,6 +197,10 @@ export default function OnboardingForm() {
         body,
       });
       await refetch();
+      trackEvent('onboarding_completed', {
+        resume_source: skipResume ? 'skipped' : resumeMode,
+        experience_level: experienceLevel,
+      });
       navigate('/calibrate?from=onboarding');
     } catch (err) {
       if (err instanceof ApiError) {

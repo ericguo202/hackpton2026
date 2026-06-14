@@ -1,6 +1,8 @@
 import { Show } from '@clerk/react';
 import { Navigate, Route, Routes } from 'react-router';
 
+import AnalyticsConsentBanner from './components/AnalyticsConsentBanner';
+import AnalyticsProvider from './components/AnalyticsProvider';
 import BetaFeedbackGate from './components/BetaFeedbackGate';
 import BetaFeedbackLauncher from './components/BetaFeedbackLauncher';
 import EmailConflictNotice from './components/EmailConflictNotice';
@@ -67,6 +69,7 @@ function SignedInHome() {
 function App() {
   return (
     <>
+      <AnalyticsProvider />
       <Routes>
       <Route path="/" element={<HomeRoute />} />
       <Route path="/sso-callback" element={<SsoCallback />} />
@@ -101,6 +104,7 @@ function App() {
       <PolicyAcceptanceGate />
       <BetaFeedbackGate />
       <BetaFeedbackLauncher />
+      <AnalyticsConsentBanner />
     </>
   );
 }

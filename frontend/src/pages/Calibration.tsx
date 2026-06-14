@@ -21,6 +21,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
+import { trackEvent } from '../lib/analytics';
 import {
   clearFaceCalibration,
   clearFaceCalibrationConsent,
@@ -230,6 +231,9 @@ export default function Calibration() {
     setConsent(nextConsent);
     setConsentChecked(false);
     setError(null);
+    trackEvent('calibration_consent_granted', {
+      from_onboarding: fromOnboarding,
+    });
   }
 
   async function enableCamera() {
@@ -261,6 +265,9 @@ export default function Calibration() {
       setStream(nextStream);
       await getFaceLandmarker();
       setPhase('ready');
+      trackEvent('calibration_camera_enabled', {
+        from_onboarding: fromOnboarding,
+      });
     } catch (err) {
       releaseCamera();
       setError(
@@ -269,6 +276,9 @@ export default function Calibration() {
           : 'Camera setup failed. Allow camera access and try again.',
       );
       setPhase('error');
+      trackEvent('calibration_camera_failed', {
+        from_onboarding: fromOnboarding,
+      });
     }
   }
 
@@ -282,6 +292,9 @@ export default function Calibration() {
     setLiveRead(EMPTY_LIVE_READ);
     setCaptureAverages(EMPTY_CAPTURE_AVERAGES);
     setPhase('capturing');
+    trackEvent('calibration_started', {
+      from_onboarding: fromOnboarding,
+    });
   }
 
   const finishCapture = useCallback(() => {
@@ -316,6 +329,9 @@ export default function Calibration() {
       setProgress(1);
       setPhase('complete');
       releaseCamera();
+      trackEvent('calibration_completed', {
+        from_onboarding: fromOnboarding,
+      });
     } catch (err) {
       setError(
         err instanceof Error
@@ -325,7 +341,7 @@ export default function Calibration() {
       setProgress(0);
       setPhase('ready');
     }
-  }, [releaseCamera]);
+  }, [fromOnboarding, releaseCamera]);
 
   useEffect(() => {
     if ((phase !== 'ready' && phase !== 'capturing') || !stream) return;
@@ -438,6 +454,9 @@ export default function Calibration() {
     setProgress(0);
     setVisibleSamples(0);
     setCaptureAverages(EMPTY_CAPTURE_AVERAGES);
+    trackEvent('calibration_cleared', {
+      from_onboarding: fromOnboarding,
+    });
   }
 
   const cameraActive = stream !== null;

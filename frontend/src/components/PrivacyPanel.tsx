@@ -12,6 +12,14 @@
 import { ShieldCheck, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
+import {
+  analyticsEnabled,
+  getAnalyticsConsent,
+  gpcOptOut,
+  setAnalyticsConsent,
+  trackEvent,
+  trackPageView,
+} from '../lib/analytics';
 import DeliveryConsentBullets from './DeliveryConsentBullets';
 import { Button } from './ui/button';
 
@@ -33,9 +41,68 @@ export default function PrivacyPanel({
   onRevoke,
 }: Props) {
   const [checked, setChecked] = useState(false);
+  const [analyticsConsent, setLocalAnalyticsConsent] = useState<
+    'granted' | 'denied' | null
+  >(() => analyticsEnabled() ? getAnalyticsConsent() : null);
+  // Browser-level opt-out (GPC) overrides the toggle below — honored as binding.
+  const gpc = gpcOptOut();
+
+  function updateProductAnalytics(requested: boolean) {
+    if (!requested) {
+      trackEvent('analytics_consent_revoked');
+    }
+    // Reflect the effective persisted value, not the request — if the browser
+    // refuses to store the grant, the toggle shows denied (analytics stays off).
+    const granted = setAnalyticsConsent(requested);
+    setLocalAnalyticsConsent(granted ? 'granted' : 'denied');
+    if (granted) {
+      trackEvent('analytics_consent_granted');
+      trackPageView(window.location.pathname);
+    }
+  }
 
   return (
     <div className="space-y-4">
+      {analyticsEnabled() && (
+        <div className="rounded border border-border bg-surface-sunken px-3 py-3">
+          <p className="text-sm font-medium text-text">
+            Google Analytics
+          </p>
+          <p className="mt-2 text-xs leading-5 text-text-subtle">
+            Tracks page views and product actions without resumes, transcripts,
+            bios, company names, audio, video, or raw session IDs. Nothing is
+            sent to Google unless you enable it here.
+          </p>
+          {gpc && (
+            <p className="mt-2 text-xs leading-5 text-text-muted">
+              Your browser is sending a Global Privacy Control signal, so
+              analytics stays off regardless of this setting.
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant={analyticsConsent === 'granted' && !gpc ? 'default' : 'outline'}
+              disabled={gpc}
+              onClick={() => updateProductAnalytics(true)}
+              data-analytics-id="analytics_privacy_enable"
+              data-analytics-label="Enable product analytics"
+            >
+              Enable analytics
+            </Button>
+            <Button
+              type="button"
+              variant={analyticsConsent === 'denied' ? 'default' : 'outline'}
+              onClick={() => updateProductAnalytics(false)}
+              data-analytics-id="analytics_privacy_disable"
+              data-analytics-label="Disable product analytics"
+            >
+              Disable analytics
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-3">
         <ShieldCheck
           className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"

@@ -211,10 +211,18 @@ export default function PrivacyPolicy() {
               or abuse signal); we automatically scrub that captured content on a
               short schedule (see &ldquo;Data retention and storage&rdquo;).
             </li>
+            <li>
+              <strong>Product analytics.</strong> If you allow analytics, we use
+              Google Analytics to collect page views and product-action events,
+              such as clicking a button or completing a setup step. We configure
+              these events to avoid sending résumé text, bios, transcripts,
+              interview questions, company or job-title text, audio, video,
+              webcam-derived metrics, email addresses, or raw session IDs.
+            </li>
           </ul>
           <p>
-            We do <strong>not</strong> use third-party advertising, analytics, or
-            tracking services, and we do not build advertising profiles about you.
+            We do <strong>not</strong> use third-party advertising services, and
+            we do not build advertising profiles about you.
           </p>
         </Section>
 
@@ -245,9 +253,10 @@ export default function PrivacyPolicy() {
           <p>
             Where the EU/UK GDPR applies, our lawful bases are: performance of our
             contract with you (to provide the Service you request); your consent
-            (for optional webcam delivery analytics, which you can withdraw at any
-            time); and our legitimate interests (to secure the Service, prevent
-            abuse, and improve the product), balanced against your rights.
+            (for optional webcam delivery analytics and Google Analytics product
+            analytics, which you can withdraw at any time); and our legitimate
+            interests (to secure the Service, prevent abuse, and improve the
+            product), balanced against your rights.
           </p>
         </Section>
 
@@ -299,6 +308,11 @@ export default function PrivacyPolicy() {
                   name="Serper"
                   purpose="Company and role research for relevant questions"
                   data="Company name, job title, and experience level"
+                />
+                <ProviderRow
+                  name="Google Analytics"
+                  purpose="Product analytics for page views and product-action events, when analytics is allowed"
+                  data="Pseudonymous usage events, normalized page paths, device/browser metadata, and non-content event properties"
                 />
                 <ProviderRow
                   name="Hosting & infrastructure (Vercel, Amazon Web Services)"

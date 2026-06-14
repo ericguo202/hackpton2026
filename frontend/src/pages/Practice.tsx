@@ -45,6 +45,7 @@ import { useMe } from '../hooks/useMe';
 import { useMorphTransition } from '../hooks/useMorphTransition';
 import { useRecorder } from '../hooks/useRecorder';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
+import { trackEvent } from '../lib/analytics';
 import { hasActiveDeliveryAnalyticsConsent } from '../lib/deliveryAnalyticsConsent';
 import { cn } from '../lib/utils';
 import type { InterviewSummary } from '../lib/faceHeuristics';
@@ -441,6 +442,13 @@ function PracticeSession({
 
   async function handleSubmitTurn() {
     if (!recorder.audioBlob || !sessionId || !currentQ) return;
+    const submittingTurnNumber = currentQ.num;
+    trackEvent('turn_submitted', {
+      turn_number: submittingTurnNumber,
+      final_turn: submittingTurnNumber >= 2,
+      auto_submit_enabled: autoSubmit,
+      delivery_analytics_enabled: deliveryAnalyticsEnabled,
+    });
     setSubmittingTurn(true);
     setEndingTurn(false);
     setTurnError(null);
@@ -493,6 +501,11 @@ function PracticeSession({
         `/api/v1/sessions/${sessionId}/turns`,
         { method: 'POST', body: form },
       );
+      trackEvent('turn_submit_succeeded', {
+        turn_number: submittingTurnNumber,
+        final_turn: result.is_final,
+        evaluation_pending: Boolean(result.evaluation_pending),
+      });
 
       console.log('[Practice] API result', result);
       console.log('[Practice] delivery returned', {
@@ -535,6 +548,9 @@ function PracticeSession({
           setIsDone(true);
           setCurrentQ(null);
         });
+        trackEvent('final_results_viewed', {
+          evaluation_pending: Boolean(result.evaluation_pending),
+        });
       } else {
         setCurrentQ({
           text: result.next_question!,
@@ -556,6 +572,11 @@ function PracticeSession({
       // fails identically — so skip the one-shot auto-retry and go straight to
       // the "Restart turn" CTA.
       const policyViolation = isUsagePolicyViolation(err);
+      trackEvent('turn_submit_failed', {
+        turn_number: submittingTurnNumber,
+        policy_violation: policyViolation,
+        auto_retry: Boolean(autoSubmit && !autoRetriedRef.current && recorder.audioBlob && !policyViolation),
+      });
       if (
         autoSubmit && !autoRetriedRef.current && recorder.audioBlob
         && !policyViolation
@@ -585,6 +606,11 @@ function PracticeSession({
     if (recorder.state !== 'recording') return;
     if (autoSubmit) setEndingTurn(true);
     recorder.stop();
+    trackEvent('recording_stopped', {
+      turn_number: currentQ?.num ?? 0,
+      auto_submit_enabled: autoSubmit,
+      elapsed_seconds: elapsedSeconds,
+    });
   }
 
   function handleRestart() {
@@ -601,9 +627,20 @@ function PracticeSession({
     // Zero the clock here (the only place recording begins) so the timer
     // effect starts from 0 with no synchronous setState inside the effect.
     setElapsedSeconds(0);
-    recorder.start({ video: deliveryAnalyticsEnabled }).catch((err: Error) => {
-      setTurnError(`Could not start recording: ${err.message}`);
-    });
+    recorder.start({ video: deliveryAnalyticsEnabled })
+      .then(() => {
+        trackEvent('recording_started', {
+          turn_number: currentQ?.num ?? 0,
+          delivery_analytics_enabled: deliveryAnalyticsEnabled,
+        });
+      })
+      .catch((err: Error) => {
+        setTurnError(`Could not start recording: ${err.message}`);
+        trackEvent('recording_start_failed', {
+          turn_number: currentQ?.num ?? 0,
+          delivery_analytics_enabled: deliveryAnalyticsEnabled,
+        });
+      });
   }
 
   function handleQuit() {
