@@ -11,7 +11,9 @@
 import type { MeResponse } from '../types/user';
 
 export const CURRENT_TERMS_VERSION = 1 as const;
-export const CURRENT_PRIVACY_VERSION = 2 as const;
+// v3 (2026-06): geo-gated product analytics (EU/UK opt-in, US full GA4 + AU/NZ/SG
+// cookieless by default under notice + opt-out). Material change → forced re-accept.
+export const CURRENT_PRIVACY_VERSION = 3 as const;
 
 type AcceptanceFields = Pick<
   MeResponse,

@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { UserButton } from '@clerk/react';
+import AccountButton from '../components/AccountButton';
 import { useNavigate, useParams } from 'react-router';
 import {
   CartesianGrid,
@@ -240,7 +240,7 @@ export default function SavedQuestionDetail() {
             <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
           </>
         }
-        rightSlot={<UserButton />}
+        rightSlot={<AccountButton />}
       />
 
       <main className="flex-1">

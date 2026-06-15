@@ -20,8 +20,9 @@ See `frontend/.env.example` for a copy-paste template.
 ```
 VITE_API_URL=http://localhost:8000        # defaulted in lib/api.ts; override for deployed backend
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_...    # throws in main.tsx if missing
-VITE_GA_MEASUREMENT_ID=G-XXXXXXXXXX       # optional; unset = analytics fully disabled. Strict opt-in even when set
+VITE_GA_MEASUREMENT_ID=G-XXXXXXXXXX       # optional; unset = analytics fully disabled. Consent is geo-gated (see Analytics)
 VITE_GA_DEBUG=false                       # optional; "true" → console.debug every gtag command in dev
+VITE_GA_FORCE_REGION=                      # optional dev-only; force a bucket: us | implied | strict, or a country code (US/AU/GB/IN)
 ```
 
 ## Stack notes (non-obvious versions)
@@ -44,6 +45,22 @@ VITE_GA_DEBUG=false                       # optional; "true" → console.debug e
 ### App shell
 
 `main.tsx` wraps `<App />` in `<ClerkProvider>` → `<BrowserRouter>` (react-router v7). `App.tsx` is a route table; auth/onboarding gates in `route-guards.tsx`. Full route table + Setup→Practice handoff in `../CLAUDE.md` "Frontend Routing".
+
+### Analytics consent (geo-gated)
+
+`src/lib/analytics.ts` is the single gate for Google Analytics. Consent is **jurisdiction-aware**, resolved before any `gtag.js` loads:
+
+| Region bucket | Countries | Default before any choice |
+|---|---|---|
+| `strict` | EU/EEA, UK, India, **everything else + unknown** (fail-closed) | nothing loads; opt-in banner |
+| `us` | US | full GA4 (cookies/`client_id`) on by default; notice + opt-out |
+| `implied` | AU, NZ, SG | cookieless pings on by default (advanced Consent Mode, `analytics_storage: denied`); notice + opt-out |
+
+- **Region source:** `frontend/middleware.ts` (Vercel Edge Middleware) reads `x-vercel-ip-country` and sets a non-HttpOnly `ip_country` cookie; `getAnalyticsRegion()` reads it (fail-closed to `strict` when absent). **Only runs on Vercel** — under `vite dev` use `VITE_GA_FORCE_REGION`. `strict` is the fallback, so only `US`/`AU`/`NZ`/`SG` are enumerated.
+- **The gate is `analyticsMode(): 'off' | 'full' | 'cookieless'`** — GPC or an explicit opt-out → `off` (binding, overrides an explicit grant); an explicit opt-in → `full` anywhere; otherwise the region default. Every dispatch path (`trackPageView`/`trackEvent`) and `initAnalytics()` early-returns on `off`. `cookieless` = gtag loads with `analytics_storage: denied` (aggregate pings, no `_ga`).
+- **Two localStorage keys:** `ANALYTICS_CONSENT_STORAGE_KEY` (`'granted'|'denied'|null` — the explicit choice) and `ANALYTICS_NOTICE_ACK_KEY` (`'1'` — a default-on visitor dismissed the notice without opting out; does **not** affect the mode, just stops re-nagging).
+- **`AnalyticsConsentBanner`** branches on region: opt-in (Accept/Decline) in `strict`, notice + opt-out (Opt out / Got it) in `us`/`implied`. **`PrivacyPanel`** GA toggle shows the live effective mode. Both still wait out `needsPolicyAcceptance` so they don't stack under the policy modal.
+- `window.__ipAnalyticsDebug()` (dev) reports `region` + `mode`. Lawyer memo: root `PRIVACY_REVIEW.md` §1b/§3.
 
 ### Type contract with backend
 

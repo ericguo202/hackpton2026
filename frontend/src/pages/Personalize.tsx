@@ -19,10 +19,11 @@ import {
   type ReactNode,
   type SubmitEvent,
 } from 'react';
-import { UserButton, useUser } from '@clerk/react';
+import { useUser } from '@clerk/react';
 import { FileText, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
+import AccountButton from '../components/AccountButton';
 import IndustryAutocompleteField from '../components/IndustryAutocompleteField';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import RoleAutocompleteField from '../components/RoleAutocompleteField';
@@ -82,7 +83,7 @@ export default function Personalize() {
             </TopBarNavLink>
           </>
         }
-        rightSlot={<UserButton />}
+        rightSlot={<AccountButton />}
       />
 
       <main className="flex-1">

@@ -13,9 +13,10 @@
  */
 
 import { useState, type SubmitEvent } from 'react';
-import { UserButton, useUser } from '@clerk/react';
+import { useUser } from '@clerk/react';
 import { useNavigate } from 'react-router';
 
+import AccountButton from './AccountButton';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
@@ -215,7 +216,7 @@ export default function OnboardingForm() {
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
-      <TopBar rightSlot={<UserButton />} />
+      <TopBar rightSlot={<AccountButton />} />
       <main className="flex-1 flex items-start justify-center px-4 pt-56 pb-12 relative">
         <div className="absolute top-40 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 space-y-2">
           <p className="text-[length:var(--text-eyebrow)] uppercase tracking-eyebrow text-text-muted">

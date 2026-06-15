@@ -13,7 +13,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { UserButton } from '@clerk/react';
+import AccountButton from '../components/AccountButton';
 import { Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import {
@@ -434,7 +434,7 @@ export default function History() {
             </TopBarNavLink>
           </>
         }
-        rightSlot={<UserButton />}
+        rightSlot={<AccountButton />}
       />
 
       <main className="flex-1">

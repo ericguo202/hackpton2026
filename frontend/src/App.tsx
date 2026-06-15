@@ -24,6 +24,7 @@ import Calibration from './pages/Calibration';
 import Personalize from './pages/Personalize';
 import Practice from './pages/Practice';
 import SavedQuestionDetail from './pages/SavedQuestionDetail';
+import Settings from './pages/Settings';
 import SessionDetail from './pages/SessionDetail';
 import SignIn from './pages/SignIn';
 import SignUp from './pages/SignUp';
@@ -96,6 +97,9 @@ function App() {
           <Route path="/sessions/:id" element={<SessionDetail />} />
           <Route path="/saved-question/:id" element={<SavedQuestionDetail />} />
           <Route path="/personalize" element={<Personalize />} />
+          {/* Clerk <UserProfile routing="hash"> keeps the path at /settings and
+              drives its subnav via the URL hash, so no splat is needed. */}
+          <Route path="/settings" element={<Settings />} />
         </Route>
       </Route>
 

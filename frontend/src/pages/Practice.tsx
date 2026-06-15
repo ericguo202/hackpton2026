@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { UserButton } from '@clerk/react';
+import AccountButton from '../components/AccountButton';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 
 import PageMorphTransition from '../components/PageMorphTransition';
@@ -735,7 +735,7 @@ function PracticeSession({
               </TopBarNavLink>
             </>
           }
-          rightSlot={<UserButton />}
+          rightSlot={<AccountButton />}
         />
       )}
 
