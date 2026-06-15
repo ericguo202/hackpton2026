@@ -24,8 +24,16 @@ const SUPPRESSED_PATHS = ['/sign-in', '/sign-up', '/onboarding'];
 
 export default function AnalyticsConsentBanner() {
   const { me } = useMe();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const [dismissed, setDismissed] = useState(false);
+
+  // /calibrate is also reachable from the nav/Settings, where the banner SHOULD
+  // show. Only suppress it as the final onboarding step (`?from=onboarding`),
+  // which is the continuation of the same focused flow as /onboarding above.
+  const suppressedPath =
+    SUPPRESSED_PATHS.includes(pathname) ||
+    (pathname === '/calibrate' &&
+      new URLSearchParams(search).get('from') === 'onboarding');
 
   // Two shapes, keyed on the visitor's jurisdiction bucket:
   //  - `strict` (EU/UK/India/elsewhere/unknown): an *opt-in* prompt — nothing has
@@ -39,7 +47,7 @@ export default function AnalyticsConsentBanner() {
   const defaultOn = isDefaultOnRegion();
   const visible =
     !dismissed
-    && !SUPPRESSED_PATHS.includes(pathname)
+    && !suppressedPath
     && analyticsEnabled()
     && !gpcOptOut()
     && getAnalyticsConsent() === null
