@@ -21,10 +21,11 @@
  */
 
 import { useState, type SubmitEvent } from 'react';
-import { UserButton, useUser } from '@clerk/react';
+import { useUser } from '@clerk/react';
 import { ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
+import AccountButton from '../components/AccountButton';
 import AdvancedPanel from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
 import DeliveryConsentDialog from '../components/DeliveryConsentDialog';
@@ -35,30 +36,14 @@ import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
+import { useDeliveryConsent } from '../hooks/useDeliveryConsent';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { trackEvent } from '../lib/analytics';
-import {
-  DELIVERY_ANALYTICS_NOTICE_VERSION,
-  hasActiveDeliveryAnalyticsConsent,
-} from '../lib/deliveryAnalyticsConsent';
-import type { MeResponse } from '../types/user';
 import type { PracticeLocationState } from './Practice';
 
 type Surface = 'basic' | 'advanced' | 'privacy';
-
-function formatConsentDate(iso: string): string {
-  try {
-    return `Consented ${new Date(iso).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })}`;
-  } catch {
-    return 'Delivery analytics consent is active';
-  }
-}
 
 type SessionStart = {
   session_id: string;
@@ -155,7 +140,7 @@ function ModeTabs({
 
 export default function Home() {
   const { user } = useUser();
-  const { me, refetch: refetchMe } = useMe();
+  const { me } = useMe();
   const { apiFetch } = useApi();
   const navigate = useNavigate();
 
@@ -174,15 +159,19 @@ export default function Home() {
   // drawer open on desktop; 'advanced'/'privacy' open the matching drawer.
   const [surface, setSurface] = useState<Surface>('basic');
 
-  // Pre-session delivery-analytics consent popup state.
+  // Pre-session delivery-analytics consent popup open/closed (Home-only UI).
   const [consentModalOpen, setConsentModalOpen] = useState(false);
-  const [consentBusy, setConsentBusy] = useState(false);
-  const [consentError, setConsentError] = useState<string | null>(null);
-
-  const deliveryConsentActive = hasActiveDeliveryAnalyticsConsent(me);
-  const deliveryConsentLabel = me?.delivery_analytics_consent_at
-    ? formatConsentDate(me.delivery_analytics_consent_at)
-    : null;
+  // Shared grant/revoke flow (same hook drives the /settings Privacy tab).
+  // Renamed on destructure so the references throughout this file stay put.
+  const {
+    active: deliveryConsentActive,
+    label: deliveryConsentLabel,
+    busy: consentBusy,
+    error: consentError,
+    setError: setConsentError,
+    grant: grantConsent,
+    revoke: revokeConsent,
+  } = useDeliveryConsent();
 
   const firstName = user?.firstName ?? null;
 
@@ -267,50 +256,6 @@ export default function Home() {
     void createAndGoToSession();
   }
 
-  // PUT consent → refetch `me`. Returns whether it succeeded so callers can
-  // chain session creation only on success.
-  async function grantConsent(): Promise<boolean> {
-    setConsentBusy(true);
-    setConsentError(null);
-    try {
-      await apiFetch<MeResponse>('/api/v1/me/delivery-analytics-consent', {
-        method: 'PUT',
-        body: JSON.stringify({
-          notice_version: DELIVERY_ANALYTICS_NOTICE_VERSION,
-          accepted: true,
-        }),
-      });
-      await refetchMe();
-      trackEvent('delivery_analytics_consent_granted');
-      return true;
-    } catch (err) {
-      setConsentError(
-        err instanceof ApiError ? extractApiErrorDetail(err) : (err as Error).message,
-      );
-      return false;
-    } finally {
-      setConsentBusy(false);
-    }
-  }
-
-  async function revokeConsent() {
-    setConsentBusy(true);
-    setConsentError(null);
-    try {
-      await apiFetch<MeResponse>('/api/v1/me/delivery-analytics-consent', {
-        method: 'DELETE',
-      });
-      await refetchMe();
-      trackEvent('delivery_analytics_consent_revoked');
-    } catch (err) {
-      setConsentError(
-        err instanceof ApiError ? extractApiErrorDetail(err) : (err as Error).message,
-      );
-    } finally {
-      setConsentBusy(false);
-    }
-  }
-
   // Popup actions: consent → save then start (camera enabled in Practice);
   // decline → start voice-only (consent stays inactive → camera never enabled).
   async function handleConsentAndStart() {
@@ -367,7 +312,7 @@ export default function Home() {
             </TopBarNavLink>
           </>
         }
-        rightSlot={<UserButton />}
+        rightSlot={<AccountButton />}
       />
 
       <FlashBanner />

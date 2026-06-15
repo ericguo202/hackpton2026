@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { UserButton } from '@clerk/react';
+import AccountButton from '../components/AccountButton';
 import { useNavigate, useParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
@@ -111,7 +111,7 @@ export default function SessionDetail() {
             </TopBarNavLink>
           </>
         }
-        rightSlot={<UserButton />}
+        rightSlot={<AccountButton />}
       />
 
       <main className="flex-1">

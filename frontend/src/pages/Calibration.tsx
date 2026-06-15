@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { UserButton } from '@clerk/react';
+import AccountButton from '../components/AccountButton';
 import {
   Check,
   ChevronDown,
@@ -470,7 +470,7 @@ export default function Calibration() {
     <div className="min-h-screen bg-surface text-text">
       <TopBar
         nav={fromOnboarding ? undefined : <SignedInNav />}
-        rightSlot={<UserButton />}
+        rightSlot={<AccountButton />}
       />
 
       <main className="mx-auto w-full max-w-[86rem] px-6 pb-12 pt-8 md:px-16 md:pb-16 md:pt-14">
