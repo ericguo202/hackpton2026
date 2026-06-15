@@ -1,4 +1,5 @@
 import { Show } from '@clerk/react';
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
 
 import AnalyticsConsentBanner from './components/AnalyticsConsentBanner';
@@ -6,7 +7,6 @@ import AnalyticsProvider from './components/AnalyticsProvider';
 import BetaFeedbackGate from './components/BetaFeedbackGate';
 import BetaFeedbackLauncher from './components/BetaFeedbackLauncher';
 import EmailConflictNotice from './components/EmailConflictNotice';
-import OnboardingForm from './components/OnboardingForm';
 import PolicyAcceptanceGate from './components/PolicyAcceptanceGate';
 import {
   RedirectIfOnboarded,
@@ -14,21 +14,38 @@ import {
   RequireOnboarded,
 } from './components/route-guards';
 import { useMe } from './hooks/useMe';
-import BiometricDataRetentionPolicy from './pages/BiometricDataRetentionPolicy';
-import PrivacyPolicy from './pages/PrivacyPolicy';
-import TermsOfService from './pages/TermsOfService';
-import Hero from './pages/Hero';
-import History from './pages/History';
-import Home from './pages/Home';
-import Calibration from './pages/Calibration';
-import Personalize from './pages/Personalize';
-import Practice from './pages/Practice';
-import SavedQuestionDetail from './pages/SavedQuestionDetail';
-import Settings from './pages/Settings';
-import SessionDetail from './pages/SessionDetail';
-import SignIn from './pages/SignIn';
-import SignUp from './pages/SignUp';
-import SsoCallback from './pages/SsoCallback';
+
+// Route pages are lazy-loaded so route-specific heavy deps (recharts, MediaPipe,
+// the dither shader) split into per-route async chunks instead of the main bundle.
+const OnboardingForm = lazy(() => import('./components/OnboardingForm'));
+const BiometricDataRetentionPolicy = lazy(
+  () => import('./pages/BiometricDataRetentionPolicy'),
+);
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('./pages/TermsOfService'));
+const Hero = lazy(() => import('./pages/Hero'));
+const History = lazy(() => import('./pages/History'));
+const Home = lazy(() => import('./pages/Home'));
+const Calibration = lazy(() => import('./pages/Calibration'));
+const Personalize = lazy(() => import('./pages/Personalize'));
+const Practice = lazy(() => import('./pages/Practice'));
+const SavedQuestionDetail = lazy(() => import('./pages/SavedQuestionDetail'));
+const Settings = lazy(() => import('./pages/Settings'));
+const SessionDetail = lazy(() => import('./pages/SessionDetail'));
+const SignIn = lazy(() => import('./pages/SignIn'));
+const SignUp = lazy(() => import('./pages/SignUp'));
+const SsoCallback = lazy(() => import('./pages/SsoCallback'));
+
+/** Centered loading screen shared by the route Suspense boundary and SignedInHome. */
+function RouteFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-surface">
+      <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
+        Loading
+      </p>
+    </div>
+  );
+}
 
 /**
  * `/` is the only auth-bivalent route: signed-out users see the Hero,
@@ -52,13 +69,7 @@ function HomeRoute() {
 function SignedInHome() {
   const { me, isReady, isLoading } = useMe();
   if (!isReady || isLoading || !me) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-surface">
-        <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
-          Loading
-        </p>
-      </div>
-    );
+    return <RouteFallback />;
   }
   // Email already claimed by another account — block before onboarding so the
   // user never fills out the form only to hit a 409 at submit.
@@ -71,6 +82,7 @@ function App() {
   return (
     <>
       <AnalyticsProvider />
+      <Suspense fallback={<RouteFallback />}>
       <Routes>
       <Route path="/" element={<HomeRoute />} />
       <Route path="/sso-callback" element={<SsoCallback />} />
@@ -105,6 +117,7 @@ function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
       <PolicyAcceptanceGate />
       <BetaFeedbackGate />
       <BetaFeedbackLauncher />
