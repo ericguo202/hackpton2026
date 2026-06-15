@@ -8,6 +8,7 @@ from app.db.models.user import User
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
 from app.db.models.incident import Incident
+from app.db.models.rate_limit import RateLimit
 from app.db.models.saved_question import SavedQuestion
 from app.db.models.session_feedback import SessionFeedback
 from app.db.models.session_metrics import SessionMetrics
@@ -17,6 +18,7 @@ __all__ = [
     "InterviewSession",
     "InterviewTurn",
     "Incident",
+    "RateLimit",
     "SavedQuestion",
     "SessionFeedback",
     "SessionMetrics",

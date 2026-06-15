@@ -50,6 +50,7 @@ from app.db.session import get_db
 from app.schemas.user import UserOut
 from app.services._injection import contains_injection
 from app.services.moderation import check_moderation
+from app.services.rate_limit import rate_limited
 
 router = APIRouter()
 
@@ -113,7 +114,11 @@ def _extract_pdf_text(content: bytes) -> str:
     return "\n".join(pages).strip()
 
 
-@router.post("", response_model=UserOut)
+@router.post(
+    "",
+    response_model=UserOut,
+    dependencies=[Depends(rate_limited("onboarding"))],
+)
 async def onboarding(
     industry: str = Form(..., min_length=1, max_length=200),
     target_role: str = Form(..., min_length=1, max_length=200),
