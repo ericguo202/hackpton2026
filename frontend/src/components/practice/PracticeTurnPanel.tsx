@@ -21,8 +21,6 @@
  */
 
 import type { TurnDetail } from '../../types/history';
-import type { InterviewSummary } from '../../lib/faceHeuristics';
-import type { AnalyzerDiagnostics } from '../../hooks/useFaceAnalyzer';
 import SaveQuestionButton from '../SaveQuestionButton';
 import {
   DeliveryFeedbackSection,
@@ -44,8 +42,6 @@ import { VideoReplayCard } from './VideoReplayCard';
 export type PracticeTurnReplay = {
   replayUrl: string | null;
   audioReplayUrl: string | null;
-  cvSummary: InterviewSummary | null;
-  analyzerDiagnostics: AnalyzerDiagnostics;
 };
 
 type Props = {

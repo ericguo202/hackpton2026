@@ -11,9 +11,9 @@
  * turn. Tab content is delegated to OverviewPanel / TurnPanel.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AccountButton from '../components/AccountButton';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
@@ -24,12 +24,24 @@ import {
 } from '../components/session-detail/FolderTabs';
 import OverviewPanel from '../components/session-detail/OverviewPanel';
 import TurnPanel from '../components/session-detail/TurnPanel';
+import { PracticeOverviewPanel } from '../components/practice/PracticeOverviewPanel';
+import { PracticeTurnPanel } from '../components/practice/PracticeTurnPanel';
 import { useSessionDetail } from '../hooks/useSessionDetail';
+import { getPracticeReplays } from '../lib/practiceReplayStore';
 
 export default function SessionDetail() {
   const { id: sessionId = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Arriving straight from a just-finished practice run. Swaps the Overview's
+  // company brief for the "Let's look at how you did." intro and surfaces the
+  // in-memory recording replays. Survives a reload (it's in the URL), but the
+  // blobs don't — so the replay cards fall back to "media unavailable" then.
+  const fromPractice = searchParams.get('from') === 'practice';
   const { session, isLoading, error, errorStatus } = useSessionDetail(sessionId);
+  // Read once per session id — the store is module-level (not reactive) and is
+  // populated by Practice before it navigates here, so render-time read is fine.
+  const replays = useMemo(() => getPracticeReplays(sessionId), [sessionId]);
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   // Reset the active tab when the URL session id changes. Storing the
   // previous id in state + comparing during render is the React-19-blessed
@@ -176,19 +188,56 @@ export default function SessionDetail() {
                     onTouchEnd={handleTouchEnd}
                     className="anim-crossfade rounded-lg border border-border-strong bg-surface-raised min-[900px]:rounded-tl-none"
                   >
-                    {safeIndex === 0 ? (
-                      <OverviewPanel
-                        session={session}
-                        sessionCompleted={session.status === 'completed'}
-                      />
-                    ) : (
-                      <TurnPanel
-                        turn={session.turns[safeIndex - 1]}
-                        sessionCompleted={session.status === 'completed'}
-                        sessionId={session.id}
-                        savedQuestionId={session.saved_question_id}
-                      />
-                    )}
+                    {(() => {
+                      const sessionCompleted = session.status === 'completed';
+                      if (safeIndex === 0) {
+                        // From practice: reuse Practice's "Let's look at how you
+                        // did." intro overview; otherwise the company brief.
+                        return fromPractice ? (
+                          <PracticeOverviewPanel
+                            company={session.company}
+                            jobTitle={session.job_title}
+                            averages={session.averages}
+                            turns={session.turns}
+                            sessionCompleted={sessionCompleted}
+                          />
+                        ) : (
+                          <OverviewPanel
+                            session={session}
+                            sessionCompleted={sessionCompleted}
+                          />
+                        );
+                      }
+                      const turnIndex = safeIndex - 1;
+                      const turn = session.turns[turnIndex];
+                      const replay = replays[turnIndex];
+                      // Show the Practice turn panel (with video/audio replay)
+                      // only on the immediate post-practice view AND when the
+                      // replay blobs are still in memory. The fromPractice gate
+                      // keeps History always video-less and self-consistent; the
+                      // replay gate makes a post-practice reload (blobs gone)
+                      // fall back to the plain panel.
+                      const hasReplay =
+                        replay != null
+                        && (replay.replayUrl != null || replay.audioReplayUrl != null);
+                      return fromPractice && hasReplay ? (
+                        <PracticeTurnPanel
+                          turn={turn}
+                          turnNum={safeIndex}
+                          replay={replay}
+                          sessionCompleted={sessionCompleted}
+                          sessionId={session.id}
+                          savedQuestionId={session.saved_question_id}
+                        />
+                      ) : (
+                        <TurnPanel
+                          turn={turn}
+                          sessionCompleted={sessionCompleted}
+                          sessionId={session.id}
+                          savedQuestionId={session.saved_question_id}
+                        />
+                      );
+                    })()}
                   </section>
 
                   {/* Mobile-only previous / next row. Hidden on desktop

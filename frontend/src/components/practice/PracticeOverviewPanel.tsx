@@ -50,16 +50,52 @@ export function PracticeOverviewPanel({
         ? 'Scoring is still in progress. Scores will fill in here as feedback finishes.'
       : `No turns were scored in this session.`;
 
+  // While the session is still finalizing, the server-side `averages` are null
+  // until every turn is scored — so the per-dimension tiles would read as
+  // dashes even though earlier turns already have scores (and the caption
+  // above already shows a real overall). Derive the tile averages from the
+  // turns scored so far instead, then switch to the canonical server averages
+  // once completed. Mirrors the old in-Practice Results behavior.
+  const effectiveAverages = sessionCompleted ? averages : averagesFromTurns(turns);
+
   return (
     <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-6 min-[900px]:gap-8 p-6 min-[900px]:p-8">
       <IntroColumn company={company} jobTitle={jobTitle} />
       <ScoresOverviewColumn
-        averages={averages}
+        averages={effectiveAverages}
         caption={caption}
         fillerRate={sessionFillerRate(turns)}
       />
     </div>
   );
+}
+
+const SCORE_DIM_KEYS: ReadonlyArray<keyof DimensionAverages> = [
+  'structure',
+  'problem_solving',
+  'impact',
+  'initiative',
+  'depth',
+  'delivery',
+];
+
+/**
+ * Per-dimension averages over only the turns scored so far — each dimension
+ * averages its non-null values, or null when no turn has that score yet.
+ * Whitespace-free `.toFixed(2)` strings match the wire-format `DimensionAverages`
+ * the tiles expect. Used for the pending state so partial scores still show.
+ */
+function averagesFromTurns(turns: TurnDetail[]): DimensionAverages {
+  const out = {} as DimensionAverages;
+  for (const key of SCORE_DIM_KEYS) {
+    const vals = turns
+      .map((t) => t.scores[key])
+      .filter((v): v is number => typeof v === 'number');
+    out[key] = vals.length === 0
+      ? null
+      : (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
+  }
+  return out;
 }
 
 /**

@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { getReplayFaceLandmarker } from '../../lib/faceLandmarker';
+import { cn } from '../../lib/utils';
 import { InnerCard, Eyebrow } from '../session-detail/_turnInnerCards';
 
 type Props = {
@@ -26,6 +27,12 @@ type Props = {
   turnNum: number;
 };
 
+// Small pill control sitting in the card header, ON the sunken card surface
+// (not overlaid on the video) — so it needs surface-legible styling and a
+// visible focus ring rather than the old translucent-on-video treatment.
+const REPLAY_CONTROL_CLASS =
+  'cursor-pointer rounded-full border border-border-strong bg-surface-raised px-3 py-1 text-xs font-medium text-text-muted transition hover:border-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-sunken';
+
 export function VideoReplayCard({ replayUrl, audioReplayUrl, turnNum }: Props) {
   const [showLandmarks, setShowLandmarks] = useState(false);
   const replayVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -33,7 +40,30 @@ export function VideoReplayCard({ replayUrl, audioReplayUrl, turnNum }: Props) {
   if (replayUrl) {
     return (
       <InnerCard>
-        <Eyebrow>Replay</Eyebrow>
+        <div className="flex items-center justify-between gap-3">
+          <Eyebrow>Replay</Eyebrow>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowLandmarks((v) => !v)}
+              aria-pressed={showLandmarks}
+              className={cn(
+                REPLAY_CONTROL_CLASS,
+                showLandmarks
+                  && 'border-text bg-text text-surface hover:border-text hover:text-surface',
+              )}
+            >
+              {showLandmarks ? 'Hide landmarks' : 'Show landmarks'}
+            </button>
+            <a
+              href={replayUrl}
+              download={`turn-${turnNum}.webm`}
+              className={REPLAY_CONTROL_CLASS}
+            >
+              Download
+            </a>
+          </div>
+        </div>
         <div className="relative mt-3 flex-1 min-h-0 overflow-hidden rounded-lg bg-surface-sunken">
           <video
             ref={replayVideoRef}
@@ -47,23 +77,6 @@ export function VideoReplayCard({ replayUrl, audioReplayUrl, turnNum }: Props) {
               <ReplayLandmarkOverlay videoRef={replayVideoRef} />
             </div>
           )}
-          <div className="absolute right-3 top-3 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setShowLandmarks((v) => !v)}
-              aria-pressed={showLandmarks}
-              className="cursor-pointer rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
-            >
-              {showLandmarks ? 'Hide landmarks' : 'Show landmarks'}
-            </button>
-            <a
-              href={replayUrl}
-              download={`turn-${turnNum}.webm`}
-              className="cursor-pointer rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/90 backdrop-blur-sm transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
-            >
-              Download
-            </a>
-          </div>
         </div>
       </InnerCard>
     );
