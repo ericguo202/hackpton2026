@@ -30,7 +30,7 @@ Error codes:
   409 — email already claimed by another `users` row
   413 — resume file exceeds 5 MB
   415 — non-PDF upload
-  422 — PDF parsed but produced no text
+  422 — PDF produced no text, declares too many pages, or parsing timed out
 """
 
 import asyncio
@@ -60,6 +60,26 @@ logger = logging.getLogger(__name__)
 _MAX_RESUME_BYTES = 5 * 1024 * 1024
 _CHUNK_SIZE = 1024 * 1024
 
+# A résumé is 1-3 pages. Cap at 4 so a PDF that *declares* thousands of pages
+# (each one triggering pdfplumber's per-page layout analysis) is rejected up
+# front, before any expensive text extraction runs. The page count is metadata
+# the attacker controls independently of file size, so the byte cap alone
+# doesn't bound it.
+_MAX_RESUME_PAGES = 4
+
+# Hard wall-clock bound on the parse itself. pdfminer (pdfplumber's engine) has
+# no internal time/CPU budget, so a crafted 5 MiB file — e.g. a Flate-compressed
+# content stream that decompresses to hundreds of MB of operators — can pin a
+# thread for a long time. The timeout bounds the *request*; see the note at the
+# call site about the orphaned worker thread.
+_PDF_PARSE_TIMEOUT_S = 10.0
+
+
+class _PdfTooManyPagesError(Exception):
+    """Raised by `_extract_pdf_text` when the PDF declares more pages than a
+    résumé plausibly has. Lets the caller return a specific 422 (distinct from
+    a generic parse failure) without making the parser HTTP-aware."""
+
 
 async def _read_pdf_bounded(file: UploadFile) -> bytes:
     """Read the full upload into memory, aborting with 413 if it exceeds the cap."""
@@ -78,8 +98,17 @@ async def _read_pdf_bounded(file: UploadFile) -> bytes:
 
 
 def _extract_pdf_text(content: bytes) -> str:
-    """Extract concatenated text from every page. Returns '' if nothing parses."""
+    """Extract concatenated text from every page. Returns '' if nothing parses.
+
+    Raises `_PdfTooManyPagesError` if the document declares more than
+    `_MAX_RESUME_PAGES` pages. The page-count check runs *before* the per-page
+    `extract_text()` loop (which does the expensive layout analysis), so a
+    page-explosion bomb is rejected cheaply — only the page tree is resolved.
+    """
     with pdfplumber.open(BytesIO(content)) as pdf:
+        page_count = len(pdf.pages)
+        if page_count > _MAX_RESUME_PAGES:
+            raise _PdfTooManyPagesError(page_count)
         pages = [page.extract_text() or "" for page in pdf.pages]
     return "\n".join(pages).strip()
 
@@ -127,8 +156,39 @@ async def onboarding(
         try:
             # pdfplumber parsing is synchronous CPU/IO-bound work; run it off
             # the event loop so a large résumé doesn't stall other requests on
-            # this worker for the duration of the parse.
-            extracted_text = await asyncio.to_thread(_extract_pdf_text, content)
+            # this worker for the duration of the parse. The wait_for bounds how
+            # long we'll wait — a parser-bomb PDF can't pin the request forever.
+            #
+            # Caveat: wait_for cancels the *await*, freeing the event loop, but
+            # it can't kill the worker thread — pdfminer keeps running until it
+            # returns. That orphaned thread is acceptable here because (a) the
+            # page cap rejects the page-explosion vector before any layout work,
+            # and (b) the 5 MiB byte cap bounds the worst-case single parse. The
+            # timeout's job is to stop request pile-up, not to reclaim the CPU.
+            extracted_text = await asyncio.wait_for(
+                asyncio.to_thread(_extract_pdf_text, content),
+                timeout=_PDF_PARSE_TIMEOUT_S,
+            )
+        except _PdfTooManyPagesError as e:
+            # Distinct, actionable message — the user just needs a shorter file.
+            logger.info("Resume PDF rejected: %s pages (max %s)", e, _MAX_RESUME_PAGES)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Resume has too many pages (max {_MAX_RESUME_PAGES}). "
+                    "Please upload a shorter PDF."
+                ),
+            )
+        except (asyncio.TimeoutError, TimeoutError):
+            # Treat a slow parse as a bad file rather than a 500. Log it so we
+            # can spot a real abuse pattern; keep the client message generic.
+            logger.warning(
+                "PDF parse exceeded %ss during onboarding", _PDF_PARSE_TIMEOUT_S
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Could not process the uploaded PDF in time. Please try a simpler file.",
+            )
         except Exception:  # pdfplumber raises a variety of internal errors
             # Log the parser error server-side; return a generic message so
             # we don't leak pdfplumber/pdfminer internals to the client.
