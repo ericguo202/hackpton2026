@@ -32,6 +32,16 @@ __all__ = [
 
 # The JSON example uses literal `{` and `}` — doubled below so `str.format`
 # leaves them alone and only substitutes the `{industry_guidance}` slot.
+#
+# `{industry_guidance}` is deliberately the LAST thing in the template (the only
+# per-category text), so everything before it is a category-independent prefix.
+# This is the evaluator's prompt-cache key: gpt-5-mini auto-caches identical
+# prefixes (OpenAI, 1024-token minimum), so two evals in *different* fields now
+# share the full ~2k-token rubric instead of only the slice up to a mid-prompt
+# slot. Keep this slot at the tail — moving it earlier re-splits the prefix and
+# re-bills the shared rubric at full price. Mirror any move in
+# `prompts/evaluator_prompts.md` (the `[ADDITIONAL INDUSTRY-SPECIFIC CRITERIA…]`
+# marker).
 BASE_SYSTEM_INSTRUCTION = """\
 You are a behavioral-interview coach scoring a candidate's response. Return ONLY a single JSON object with the following keys, and nothing else (no markdown, no prose, no thinking steps):
 {{
@@ -76,10 +86,6 @@ Scoring rules and how to evaluate each general criterion (use these guidelines t
 - depth: Evaluate domain rigor and practical competence. High (8–10) explains relevant methods, tools, design/architecture, standards or compliance with sufficient detail for a peer to judge correctness and trade-offs. Mid (4–7) mentions technologies or methods without depth or rationale. Low (0–3) shows superficial statements, or deflects instead of giving a relevant answer. Score based on accuracy, depth, and relevance to the role.
 
 - delivery: (Optional) Evaluate confident presence and clear communication via verbal and non-verbal signals. High (8–10) = steady pacing, vocal variety, clear phrasing, consistent eye contact, and composed posture. Mid (4–7) = generally clear but occasional monotone, pacing issues, or brief eye contact lapses. Low (0–3) = flat voice, long pauses, poor eye contact, or distracting posture.
-
-Industry-specific guidance (additional considerations for this candidate's field):
-
-{industry_guidance}
 
 Scoring scale guidance (apply consistently):
 
@@ -157,6 +163,10 @@ feedback_detail.quick_wins:
 notes:
 
 - Write a short fallback summary based on feedback_detail for older clients. Do not add new ideas here.
+
+Industry-specific guidance (additional considerations for this candidate's field):
+
+{industry_guidance}
 """
 
 

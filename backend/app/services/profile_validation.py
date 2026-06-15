@@ -183,6 +183,12 @@ async def _chat_suggestions(messages: list[dict[str, str]]) -> list[str]:
     """
     client = get_client()
     last_exc: Exception | None = None
+    # Prompt-cache note: both models here (gemini-2.5-flash-lite primary,
+    # gpt-oss-120b fallback) only cache prefixes >= 1024 tokens. The autocomplete
+    # system prompts are ~350 tokens, so these calls do NOT cache regardless of
+    # ordering — expected given the small prompt, and not worth padding. The
+    # caller still passes the static system prompt first (messages[0]) with the
+    # typed input in the user message, so ordering is correct if prompts grow.
     for model in (SUGGESTION_MODEL, SUGGESTION_FALLBACK_MODEL):
         try:
             response = await client.chat.completions.create(

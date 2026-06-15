@@ -42,8 +42,6 @@ Scoring rules and how to evaluate each general criterion (use these guidelines t
 
 - delivery: (Optional) Evaluate confident presence and clear communication via verbal and non-verbal signals. High (8–10) = steady pacing, vocal variety, clear phrasing, consistent eye contact, and composed posture. Mid (4–7) = generally clear but occasional monotone, pacing issues, or brief eye contact lapses. Low (0–3) = flat voice, long pauses, poor eye contact, or distracting posture.
 
-[ADDITIONAL INDUSTRY-SPECIFIC CRITERIA GO HERE]
-
 Scoring scale guidance (apply consistently):
 
 - 9–10: Exceptional, well-structured, evidence-rich, and role-appropriate; outputs show clear attribution and peer-level technical reasoning.
@@ -120,6 +118,13 @@ feedback_detail.quick_wins:
 notes:
 
 - Write a short fallback summary based on feedback_detail for older clients. Do not add new ideas here.
+
+[ADDITIONAL INDUSTRY-SPECIFIC CRITERIA GO HERE]
+
+(The matching category's block from the catalog below is spliced in HERE at runtime —
+deliberately at the tail so everything above is a category-independent, cacheable prompt
+prefix. Mirror of `BASE_SYSTEM_INSTRUCTION`'s `{industry_guidance}` slot in
+`app/services/_field_rubrics.py`.)
 
 # ADDITIONAL INDUSTRY-SPECIFIC CRITERIA
 

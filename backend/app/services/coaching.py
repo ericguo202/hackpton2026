@@ -165,6 +165,13 @@ async def generate_next_take(
     )
     try:
         client = get_client()
+        # Prompt-cache layout: deepseek-v4-flash auto-caches identical prefixes
+        # (DeepSeek context caching, 64-token unit minimum). The system message
+        # is a fully static block (`_SYSTEM_PROMPT + _SECURITY_CLAUSE`) placed
+        # first, so it's a stable cache prefix across every coaching call. Keep
+        # the per-request data (context/question/transcript/evaluator notes) in
+        # the user message — interpolating it into the system message breaks the
+        # shared prefix.
         response = await client.chat.completions.create(
             model=COACHING_MODEL,
             messages=[

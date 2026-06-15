@@ -210,6 +210,12 @@ async def generate_followup(
         "Followup prompt sent (question=%r, transcript_len=%d, category=%r)",
         question, len(transcript), category,
     )
+    # Prompt-cache layout: deepseek-v4-flash auto-caches identical prefixes
+    # (DeepSeek context caching, 64-token unit minimum). The system message is a
+    # fully static block (`_SYSTEM_PROMPT + _SECURITY_CLAUSE`) placed first, so
+    # it's a stable cache prefix shared across every follow-up call. Keep the
+    # per-request data (context/question/transcript) in the user message — don't
+    # interpolate it into the system message or the prefix stops matching.
     response = await client.chat.completions.create(
         model=FOLLOWUP_MODEL,
         messages=[
