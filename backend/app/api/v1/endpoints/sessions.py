@@ -224,31 +224,29 @@ async def create_session(
     # feed downstream LLM prompts. Blocking HERE means the content never
     # reaches Serper, OpenRouter, or ElevenLabs — so a malicious company
     # / job-title value can't cost us API-key reputation.
-    # The two fields are independent, so moderate them concurrently — each
-    # check_moderation logs its incident in its own short-lived session, so the
+    # `company` is freshly typed in the setup form each session, so it always
+    # needs moderation. `job_title` is NOT editable there — the frontend sends
+    # the profile's `target_role`, already moderated at onboarding — so only
+    # re-moderate it when a (direct-API) caller sends something other than that
+    # vetted value. The remaining checks are independent, so run them
+    # concurrently; each logs its incident in its own short-lived session, so the
     # request `db` is never touched concurrently.
-    company_check, title_check = await asyncio.gather(
-        check_moderation(
-            body.company,
-            user=user,
-            db=db,
-            metadata={"source": "sessions.company"},
-        ),
-        check_moderation(
-            body.job_title,
-            user=user,
-            db=db,
-            metadata={"source": "sessions.job_title"},
-        ),
-    )
-    if company_check.flagged or title_check.flagged:
+    moderation_targets = [("sessions.company", body.company)]
+    if body.job_title != user.target_role:
+        moderation_targets.append(("sessions.job_title", body.job_title))
+    checks = await asyncio.gather(*(
+        check_moderation(value, user=user, db=db, metadata={"source": source})
+        for source, value in moderation_targets
+    ))
+    flagged = [
+        (source, check.categories)
+        for (source, _), check in zip(moderation_targets, checks)
+        if check.flagged
+    ]
+    if flagged:
         logger.warning(
-            "Session-create rejected by moderation clerk_user_id=%s "
-            "company_flagged=%s company_categories=%s "
-            "title_flagged=%s title_categories=%s",
-            user.clerk_user_id,
-            company_check.flagged, company_check.categories,
-            title_check.flagged, title_check.categories,
+            "Session-create rejected by moderation clerk_user_id=%s flagged=%s",
+            user.clerk_user_id, flagged,
         )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
