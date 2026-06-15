@@ -46,8 +46,7 @@ from app.services.company_research import (
 from app.services._field_prompts import FieldCategory
 from app.services._injection import contains_injection
 from app.services.daily_limit import (
-    DAILY_LIMIT_FREE,
-    check_and_reset as daily_check_and_reset,
+    enforce_daily_limit,
     increment as daily_increment,
 )
 from app.services.coaching import generate_next_take
@@ -64,7 +63,7 @@ from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
 from app.services.tts import synthesize_speech
-from app.services.voice_pool import is_valid_voice_id, voice_for_session
+from app.services.voice_pool import resolve_voice, voice_for_session
 
 logger = logging.getLogger(__name__)
 
@@ -192,35 +191,12 @@ async def create_session(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> SessionCreateOut:
-    # Persist the user's latest timezone whenever the client sends one.
-    # Stored on User (not on the session row) so the daily-limit gate can
-    # compute "today" in the user's local calendar consistently across
-    # sessions, even if the user later starts a request that omits TZ.
-    if body.timezone and body.timezone != user.timezone:
-        user.timezone = body.timezone
-        await db.commit()
-
-    # Free-tier daily-limit gate. Runs BEFORE moderation / research / TTS
-    # so a rate-limited request never spends Serper, OpenRouter, or
-    # ElevenLabs credits. `daily_check_and_reset` atomically rolls the
-    # counter back to 0 the first time we see this user on a new local
-    # day, then returns the post-reset count. The counter itself only
-    # advances at session finalization (`daily_increment` in the
-    # final-turn branch of `submit_turn`).
-    if user.tier == UserTier.free:
-        current_count = await daily_check_and_reset(db, user)
-        if current_count >= DAILY_LIMIT_FREE:
-            logger.info(
-                "Free-tier daily limit hit clerk_user_id=%s count=%s",
-                user.clerk_user_id, current_count,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=(
-                    f"You have reached your daily limit of {DAILY_LIMIT_FREE} "
-                    "interviews. Come back tomorrow."
-                ),
-            )
+    # Persist the client's latest timezone and enforce the free-tier daily cap
+    # BEFORE moderation / research / TTS so a rate-limited request never spends
+    # Serper, OpenRouter, or ElevenLabs credits. The counter itself only
+    # advances at session finalization (`daily_increment` in the final-turn
+    # branch of `submit_turn`).
+    await enforce_daily_limit(db, user, timezone=body.timezone)
 
     # Deterministic prompt-injection gate on the two user-authored inputs that
     # feed company research + every downstream prompt. Free (no network) so it
@@ -248,17 +224,22 @@ async def create_session(
     # feed downstream LLM prompts. Blocking HERE means the content never
     # reaches Serper, OpenRouter, or ElevenLabs — so a malicious company
     # / job-title value can't cost us API-key reputation.
-    company_check = await check_moderation(
-        body.company,
-        user=user,
-        db=db,
-        metadata={"source": "sessions.company"},
-    )
-    title_check = await check_moderation(
-        body.job_title,
-        user=user,
-        db=db,
-        metadata={"source": "sessions.job_title"},
+    # The two fields are independent, so moderate them concurrently — each
+    # check_moderation logs its incident in its own short-lived session, so the
+    # request `db` is never touched concurrently.
+    company_check, title_check = await asyncio.gather(
+        check_moderation(
+            body.company,
+            user=user,
+            db=db,
+            metadata={"source": "sessions.company"},
+        ),
+        check_moderation(
+            body.job_title,
+            user=user,
+            db=db,
+            metadata={"source": "sessions.job_title"},
+        ),
     )
     if company_check.flagged or title_check.flagged:
         logger.warning(
@@ -300,20 +281,10 @@ async def create_session(
     # parallel instead of waiting on the DB to hand back a
     # server-generated UUID.
     session_id = uuid.uuid4()
-    # Resolve the voice in this priority order:
-    #   1. Candidate's explicit pick from the start-form picker
-    #      (validated against the public pool — unknown IDs would 404
-    #      at ElevenLabs and burn quota, so we fall through silently
-    #      instead of trusting client input).
-    #   2. Deterministic-random voice derived from the session UUID,
-    #      which gives roughly uniform coverage across the pool when
-    #      the candidate skipped the picker.
-    # Either way, the resolved voice is persisted on the session row
-    # below so turn 2's TTS reads the same value without re-deriving.
-    if body.voice_id and is_valid_voice_id(body.voice_id):
-        voice_id = body.voice_id
-    else:
-        voice_id = voice_for_session(session_id)
+    # Honor the candidate's picker choice when valid, else a deterministic
+    # per-session voice (see `resolve_voice`). The resolved voice is persisted
+    # on the session row below so turn 2's TTS reads the same value.
+    voice_id = resolve_voice(body.voice_id, session_id)
 
     audio_url, _ = await asyncio.gather(
         synthesize_speech(opening_q, voice_id=voice_id),

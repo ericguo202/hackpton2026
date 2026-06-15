@@ -297,6 +297,14 @@ if _missing:
         "Every FieldCategory must have a corresponding rubric appendix."
     )
 
+# The non-experience portion of the system instruction is a pure function of the
+# 15 categories, so format it once at import instead of re-scanning the ~6 KB
+# template on every evaluate_turn call.
+_BASE_INSTRUCTION_BY_KEY: dict[FieldCategory, str] = {
+    key: BASE_SYSTEM_INSTRUCTION.format(industry_guidance=guidance)
+    for key, guidance in INDUSTRY_GUIDANCE.items()
+}
+
 
 def build_system_instruction(
     category: FieldCategory | None,
@@ -323,7 +331,7 @@ def build_system_instruction(
     from app.services._experience_prompts import experience_evaluator_block
 
     key = category if category in INDUSTRY_GUIDANCE else DEFAULT_CATEGORY
-    instruction = BASE_SYSTEM_INSTRUCTION.format(industry_guidance=INDUSTRY_GUIDANCE[key])
+    instruction = _BASE_INSTRUCTION_BY_KEY[key]
 
     experience_block = experience_evaluator_block(key, experience_level)
     if experience_block:

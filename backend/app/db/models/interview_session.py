@@ -1,8 +1,8 @@
 """
 `interview_sessions` — one row per mock interview attempt.
 
-`company` / `job_title` are denormalized from the linked config so that
-editing a config later doesn't mutate historical session records.
+`company` / `job_title` are a snapshot captured at session-create time from
+`SessionCreateIn`, so later profile edits don't mutate historical records.
 
 `overall_score` uses a 0-100 percent scale (aggregate), NOT the 0-10 scale
 used on per-turn score columns. Frontend must rescale when displaying.
@@ -39,24 +39,17 @@ class InterviewSession(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
-    config_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("interview_configs.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
     status: Mapped[SessionStatus] = mapped_column(
         Enum(SessionStatus, name="session_status", create_type=False),
         nullable=False,
         server_default=text("'pending'"),
     )
 
-    # Denormalized snapshot of the config at session-start time.
+    # Snapshot of the start-form inputs at session-create time.
     company: Mapped[str] = mapped_column(Text, nullable=False)
     job_title: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Gemini's per-session company-research output (architecture step 1).
-    # Distinct from interview_configs.company_context (user-supplied).
     company_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     overall_score: Mapped[Decimal | None] = mapped_column(

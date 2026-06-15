@@ -18,9 +18,11 @@ on the UPDATE.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from fastapi import HTTPException, status
 from sqlalchemy import case, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # `check_and_reset` uses `is_distinct_from` so the UPDATE never fires on a
 # row whose `count_reset_date` is already today — see its docstring.
 
+from app.db.models.enums import UserTier
 from app.db.models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 # Per-day cap for free-tier users. Pro users skip this gate entirely at
@@ -94,6 +99,40 @@ async def check_and_reset(db: AsyncSession, user: User) -> int:
     # No reset needed — the stored counter is already today's. The ORM
     # instance is already current; no commit because nothing was written.
     return user.daily_session_count
+
+
+async def enforce_daily_limit(
+    db: AsyncSession, user: User, *, timezone: str | None = None
+) -> None:
+    """Persist the client's timezone, then 429 if the free-tier daily cap is hit.
+
+    Shared by the two session-creating endpoints (`create_session` and
+    `practice_saved_question`) so the gate policy — which tier it applies to,
+    the 429 copy, and the tz-before-reset ordering — lives in exactly one
+    place. The timezone is written first so `check_and_reset` computes "today"
+    in the user's local calendar. Pro users skip the gate entirely. The counter
+    only advances at finalization (`increment`), so this read-only pre-check can
+    let one extra session through under a tight race — by design (see the module
+    docstring).
+    """
+    if timezone and timezone != user.timezone:
+        user.timezone = timezone
+        await db.commit()
+    if user.tier != UserTier.free:
+        return
+    current_count = await check_and_reset(db, user)
+    if current_count >= DAILY_LIMIT_FREE:
+        logger.info(
+            "Free-tier daily limit hit clerk_user_id=%s count=%s",
+            user.clerk_user_id, current_count,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"You have reached your daily limit of {DAILY_LIMIT_FREE} "
+                "interviews. Come back tomorrow."
+            ),
+        )
 
 
 async def increment(db: AsyncSession, user: User) -> None:

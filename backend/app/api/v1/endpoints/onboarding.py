@@ -33,6 +33,7 @@ Error codes:
   422 — PDF parsed but produced no text
 """
 
+import asyncio
 import logging
 from io import BytesIO
 
@@ -124,7 +125,10 @@ async def onboarding(
         content = await _read_pdf_bounded(resume_file)
 
         try:
-            extracted_text = _extract_pdf_text(content)
+            # pdfplumber parsing is synchronous CPU/IO-bound work; run it off
+            # the event loop so a large résumé doesn't stall other requests on
+            # this worker for the duration of the parse.
+            extracted_text = await asyncio.to_thread(_extract_pdf_text, content)
         except Exception as exc:  # pdfplumber raises a variety of internal errors
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -174,21 +178,22 @@ async def onboarding(
         ("onboarding.short_bio", short_bio),
         ("onboarding.resume_text", final_resume_text),
     )
-    for source, field_value in moderation_fields:
-        check = await check_moderation(
-            field_value,
-            user=user,
-            db=db,
-            metadata={"source": source},
+    # The fields are independent, so moderate them concurrently. Empty fields
+    # short-circuit to a safe verdict with no network call, and each
+    # check_moderation logs its incident in its own short-lived session, so the
+    # request `db` is never used concurrently.
+    checks = await asyncio.gather(*(
+        check_moderation(value, user=user, db=db, metadata={"source": source})
+        for source, value in moderation_fields
+    ))
+    if any(check.flagged for check in checks):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "One of your profile fields contains content that "
+                "violates our usage policy. Please revise and resubmit."
+            ),
         )
-        if check.flagged:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    "One of your profile fields contains content that "
-                    "violates our usage policy. Please revise and resubmit."
-                ),
-            )
 
     # The opening-question avoid-list is keyed on the candidate's
     # role/industry/experience-level "shape" — once any of those change, the

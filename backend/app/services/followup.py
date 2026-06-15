@@ -206,7 +206,7 @@ async def generate_followup(
         question, transcript, category, role_signals, sample_question_themes,
         experience_level,
     )
-    logger.warning(
+    logger.debug(
         "Followup prompt sent (question=%r, transcript_len=%d, category=%r)",
         question, len(transcript), category,
     )
@@ -225,7 +225,7 @@ async def generate_followup(
         extra_body={"reasoning": {"enabled": False}},
     )
     raw = response.choices[0].message.content or ""
-    logger.warning("Followup raw response: %r", raw)
+    logger.debug("Followup raw response: %r", raw)
     result = _sanitize_followup(raw)
     if "?" not in result or len(result) < 15:
         logger.warning("Followup fallback triggered (result=%r)", result)
