@@ -129,10 +129,13 @@ async def onboarding(
             # the event loop so a large résumé doesn't stall other requests on
             # this worker for the duration of the parse.
             extracted_text = await asyncio.to_thread(_extract_pdf_text, content)
-        except Exception as exc:  # pdfplumber raises a variety of internal errors
+        except Exception:  # pdfplumber raises a variety of internal errors
+            # Log the parser error server-side; return a generic message so
+            # we don't leak pdfplumber/pdfminer internals to the client.
+            logger.warning("PDF parse failed during onboarding", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Could not parse PDF: {exc}",
+                detail="Could not parse the uploaded PDF. Please try a different file.",
             )
 
         if not extracted_text:

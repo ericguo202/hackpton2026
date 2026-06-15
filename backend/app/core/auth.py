@@ -14,6 +14,7 @@ Verification flow:
 We never share secrets with Clerk here — JWKS is public by design.
 """
 
+import logging
 from typing import Optional
 
 import httpx
@@ -28,6 +29,8 @@ from app.core.config import settings
 from app.db.models.user import User
 from app.db.session import get_db
 from app.services.incidents import log_user_created, log_user_signed_in
+
+logger = logging.getLogger(__name__)
 
 
 # Module-level JWKS cache. Clerk rotates signing keys rarely (on the order of
@@ -125,7 +128,10 @@ async def current_user(authorization: str = Header(None)) -> ClerkClaims:
         )
     except JWTError as e:
         # Covers: bad signature, expired, wrong issuer, malformed token, etc.
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+        # Log the specific reason server-side, but return a generic 401 so we
+        # don't hand an attacker details about why their token was rejected.
+        logger.info("JWT verification failed: %s", e)
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     # Pydantic will raise if the required fields (sub/iss/exp/iat) are missing,
     # which would also surface as a 500 — acceptable since a token that passes
