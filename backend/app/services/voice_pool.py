@@ -82,6 +82,20 @@ def is_valid_voice_id(voice_id: str) -> bool:
     return voice_id in _VOICE_BY_ID
 
 
+def resolve_voice(requested: str | None, session_id: UUID) -> str:
+    """Resolve a session's voice: honor a valid explicit pick, else fall back.
+
+    Priority: (1) the candidate's `requested` pick when it's a real pool ID
+    — unknown IDs would 404 at ElevenLabs and burn quota, so they're ignored
+    rather than trusted; (2) the deterministic per-session voice from
+    `voice_for_session`. Shared by the session-create and re-practice endpoints
+    so the resolution rule lives in one place.
+    """
+    if requested and is_valid_voice_id(requested):
+        return requested
+    return voice_for_session(session_id)
+
+
 def voice_for_session(session_id: UUID) -> str:
     """Return a deterministic voice ID for `session_id` (fallback path).
 

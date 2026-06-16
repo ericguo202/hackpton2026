@@ -24,7 +24,7 @@ from sqlalchemy import delete as sql_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_db
-from app.db.models.enums import SessionStatus, UserTier
+from app.db.models.enums import SessionStatus
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
 from app.db.models.saved_question import SavedQuestion
@@ -43,16 +43,13 @@ from app.api.v1.endpoints.sessions import (
     _parse_company_summary,
     _persist_session_and_turn,
 )
-from app.services.daily_limit import (
-    DAILY_LIMIT_FREE,
-    check_and_reset as daily_check_and_reset,
-)
+from app.services.daily_limit import enforce_daily_limit
 from app.services.incidents import (
     log_interview_session_started,
     log_save_question,
 )
 from app.services.tts import synthesize_speech
-from app.services.voice_pool import is_valid_voice_id, voice_for_session
+from app.services.voice_pool import resolve_voice
 
 logger = logging.getLogger(__name__)
 
@@ -357,24 +354,10 @@ async def practice_saved_question(
 ) -> SessionCreateOut:
     sq = await _get_owned_saved_question(db, user, saved_question_id)
 
-    # Persist the latest timezone (same as create_session) so the daily-limit
-    # gate computes "today" in the user's local calendar consistently.
-    if body.timezone and body.timezone != user.timezone:
-        user.timezone = body.timezone
-        await db.commit()
-
-    # Free-tier daily-limit gate — a re-practice is a full session. Runs before
-    # any TTS spend; counter still increments at finalization in submit_turn.
-    if user.tier == UserTier.free:
-        current_count = await daily_check_and_reset(db, user)
-        if current_count >= DAILY_LIMIT_FREE:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=(
-                    f"You have reached your daily limit of {DAILY_LIMIT_FREE} "
-                    "interviews. Come back tomorrow."
-                ),
-            )
+    # Persist the latest timezone and enforce the free-tier daily cap before any
+    # TTS spend — a re-practice is a full session. Counter still increments at
+    # finalization in submit_turn.
+    await enforce_daily_limit(db, user, timezone=body.timezone)
 
     # Everything is frozen on the saved row — no research / question-gen LLM
     # calls. The opening question and brief are read straight off it.
@@ -382,10 +365,7 @@ async def practice_saved_question(
     brief = _parse_company_summary(sq.company_summary)
 
     session_id = uuid.uuid4()
-    if body.voice_id and is_valid_voice_id(body.voice_id):
-        voice_id = body.voice_id
-    else:
-        voice_id = voice_for_session(session_id)
+    voice_id = resolve_voice(body.voice_id, session_id)
 
     audio_url = await synthesize_speech(opening_q, voice_id=voice_id)
     await _persist_session_and_turn(

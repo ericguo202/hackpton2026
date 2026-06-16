@@ -333,6 +333,12 @@ async def _create_research_completion(
     user_content: str,
     retry_after: str | None = None,
 ) -> str:
+    # Prompt-cache layout: gemini-2.5-flash auto-caches identical prefixes
+    # (Gemini implicit caching, 1024-token minimum). `_SYSTEM_INSTRUCTION` is a
+    # fully static ~1.5k-token block and sits first, so it forms a stable cache
+    # prefix shared across every research call. Keep the per-request data
+    # (company/job_title/search digests) in the user message — moving any of it
+    # into the system message would drop the call below the cache threshold.
     messages = [
         {"role": "system", "content": _SYSTEM_INSTRUCTION},
         {"role": "user", "content": user_content},

@@ -783,6 +783,13 @@ async def evaluate_turn(
         return result
 
     client = get_client()
+    # Prompt-cache layout: gpt-5-mini auto-caches identical prefixes (OpenAI,
+    # 1024-token minimum). The system message is that prefix — it holds only
+    # static, category/level-keyed content (rubric + per-category guidance +
+    # experience block + injection clause), so it's byte-identical across every
+    # eval in the same field and re-bills at the cache-read rate. Keep all
+    # per-request data (question/transcript/history) in the user message below;
+    # interpolating any of it into the system message would break the cache.
     response = await client.chat.completions.create(
         model=EVAL_MODEL,
         messages=[

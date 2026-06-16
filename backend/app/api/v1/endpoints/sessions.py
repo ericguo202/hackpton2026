@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
@@ -46,8 +46,7 @@ from app.services.company_research import (
 from app.services._field_prompts import FieldCategory
 from app.services._injection import contains_injection
 from app.services.daily_limit import (
-    DAILY_LIMIT_FREE,
-    check_and_reset as daily_check_and_reset,
+    enforce_daily_limit,
     increment as daily_increment,
 )
 from app.services.coaching import generate_next_take
@@ -64,7 +63,7 @@ from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
 from app.services.tts import synthesize_speech
-from app.services.voice_pool import is_valid_voice_id, voice_for_session
+from app.services.voice_pool import resolve_voice, voice_for_session
 
 logger = logging.getLogger(__name__)
 
@@ -192,35 +191,12 @@ async def create_session(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> SessionCreateOut:
-    # Persist the user's latest timezone whenever the client sends one.
-    # Stored on User (not on the session row) so the daily-limit gate can
-    # compute "today" in the user's local calendar consistently across
-    # sessions, even if the user later starts a request that omits TZ.
-    if body.timezone and body.timezone != user.timezone:
-        user.timezone = body.timezone
-        await db.commit()
-
-    # Free-tier daily-limit gate. Runs BEFORE moderation / research / TTS
-    # so a rate-limited request never spends Serper, OpenRouter, or
-    # ElevenLabs credits. `daily_check_and_reset` atomically rolls the
-    # counter back to 0 the first time we see this user on a new local
-    # day, then returns the post-reset count. The counter itself only
-    # advances at session finalization (`daily_increment` in the
-    # final-turn branch of `submit_turn`).
-    if user.tier == UserTier.free:
-        current_count = await daily_check_and_reset(db, user)
-        if current_count >= DAILY_LIMIT_FREE:
-            logger.info(
-                "Free-tier daily limit hit clerk_user_id=%s count=%s",
-                user.clerk_user_id, current_count,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=(
-                    f"You have reached your daily limit of {DAILY_LIMIT_FREE} "
-                    "interviews. Come back tomorrow."
-                ),
-            )
+    # Persist the client's latest timezone and enforce the free-tier daily cap
+    # BEFORE moderation / research / TTS so a rate-limited request never spends
+    # Serper, OpenRouter, or ElevenLabs credits. The counter itself only
+    # advances at session finalization (`daily_increment` in the final-turn
+    # branch of `submit_turn`).
+    await enforce_daily_limit(db, user, timezone=body.timezone)
 
     # Deterministic prompt-injection gate on the two user-authored inputs that
     # feed company research + every downstream prompt. Free (no network) so it
@@ -248,26 +224,29 @@ async def create_session(
     # feed downstream LLM prompts. Blocking HERE means the content never
     # reaches Serper, OpenRouter, or ElevenLabs — so a malicious company
     # / job-title value can't cost us API-key reputation.
-    company_check = await check_moderation(
-        body.company,
-        user=user,
-        db=db,
-        metadata={"source": "sessions.company"},
-    )
-    title_check = await check_moderation(
-        body.job_title,
-        user=user,
-        db=db,
-        metadata={"source": "sessions.job_title"},
-    )
-    if company_check.flagged or title_check.flagged:
+    # `company` is freshly typed in the setup form each session, so it always
+    # needs moderation. `job_title` is NOT editable there — the frontend sends
+    # the profile's `target_role`, already moderated at onboarding — so only
+    # re-moderate it when a (direct-API) caller sends something other than that
+    # vetted value. The remaining checks are independent, so run them
+    # concurrently; each logs its incident in its own short-lived session, so the
+    # request `db` is never touched concurrently.
+    moderation_targets = [("sessions.company", body.company)]
+    if body.job_title != user.target_role:
+        moderation_targets.append(("sessions.job_title", body.job_title))
+    checks = await asyncio.gather(*(
+        check_moderation(value, user=user, db=db, metadata={"source": source})
+        for source, value in moderation_targets
+    ))
+    flagged = [
+        (source, check.categories)
+        for (source, _), check in zip(moderation_targets, checks)
+        if check.flagged
+    ]
+    if flagged:
         logger.warning(
-            "Session-create rejected by moderation clerk_user_id=%s "
-            "company_flagged=%s company_categories=%s "
-            "title_flagged=%s title_categories=%s",
-            user.clerk_user_id,
-            company_check.flagged, company_check.categories,
-            title_check.flagged, title_check.categories,
+            "Session-create rejected by moderation clerk_user_id=%s flagged=%s",
+            user.clerk_user_id, flagged,
         )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -300,20 +279,10 @@ async def create_session(
     # parallel instead of waiting on the DB to hand back a
     # server-generated UUID.
     session_id = uuid.uuid4()
-    # Resolve the voice in this priority order:
-    #   1. Candidate's explicit pick from the start-form picker
-    #      (validated against the public pool — unknown IDs would 404
-    #      at ElevenLabs and burn quota, so we fall through silently
-    #      instead of trusting client input).
-    #   2. Deterministic-random voice derived from the session UUID,
-    #      which gives roughly uniform coverage across the pool when
-    #      the candidate skipped the picker.
-    # Either way, the resolved voice is persisted on the session row
-    # below so turn 2's TTS reads the same value without re-deriving.
-    if body.voice_id and is_valid_voice_id(body.voice_id):
-        voice_id = body.voice_id
-    else:
-        voice_id = voice_for_session(session_id)
+    # Honor the candidate's picker choice when valid, else a deterministic
+    # per-session voice (see `resolve_voice`). The resolved voice is persisted
+    # on the session row below so turn 2's TTS reads the same value.
+    voice_id = resolve_voice(body.voice_id, session_id)
 
     audio_url, _ = await asyncio.gather(
         synthesize_speech(opening_q, voice_id=voice_id),
@@ -676,11 +645,15 @@ async def _complete_session_from_turns(
     session: InterviewSession,
     user: User,
     turns: list[InterviewTurn],
-) -> None:
+) -> bool:
     """Aggregate evaluated turns and mark the session completed.
 
     Turns whose evaluator failed keep nullable score columns and are excluded
     from the relevant averages, matching the existing finalization policy.
+
+    Returns True if this call is the one that completed the session, False if
+    another worker had already finalized it (see the conditional-UPDATE gate
+    below) — the caller uses this to decide between commit and rollback.
     """
     all_turn_scores: list[_TurnScores] = [
         (
@@ -711,8 +684,39 @@ async def _complete_session_from_turns(
         1 for t in all_turn_scores if any(v is not None for v in t[:6])
     )
 
+    # Idempotent completion gate — cross-process safe.
+    #
+    # During a blue/green deploy cutover two finalizers can run for the same
+    # session: the outgoing color's still-detached background task plus the
+    # incoming color's lazy reaper. Both can read status=in_progress before
+    # either commits, and the `_finalizing_sessions` dedup set is per-process so
+    # it can't see across them. Flip the status with a conditional UPDATE
+    # instead: under READ COMMITTED the second writer blocks on this row's lock,
+    # then re-checks the predicate after the first commits, matches zero rows,
+    # and bails — so the daily-counter bump and metrics write happen exactly
+    # once no matter how many finalizers race.
+    result = await db.execute(
+        update(InterviewSession)
+        .where(
+            InterviewSession.id == session.id,
+            InterviewSession.status == SessionStatus.in_progress,
+        )
+        .values(
+            status=SessionStatus.completed,
+            ended_at=func.now(),
+            overall_score=overall,
+        )
+    )
+    if result.rowcount == 0:
+        logger.info(
+            "Session %s already finalized by another worker; skipping metrics "
+            "upsert and daily increment.",
+            session.id,
+        )
+        return False
+
+    # Mirror the committed row onto the in-memory ORM object for consistency.
     session.status        = SessionStatus.completed
-    session.ended_at      = func.now()
     session.overall_score = overall
 
     await _upsert_session_metrics(
@@ -727,6 +731,8 @@ async def _complete_session_from_turns(
 
     if user.tier == UserTier.free:
         await daily_increment(db, user)
+
+    return True
 
 
 async def _run_background_finalize(
@@ -834,14 +840,20 @@ async def _run_background_finalize(
                         },
                     )
 
-            await _complete_session_from_turns(
+            completed = await _complete_session_from_turns(
                 db,
                 session=session,
                 user=user,
                 turns=turns,
             )
-            await db.commit()
-            logger.info("Background finalize complete for session=%s", session_id)
+            if completed:
+                await db.commit()
+                logger.info("Background finalize complete for session=%s", session_id)
+            else:
+                # Lost the finalize race to another worker (deploy-cutover
+                # overlap). Discard our redundant re-evaluation instead of
+                # committing it over the turn rows the winner already wrote.
+                await db.rollback()
     except Exception as exc:  # noqa: BLE001
         logger.exception(
             "Background finalize failed for session=%s; session remains in_progress.",
@@ -898,7 +910,14 @@ async def submit_turn(
     # experience appendix in that case.
     experience_level = session.experience_level
 
-    # 2. Find the current unanswered turn (question exists, transcript is NULL).
+    # 2. Find the current unanswered turn (question exists, transcript is NULL)
+    #    and LOCK it. `with_for_update(skip_locked=True)` is what closes the
+    #    double-submit race: two concurrent POSTs for the same answer (double
+    #    click, retry, two tabs) used to both read this row before either wrote
+    #    a transcript — many `await`s pass before the commit in step 6 — so both
+    #    sailed through to a billed evaluator call. Now the first request holds a
+    #    row lock for the rest of the transaction; the second's `skip_locked`
+    #    SELECT skips the locked row and gets nothing back.
     result = await db.execute(
         select(InterviewTurn)
         .where(
@@ -907,9 +926,28 @@ async def submit_turn(
         )
         .order_by(InterviewTurn.turn_number)
         .limit(1)
+        .with_for_update(skip_locked=True)
     )
     current_turn = result.scalar_one_or_none()
     if current_turn is None:
+        # No row available — but distinguish "genuinely no pending turn" (all
+        # turns answered) from "the pending turn is locked by a sibling request
+        # that's mid-flight". A plain (non-locking) re-check tells them apart so
+        # we return the right status: a concurrent submit gets 409 (the client
+        # should not retry), an already-complete session keeps the old 400.
+        pending_exists = await db.scalar(
+            select(InterviewTurn.id)
+            .where(
+                InterviewTurn.session_id == session_id,
+                InterviewTurn.transcript_text.is_(None),
+            )
+            .limit(1)
+        )
+        if pending_exists is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This answer is already being processed.",
+            )
         raise HTTPException(status_code=400, detail="No pending turn for this session")
 
     # 3. Transcribe. Bounded read so an oversized upload is rejected with 413

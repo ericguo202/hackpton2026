@@ -25,12 +25,6 @@ class SessionStatus(str, enum.Enum):
     abandoned = "abandoned"      # user dropped off
 
 
-class InterviewType(str, enum.Enum):
-    behavioral = "behavioral"
-    technical = "technical"
-    mixed = "mixed"
-
-
 class UserTier(str, enum.Enum):
     free = "free"
     pro = "pro"

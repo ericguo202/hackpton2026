@@ -237,6 +237,12 @@ async def generate_opening_question(
         "Now write the opening question."
     )
 
+    # Prompt-cache note: gemini-3.5-flash uses implicit prefix caching but only
+    # for prefixes >= 1024 tokens. This system prompt is ~400 tokens (and varies
+    # per call via randomly sampled style examples), so the call does NOT cache
+    # today — that's expected, not a bug, and isn't worth padding to fix. Static
+    # content still goes first / per-request data in the user message, so it'll
+    # cache automatically if the system prompt ever grows past the threshold.
     response = await client.chat.completions.create(
         model=OPENING_MODEL,
         messages=[

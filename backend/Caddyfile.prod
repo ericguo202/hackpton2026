@@ -1,3 +1,21 @@
 tfpdo.space {
+    # Baseline security headers on every API response. Caddy already terminates
+    # TLS (HTTP->HTTPS auto-redirect), but HSTS must be explicit so browsers pin
+    # https for future visits. The API only ever returns JSON, so a CSP isn't
+    # meaningful here (no HTML is rendered) -- the SPA tier (frontend/vercel.json)
+    # owns the page CSP. nosniff + DENY are cheap and harmless on JSON.
+    #
+    # NOTE: the reverse_proxy (and any CORS handling) lives in the gitignored
+    # /etc/caddy/upstream snippet imported below. Verify that snippet does not
+    # add a second, more permissive CORS/header layer on top of these.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Don't advertise the server software (minor info-disclosure hardening).
+        -Server
+    }
+
     import /etc/caddy/upstream
 }

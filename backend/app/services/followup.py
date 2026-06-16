@@ -206,10 +206,16 @@ async def generate_followup(
         question, transcript, category, role_signals, sample_question_themes,
         experience_level,
     )
-    logger.warning(
+    logger.debug(
         "Followup prompt sent (question=%r, transcript_len=%d, category=%r)",
         question, len(transcript), category,
     )
+    # Prompt-cache layout: deepseek-v4-flash auto-caches identical prefixes
+    # (DeepSeek context caching, 64-token unit minimum). The system message is a
+    # fully static block (`_SYSTEM_PROMPT + _SECURITY_CLAUSE`) placed first, so
+    # it's a stable cache prefix shared across every follow-up call. Keep the
+    # per-request data (context/question/transcript) in the user message — don't
+    # interpolate it into the system message or the prefix stops matching.
     response = await client.chat.completions.create(
         model=FOLLOWUP_MODEL,
         messages=[
@@ -225,7 +231,7 @@ async def generate_followup(
         extra_body={"reasoning": {"enabled": False}},
     )
     raw = response.choices[0].message.content or ""
-    logger.warning("Followup raw response: %r", raw)
+    logger.debug("Followup raw response: %r", raw)
     result = _sanitize_followup(raw)
     if "?" not in result or len(result) < 15:
         logger.warning("Followup fallback triggered (result=%r)", result)
