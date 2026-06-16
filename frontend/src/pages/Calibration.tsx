@@ -17,7 +17,7 @@ import {
   ScanFace,
   ShieldCheck,
 } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import CalibrationConsentDialog from '../components/CalibrationConsentDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
@@ -880,8 +880,15 @@ function CalibrationConsentPanel({
             <p className="text-xs font-medium text-text">{consentLabel}</p>
             <p className="mt-1 text-xs leading-5 text-text-subtle">
               You can revoke this by removing calibration. That clears the local
-              baseline and consent record. Practice delivery analytics consent
-              is managed separately below.
+              baseline and consent record. To view the full privacy notice and
+              your consent, go to{' '}
+              <Link
+                to="/settings#/privacy"
+                className="text-text underline underline-offset-4 transition-colors hover:text-text-muted"
+              >
+                Settings
+              </Link>
+              .
             </p>
             <button
               type="button"
