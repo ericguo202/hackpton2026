@@ -867,7 +867,14 @@ async def submit_turn(
     # experience appendix in that case.
     experience_level = session.experience_level
 
-    # 2. Find the current unanswered turn (question exists, transcript is NULL).
+    # 2. Find the current unanswered turn (question exists, transcript is NULL)
+    #    and LOCK it. `with_for_update(skip_locked=True)` is what closes the
+    #    double-submit race: two concurrent POSTs for the same answer (double
+    #    click, retry, two tabs) used to both read this row before either wrote
+    #    a transcript — many `await`s pass before the commit in step 6 — so both
+    #    sailed through to a billed evaluator call. Now the first request holds a
+    #    row lock for the rest of the transaction; the second's `skip_locked`
+    #    SELECT skips the locked row and gets nothing back.
     result = await db.execute(
         select(InterviewTurn)
         .where(
@@ -876,9 +883,28 @@ async def submit_turn(
         )
         .order_by(InterviewTurn.turn_number)
         .limit(1)
+        .with_for_update(skip_locked=True)
     )
     current_turn = result.scalar_one_or_none()
     if current_turn is None:
+        # No row available — but distinguish "genuinely no pending turn" (all
+        # turns answered) from "the pending turn is locked by a sibling request
+        # that's mid-flight". A plain (non-locking) re-check tells them apart so
+        # we return the right status: a concurrent submit gets 409 (the client
+        # should not retry), an already-complete session keeps the old 400.
+        pending_exists = await db.scalar(
+            select(InterviewTurn.id)
+            .where(
+                InterviewTurn.session_id == session_id,
+                InterviewTurn.transcript_text.is_(None),
+            )
+            .limit(1)
+        )
+        if pending_exists is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This answer is already being processed.",
+            )
         raise HTTPException(status_code=400, detail="No pending turn for this session")
 
     # 3. Transcribe. Bounded read so an oversized upload is rejected with 413
