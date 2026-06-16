@@ -68,10 +68,6 @@ const elements = {
   userButtonPopoverCard: 'border border-border shadow-none',
   userButtonAvatarBox: 'ring-1 ring-border-strong',
   userButtonPopoverActionButton: 'hover:bg-surface-sunken',
-  // Clerk's auto-generated badge colors (the "This device" / "Primary" pills in
-  // <UserProfile>) come out near-invisible on the warm-espresso card. Pin them
-  // to readable, theme-aware tokens instead.
-  badge: 'bg-surface-sunken text-text-muted border border-border',
 }
 
 export default function Root() {

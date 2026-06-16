@@ -467,3 +467,15 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
 .cl-userPreviewAvatarBox > div {
   color: var(--color-accent-fg) !important;
 }
+
+/* Clerk's <UserProfile> badges ("This device", "Primary", etc.) auto-derive a
+   near-invisible low-alpha fill from the neutral palette, which disappears on
+   the espresso card. The `appearance.elements.badge` Tailwind override can't
+   beat Clerk's own specificity, so pin them to a solid cherry pill here. Reuses
+   the same accent tokens as the avatar (cherry fill + white text) so it stays
+   legible and on-brand in both the vanilla and black-cherry themes. */
+.cl-badge {
+  background-color: var(--color-accent) !important;
+  color: var(--color-accent-fg) !important;
+  border-color: transparent !important;
+}

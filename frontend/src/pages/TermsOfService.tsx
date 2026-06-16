@@ -440,7 +440,7 @@ export default function TermsOfService() {
 
         <Section id="contact" heading="16. Contact">
           <p>
-            Questions about these Terms can be sent to
+            Questions about these Terms can be sent to {' '}
             {PRIVACY_EMAIL}.
           </p>
         </Section>
