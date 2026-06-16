@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
@@ -645,11 +645,15 @@ async def _complete_session_from_turns(
     session: InterviewSession,
     user: User,
     turns: list[InterviewTurn],
-) -> None:
+) -> bool:
     """Aggregate evaluated turns and mark the session completed.
 
     Turns whose evaluator failed keep nullable score columns and are excluded
     from the relevant averages, matching the existing finalization policy.
+
+    Returns True if this call is the one that completed the session, False if
+    another worker had already finalized it (see the conditional-UPDATE gate
+    below) — the caller uses this to decide between commit and rollback.
     """
     all_turn_scores: list[_TurnScores] = [
         (
@@ -680,8 +684,39 @@ async def _complete_session_from_turns(
         1 for t in all_turn_scores if any(v is not None for v in t[:6])
     )
 
+    # Idempotent completion gate — cross-process safe.
+    #
+    # During a blue/green deploy cutover two finalizers can run for the same
+    # session: the outgoing color's still-detached background task plus the
+    # incoming color's lazy reaper. Both can read status=in_progress before
+    # either commits, and the `_finalizing_sessions` dedup set is per-process so
+    # it can't see across them. Flip the status with a conditional UPDATE
+    # instead: under READ COMMITTED the second writer blocks on this row's lock,
+    # then re-checks the predicate after the first commits, matches zero rows,
+    # and bails — so the daily-counter bump and metrics write happen exactly
+    # once no matter how many finalizers race.
+    result = await db.execute(
+        update(InterviewSession)
+        .where(
+            InterviewSession.id == session.id,
+            InterviewSession.status == SessionStatus.in_progress,
+        )
+        .values(
+            status=SessionStatus.completed,
+            ended_at=func.now(),
+            overall_score=overall,
+        )
+    )
+    if result.rowcount == 0:
+        logger.info(
+            "Session %s already finalized by another worker; skipping metrics "
+            "upsert and daily increment.",
+            session.id,
+        )
+        return False
+
+    # Mirror the committed row onto the in-memory ORM object for consistency.
     session.status        = SessionStatus.completed
-    session.ended_at      = func.now()
     session.overall_score = overall
 
     await _upsert_session_metrics(
@@ -696,6 +731,8 @@ async def _complete_session_from_turns(
 
     if user.tier == UserTier.free:
         await daily_increment(db, user)
+
+    return True
 
 
 async def _run_background_finalize(
@@ -803,14 +840,20 @@ async def _run_background_finalize(
                         },
                     )
 
-            await _complete_session_from_turns(
+            completed = await _complete_session_from_turns(
                 db,
                 session=session,
                 user=user,
                 turns=turns,
             )
-            await db.commit()
-            logger.info("Background finalize complete for session=%s", session_id)
+            if completed:
+                await db.commit()
+                logger.info("Background finalize complete for session=%s", session_id)
+            else:
+                # Lost the finalize race to another worker (deploy-cutover
+                # overlap). Discard our redundant re-evaluation instead of
+                # committing it over the turn rows the winner already wrote.
+                await db.rollback()
     except Exception as exc:  # noqa: BLE001
         logger.exception(
             "Background finalize failed for session=%s; session remains in_progress.",
