@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 
+import CalibrationConsentDialog from '../components/CalibrationConsentDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { trackEvent } from '../lib/analytics';
@@ -190,7 +191,6 @@ export default function Calibration() {
   const [consent, setConsent] = useState<FaceCalibrationConsent | null>(
     readFaceCalibrationConsent,
   );
-  const [consentChecked, setConsentChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [liveRead, setLiveRead] = useState<LiveRead>(EMPTY_LIVE_READ);
@@ -229,7 +229,6 @@ export default function Calibration() {
       return;
     }
     setConsent(nextConsent);
-    setConsentChecked(false);
     setError(null);
     trackEvent('calibration_consent_granted', {
       from_onboarding: fromOnboarding,
@@ -448,7 +447,6 @@ export default function Calibration() {
     clearFaceCalibrationConsent();
     setProfile(null);
     setConsent(null);
-    setConsentChecked(false);
     setPhase('idle');
     setError(null);
     setProgress(0);
@@ -456,6 +454,23 @@ export default function Calibration() {
     setCaptureAverages(EMPTY_CAPTURE_AVERAGES);
     trackEvent('calibration_cleared', {
       from_onboarding: fromOnboarding,
+    });
+  }
+
+  // Footer "Clear calibration": drop the saved baseline but keep consent, so
+  // the user can immediately recalibrate without re-passing the consent gate.
+  function clearCalibrationOnly() {
+    releaseCamera();
+    clearFaceCalibration();
+    setProfile(null);
+    setPhase('idle');
+    setError(null);
+    setProgress(0);
+    setVisibleSamples(0);
+    setCaptureAverages(EMPTY_CAPTURE_AVERAGES);
+    trackEvent('calibration_cleared', {
+      from_onboarding: fromOnboarding,
+      keep_consent: true,
     });
   }
 
@@ -510,13 +525,8 @@ export default function Calibration() {
             </ol>
 
             <CalibrationConsentPanel
-              checked={consentChecked}
               consentLabel={consentLabel}
-              fromOnboarding={fromOnboarding}
-              onAccept={acceptCalibrationConsent}
-              onCheckedChange={setConsentChecked}
               onClear={removeCalibration}
-              onDecline={() => navigate('/')}
             />
           </section>
 
@@ -797,10 +807,10 @@ export default function Calibration() {
               {profile && phase !== 'capturing' && (
                 <button
                   type="button"
-                  onClick={removeCalibration}
+                  onClick={clearCalibrationOnly}
                   className="cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline"
                 >
-                  Remove calibration and consent
+                  Clear calibration
                 </button>
               )}
             </div>
@@ -819,28 +829,28 @@ export default function Calibration() {
           </div>
         )}
       </main>
+
+      <CalibrationConsentDialog
+        open={!consent}
+        error={error}
+        onConsent={acceptCalibrationConsent}
+        onReject={() => navigate('/')}
+      />
     </div>
   );
 }
 
+// Renders only once consent exists — the full notice + accept flow lives in the
+// `CalibrationConsentDialog` gate, so this panel just shows the accepted state
+// and the revoke link. Returns null while un-consented (the gate covers it).
 function CalibrationConsentPanel({
-  checked,
   consentLabel,
-  fromOnboarding,
-  onAccept,
-  onCheckedChange,
   onClear,
-  onDecline,
 }: {
-  checked: boolean;
   consentLabel: string | null;
-  fromOnboarding: boolean;
-  onAccept: () => void;
-  onCheckedChange: (checked: boolean) => void;
   onClear: () => void;
-  onDecline: () => void;
 }) {
-  const accepted = consentLabel !== null;
+  if (consentLabel === null) return null;
 
   return (
     <div className="mt-9 rounded-lg border border-border bg-surface-raised p-4">
@@ -860,96 +870,29 @@ function CalibrationConsentPanel({
         </div>
       </div>
 
-      <ul className="mt-4 space-y-3 text-xs leading-6 text-text-subtle">
-        <li>
-          <span className="font-medium text-text">Purpose.</span> We use a
-          six-second neutral-face camera capture only to create a delivery
-          baseline for this coaching tool.
-        </li>
-        <li>
-          <span className="font-medium text-text">Data processed.</span> Your
-          browser analyzes webcam frames and face/iris landmarks during the
-          capture. Calibration does not record audio and is not used to identify
-          you.
-        </li>
-        <li>
-          <span className="font-medium text-text">Storage and deletion.</span>{' '}
-          Raw frames, video, and landmark lists are discarded after processing.
-          Only aggregate numeric ratios and this consent timestamp are saved in
-          this browser. Removing calibration deletes both from local storage.
-        </li>
-        <li>
-          <span className="font-medium text-text">Sharing.</span> The
-          calibration profile stays on this device. Practice uses a separate
-          delivery analytics consent before any numeric delivery summary is
-          sent with your answer. Raw webcam video is not uploaded.
-        </li>
-        <li>
-          <span className="font-medium text-text">Choice.</span> You can skip
-          calibration and practice without it. Delivery scoring may be absent or
-          less personalized when the camera or calibration is not used.
-        </li>
-      </ul>
-
-      {accepted ? (
-        <div className="mt-4 rounded border border-border bg-surface-sunken px-3 py-3">
-          <div className="flex items-start gap-2">
-            <ShieldCheck
-              className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
-              aria-hidden
-            />
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-text">{consentLabel}</p>
-              <p className="mt-1 text-xs leading-5 text-text-subtle">
-                You can revoke this by removing calibration. That clears the
-                local baseline and consent record. Practice delivery analytics
-                consent is managed separately below.
-              </p>
-              <button
-                type="button"
-                onClick={onClear}
-                className="mt-2 cursor-pointer text-xs text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
-              >
-                Remove calibration and consent
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-4 space-y-3">
-          <label className="flex cursor-pointer items-start gap-3 rounded border border-border bg-surface-sunken px-3 py-3 text-xs leading-5 text-text-subtle">
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={(event) => onCheckedChange(event.currentTarget.checked)}
-              className="mt-1 h-4 w-4 accent-[var(--color-accent)]"
-            />
-            <span>
-              I have read this notice, am authorized to consent, and consent to
-              local camera-based calibration processing for the purpose stated
-              above.
-            </span>
-          </label>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="button"
-              onClick={onAccept}
-              disabled={!checked}
-            >
-              <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />
-              Accept and continue
-            </Button>
+      <div className="mt-4 rounded border border-border bg-surface-sunken px-3 py-3">
+        <div className="flex items-start gap-2">
+          <ShieldCheck
+            className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
+            aria-hidden
+          />
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-text">{consentLabel}</p>
+            <p className="mt-1 text-xs leading-5 text-text-subtle">
+              You can revoke this by removing calibration. That clears the local
+              baseline and consent record. Practice delivery analytics consent
+              is managed separately below.
+            </p>
             <button
               type="button"
-              onClick={onDecline}
-              className="cursor-pointer text-xs text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
+              onClick={onClear}
+              className="mt-2 cursor-pointer text-xs text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
             >
-              {fromOnboarding ? 'Skip calibration for now' : 'Leave calibration'}
+              Remove calibration and consent
             </button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
