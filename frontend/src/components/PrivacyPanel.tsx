@@ -127,77 +127,79 @@ export default function PrivacyPanel({
         </div>
       )}
 
-      <div className="flex gap-3">
-        <ShieldCheck
-          className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
-          aria-hidden
-        />
-        <div>
-          <p className="text-sm font-medium text-text">
-            Practice delivery analytics
-          </p>
-          <p className="mt-2 text-xs leading-6 text-text-subtle">
-            Controls the numeric delivery summaries stored with your practice
-            answers. Separate from local calibration, which never leaves your
-            browser.
-          </p>
+      <div className="space-y-4 rounded border border-border bg-surface-sunken px-3 py-3">
+        <div className="flex gap-3">
+          <ShieldCheck
+            className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
+            aria-hidden
+          />
+          <div>
+            <p className="text-sm font-medium text-text">
+              Practice delivery analytics
+            </p>
+            <p className="mt-2 text-xs leading-6 text-text-subtle">
+              Controls the numeric delivery summaries stored with your practice
+              answers. Separate from local calibration, which never leaves your
+              browser.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <DeliveryConsentBullets />
+        <DeliveryConsentBullets />
 
-      {active ? (
-        <div className="rounded border border-border bg-surface-sunken px-3 py-3">
-          <p className="text-xs font-medium text-text">
-            {consentLabel ?? 'Delivery analytics consent is active'}
-          </p>
-          <p className="mt-1 text-xs leading-5 text-text-subtle">
-            Deleting disables future camera delivery summaries and removes stored
-            delivery summaries, delivery scores, and delivery-specific coaching
-            from completed history.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={onRevoke}
-            className="mt-3"
-          >
-            <Trash2 className="mr-2 h-4 w-4" aria-hidden />
-            Delete delivery analytics
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <label className="flex cursor-pointer items-start gap-3 rounded border border-border bg-surface-sunken px-3 py-3 text-xs leading-5 text-text-subtle">
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={(event) => setChecked(event.currentTarget.checked)}
+        {active ? (
+          <div className="rounded border border-border bg-surface-raised px-3 py-3">
+            <p className="text-xs font-medium text-text">
+              {consentLabel ?? 'Delivery analytics consent is active'}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-text-subtle">
+              Deleting disables future camera delivery summaries and removes
+              stored delivery summaries, delivery scores, and delivery-specific
+              coaching from completed history.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
               disabled={busy}
-              className="mt-1 h-4 w-4 accent-[var(--color-accent)]"
-            />
-            <span>
-              I am authorized to consent and agree to camera-based delivery
-              analytics and storage of numeric delivery summaries for coaching.
-            </span>
-          </label>
-          <Button
-            type="button"
-            disabled={!checked || busy}
-            onClick={onGrant}
-          >
-            <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />
-            Enable delivery analytics
-          </Button>
-        </div>
-      )}
+              onClick={onRevoke}
+              className="mt-3"
+            >
+              <Trash2 className="mr-2 h-4 w-4" aria-hidden />
+              Delete delivery analytics
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <label className="flex cursor-pointer items-start gap-3 rounded border border-border bg-surface-raised px-3 py-3 text-xs leading-5 text-text-subtle">
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(event) => setChecked(event.currentTarget.checked)}
+                disabled={busy}
+                className="mt-1 h-4 w-4 accent-[var(--color-accent)]"
+              />
+              <span>
+                I am authorized to consent and agree to camera-based delivery
+                analytics and storage of numeric delivery summaries for coaching.
+              </span>
+            </label>
+            <Button
+              type="button"
+              disabled={!checked || busy}
+              onClick={onGrant}
+            >
+              <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />
+              Enable delivery analytics
+            </Button>
+          </div>
+        )}
 
-      {error && (
-        <p role="alert" className="text-xs leading-5 text-text">
-          {error}
-        </p>
-      )}
+        {error && (
+          <p role="alert" className="text-xs leading-5 text-text">
+            {error}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

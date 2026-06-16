@@ -29,7 +29,7 @@ import TopBar from '../components/TopBar';
 // the Privacy Policy and Biometric Data Retention Policy so the three documents
 // stay in sync.
 const ENTITY = '[Legal Entity Name]';
-const PRIVACY_EMAIL = 'privacy@interviewpie.com';
+const PRIVACY_EMAIL = 'team@interviewpie.com';
 const EFFECTIVE_DATE = '[Effective date — pending legal review]';
 
 function Section({
@@ -440,7 +440,7 @@ export default function TermsOfService() {
 
         <Section id="contact" heading="16. Contact">
           <p>
-            Questions about these Terms can be sent to {ENTITY} at{' '}
+            Questions about these Terms can be sent to
             {PRIVACY_EMAIL}.
           </p>
         </Section>

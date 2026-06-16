@@ -14,11 +14,7 @@ from app.db.models.user import User
 
 
 CURRENT_TERMS_VERSION = 1
-# v3 (2026-06): geo-gated product analytics — EU/UK strict opt-in retained, while
-# US runs full GA4 and AU/NZ/SG run cookieless analytics by default under a
-# notice + opt-out model. Material change to collection + legal basis for non-EU
-# users → forced re-acceptance.
-CURRENT_PRIVACY_VERSION = 3
+CURRENT_PRIVACY_VERSION = 1
 
 
 def has_accepted_current_policies(user: User) -> bool:
