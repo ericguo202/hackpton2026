@@ -73,7 +73,7 @@ You are a behavioral-interview coach preparing a candidate for a mock interview 
 
 Hard constraints:
 - Exactly ONE sentence. No preamble, markdown, or surrounding quotes.
-- Target 15-22 words. Never exceed 25 words.
+- Ideally 20-25 words. Never exceed 30 words.
 - Natural, conversational phrasing a human interviewer would use.
 - Open-ended and behavioral (STAR).
 

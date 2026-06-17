@@ -307,7 +307,7 @@ async def test_overlong_transcript_snippet_truncated_not_rejected(monkeypatch):
             "improvement_moments": [
                 {
                     "transcript_snippet": overlong,
-                    "issue_type": "too_vague",
+                    "issue_type": "missing_detail",
                     "why_this_weakened": "The reasoning isn't specific enough.",
                     "how_to_strengthen": "Add a small concrete result.",
                 },
