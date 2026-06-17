@@ -49,6 +49,12 @@ const DRAG_ANCHOR = 24;
 const RESIZE_MIN_W = 320; // 20rem
 const RESIZE_MIN_H = 320;
 const EXPAND_W = 416; // 26rem
+
+// Hard cap on a typed message. Real tutor questions are short, and every send
+// costs LLM tokens, so this bounds abuse. Mirrors the backend
+// `TutorMessageIn.message` cap (backend/app/schemas/tutor.py). The attached
+// "Ask about this" snippet is a separate field and is NOT counted here.
+const MAX_MESSAGE_CHARS = 300;
 const clampNum = (v: number, lo: number, hi: number) =>
   Math.min(Math.max(v, lo), Math.max(lo, hi));
 
@@ -126,7 +132,9 @@ export default function AskTutorChat({
   // hook (which appends the user bubble), then clear the local input.
   const submit = useCallback(
     (raw: string) => {
-      const trimmed = raw.trim();
+      // Clamp defensively so even a programmatic value-set can't outrun the
+      // textarea's maxLength and trip the server's 300-char 422.
+      const trimmed = raw.trim().slice(0, MAX_MESSAGE_CHARS);
       if (!trimmed || isStreaming) return;
       void send(trimmed, contextSnippet ?? undefined);
       setText('');
@@ -466,6 +474,18 @@ export default function AskTutorChat({
           </div>
         )}
 
+        {MAX_MESSAGE_CHARS - text.length <= 40 && (
+          <p
+            className={
+              'mb-1 text-right text-xs tabular-nums ' +
+              (text.length >= MAX_MESSAGE_CHARS ? 'text-amber-deep' : 'text-text-subtle')
+            }
+            aria-live="polite"
+          >
+            {text.length}/{MAX_MESSAGE_CHARS}
+          </p>
+        )}
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -480,6 +500,7 @@ export default function AskTutorChat({
             id={`${labelId}-input`}
             ref={taRef}
             rows={1}
+            maxLength={MAX_MESSAGE_CHARS}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {

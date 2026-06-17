@@ -63,6 +63,16 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
   - **Saved questions deliberately survive profile drift** — NOT reset in `onboarding.py`. `SessionDetailOut` carries `saved_question_id`.
   - Endpoints: POST `""` save (409 at 5-cap, idempotent dedup on identical `question_text`, back-links originating session as attempt #1); GET `""` list; GET `/{id}` detail; DELETE `/{id}` (204, FK-null); POST `/{id}/practice` re-practice.
 
+- **Ask Tutor — turn-scoped career-advisor chat (streamed, tool-calling).** A floating, non-modal chat on each SessionDetail turn tab. `tutor.py` (`deepseek/deepseek-v4-flash`, **no reasoning**). Helps the candidate understand their feedback, prep for the question type, reword phrasing, and strengthen stories — **scoped to ONE turn only**.
+  - **Lean base context** (Flash degrades on long context): question, transcript, experience level, category, target role, main takeaway, and the turn's **per-dimension scores** rendered as a compact line (`_render_scores`; null → "not scored", never a fake number). Wrapped in delimiters + `_INJECTION_CLAUSE` (transcript/feedback/tool output are untrusted DATA).
+  - **Three on-demand tools** keep base context small (`tool_specs`, no args; `run_tool` returns a slice of the loaded `TutorContext`, **no network** — latency is only model rounds): `get_improvement_moments`, `get_company_research`, `get_candidate_background`. Tool steps surface **live** in the chat ("Retrieving company brief…").
+  - **Fully-streamed agent loop** (`stream_tutor_reply`, `stream=True`, ~4-round cap, `extra_body={"reasoning":{"enabled":False}}`). Yields typed events `{type: tool|token|done|error}`. **Fails soft** (mirrors `coaching.py`): any SDK/parse error → single `error` event, never raises into the response.
+  - **Preamble suppression (load-bearing):** the model narrates tool use ("let me pull up…") in the SAME round it calls a tool — that chatty round's content is **dropped**; only the FINAL (no-tool) round's content streams to the user. Enforced by the loop (test: `test_stream_drops_tool_round_preamble`) AND the system prompt's "call tools silently / no preamble" rules.
+  - **Stay-in-persona:** off-topic asks (joke, code, image, trivia) get EXACTLY the `REDIRECT_LINE` and nothing else.
+  - **Constrained markdown:** the model may use ONLY `**bold**`, `*italic*`, hyphen bullets, and numbered lists — no headings/tables/code/blockquotes/links. Rendered by the frontend's `TutorMarkdown` (see `frontend/CLAUDE.md`). **Asterisks pass through verbatim** — this path has NO `_sanitize`-style asterisk stripper (unlike `followup.py`).
+  - **Moderation precedes the stream:** each incoming message hits OpenAI moderation BEFORE the SSE opens → `flagged` returns a normal `422` (friendly tutor-bubble detail), outage → `503`; never a half-open stream.
+  - **Ephemeral:** the backend persists NOTHING — the frontend holds the conversation in memory; leaving SessionDetail (a tab switch) discards it (blank slate on return). History is re-sent per request (text bubbles only; tool results re-fetched, never echoed) for multi-turn coherence.
+
 - **Interview voices (ElevenLabs).** `VoicePicker` has preset voices + "Surprise me". Per-session choice.
 
 - **Free tier with daily session limits.** 5 completed sessions per local calendar day. Counter increments at **finalization** (not creation — abandoning doesn't burn a slot). IANA timezone from browser (`users.timezone`, UTC fallback). Pre-check at `POST /sessions` **before** any LLM/API spend → 429. Race-safe atomic `UPDATE` in `daily_limit.py`. `GET /me` also runs `check_and_reset` — zero writes steady-state (UPDATE gated by `count_reset_date.is_distinct_from(today)`, NULL-safe).
@@ -75,7 +85,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
 
 - **Frontend**: React + Vite, Clerk (auth), recharts, MediaRecorder, MediaPipe (webcam delivery analytics)
 - **Backend**: FastAPI, Alembic + Postgres, OpenAI Python SDK pointed at OpenRouter (`https://openrouter.ai/api/v1`)
-- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v3.2` evaluator, `google/gemini-2.5-flash` research, `google/gemini-3.5-flash` opening (minimal reasoning), `deepseek/deepseek-v4-flash` follow-up + coaching (both no reasoning), `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback), Serper
+- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v3.2` evaluator, `google/gemini-2.5-flash` research, `google/gemini-3.5-flash` opening (minimal reasoning), `deepseek/deepseek-v4-flash` follow-up + coaching + Ask Tutor (all no reasoning), `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback), Serper
 - **Auth**: Clerk JWT verified via `python-jose` against `CLERK_JWT_ISSUER` JWKS
 
 ---
@@ -151,6 +161,8 @@ GET    /saved-questions             caller's saved questions + per-question aggr
 GET    /saved-questions/{id}        frozen question + summary + attempts[] (per-attempt opening-turn scores, evaluation_failed)
 DELETE /saved-questions/{id}        → 204 (linked sessions survive — FK ON DELETE SET NULL)
 POST   /saved-questions/{id}/practice  { voice_id?, timezone? } → SessionCreateOut (re-practice; skips research/question LLM calls) | 429 (daily limit)
+
+POST /sessions/{id}/turns/{turn_id}/tutor  { message, history[], context_snippet? } → text/event-stream (SSE: tool|token|done|error) | 404 | 422 (moderation block) | 503 (moderation down). Ephemeral — nothing persisted.
 ```
 
 `timezone` is an IANA name from `Intl.DateTimeFormat().resolvedOptions().timeZone`, persisted on `users.timezone`. Missing/unparseable → UTC. TTS audio: base64 inline in JSON — no S3.

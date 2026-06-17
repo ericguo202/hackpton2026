@@ -24,11 +24,16 @@ class TutorHistoryItem(BaseModel):
 
 
 class TutorMessageIn(BaseModel):
-    # The candidate's new message.
-    message: str = Field(min_length=1, max_length=2000)
+    # The candidate's new message. Tightly capped — real tutor questions are
+    # short, and every message costs LLM tokens, so 300 chars bounds abuse.
+    # Mirrors the client cap (`MAX_MESSAGE_CHARS` in AskTutorChat.tsx). The
+    # attached `context_snippet` is deliberately a separate, larger field and is
+    # NOT counted toward this limit.
+    message: str = Field(min_length=1, max_length=300)
     # Prior conversation (text only), oldest-first. Capped so a client can't
     # push an unbounded prompt.
     history: list[TutorHistoryItem] = Field(default_factory=list, max_length=40)
     # An "Ask about this" transcript snippet the user attached. Folded into the
-    # message the model sees so it knows which part they're referring to.
+    # message the model sees so it knows which part they're referring to. Carries
+    # a transcript excerpt (not user-typed input), so it keeps its larger cap.
     context_snippet: str | None = Field(default=None, max_length=2000)
