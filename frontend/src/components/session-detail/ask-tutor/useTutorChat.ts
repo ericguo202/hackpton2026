@@ -90,9 +90,14 @@ export function useTutorChat(sessionId?: string, turnId?: string) {
       setIsStreaming(true);
 
       // History = prior text bubbles (tool chips excluded), before this message.
+      // Content is clamped to the backend schema's 4000-char cap so an unusually
+      // long reply can never 422 the next message.
       const history: TutorHistoryItem[] = messagesRef.current
         .filter((m): m is Extract<TutorMessage, { kind: 'text' }> => m.kind === 'text')
-        .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }));
+        .map((m) => ({
+          role: m.role === 'user' ? 'user' : 'assistant',
+          content: m.text.slice(0, 4000),
+        }));
 
       apply((prev) => [
         ...prev,

@@ -234,6 +234,33 @@ async def test_stream_tool_then_answer():
     assert "Acme does things." in tool_msg["content"]
 
 
+async def test_stream_drops_tool_round_preamble():
+    """Chatty narration emitted alongside a tool call must NOT reach the user;
+    only the final round's content is shown."""
+    rounds = [
+        # Round 1: the model narrates AND calls a tool in the same response.
+        [
+            _delta(content="Great question — let me pull up "),
+            _delta(content="the company brief."),
+            _delta(
+                tool_calls=[
+                    _tool_call(0, id="call_1", name="get_company_research", args="{}")
+                ]
+            ),
+        ],
+        # Round 2: the real answer.
+        [_delta(content="Lead with ownership.")],
+    ]
+    events = await _collect(
+        stream_tutor_reply(_ctx(), [], "How do I prepare?", client=_make_client(rounds))
+    )
+    texts = [e["text"] for e in events if e["type"] == "token"]
+    # The preamble is gone; only the final answer streamed.
+    assert texts == ["Lead with ownership."]
+    assert not any("let me pull up" in t for t in texts)
+    assert events[-1] == {"type": "done"}
+
+
 async def test_stream_passes_tools_and_disables_reasoning():
     captured: list = []
     rounds = [[_delta(content="hi")]]
