@@ -18,7 +18,11 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowUp, Check, Loader2, Maximize2, Minimize2, Minus, Sparkles, X } from 'lucide-react';
 
@@ -50,6 +54,16 @@ const DRAG_ANCHOR = 24;
 const RESIZE_MIN_W = 320; // 20rem
 const RESIZE_MIN_H = 320;
 const EXPAND_W = 416; // 26rem
+
+// Mobile bottom-sheet resize. Dragging the grab handle sets an explicit height
+// between MOBILE_MIN_H (enough for header + composer + a peek of messages) and
+// MOBILE_MAX_VH of the viewport, so the sheet can be compressed out of the way
+// or pulled up to read a long reply. A move past TAP_SLOP px counts as a drag;
+// anything shorter is a tap and still minimizes (the handle's legacy role).
+const MOBILE_MIN_H = 240;
+const MOBILE_MAX_VH = 0.92;
+const TAP_SLOP = 5;
+const mobileMaxH = () => Math.round(window.innerHeight * MOBILE_MAX_VH);
 
 // Hard cap on a typed message. Real tutor questions are short, and every send
 // costs LLM tokens, so this bounds abuse. Mirrors the backend
@@ -167,6 +181,14 @@ export default function AskTutorChat({
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const isSized = size !== null;
 
+  // Mobile-only: explicit bottom-sheet height (px) once the user drags the grab
+  // handle; null = the default h-[80vh]. Applied via the --msh CSS var in a
+  // max-width:899px rule so the desktop drag/size geometry is never touched.
+  const [mobileHeight, setMobileHeight] = useState<number | null>(null);
+  // Tracks an in-flight handle drag and whether it has crossed TAP_SLOP, so
+  // pointerup can tell a tap (→ minimize) from a resize (→ do nothing).
+  const sheetDragRef = useRef<{ py: number; h: number; moved: boolean } | null>(null);
+
   // Keep the window MARGIN px inside every viewport edge. On-screen position of
   // the bottom-left anchor: left = ANCHOR + ox, top = (vh - ANCHOR - h) + oy.
   const clampOffset = useCallback((ox: number, oy: number, w: number, h: number) => {
@@ -238,10 +260,45 @@ export default function AskTutorChat({
     });
   }, [size]);
 
+  // --- Mobile drag-to-resize (the grab handle is the handle) ---------------
+  // Dragging up grows the sheet, down compresses it; a tap (no drag past
+  // TAP_SLOP) still minimizes via the trailing click. touch-action:none on the
+  // handle keeps the gesture from scrolling the sheet/page instead.
+  const onHandlePointerDown = (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (window.matchMedia(DESKTOP_MQ).matches) return; // handle is desktop-hidden
+    const el = winRef.current;
+    if (!el) return;
+    sheetDragRef.current = {
+      py: e.clientY,
+      h: el.getBoundingClientRect().height,
+      moved: false,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onHandlePointerMove = (e: ReactPointerEvent<HTMLElement>) => {
+    const d = sheetDragRef.current;
+    if (!d) return;
+    const dy = e.clientY - d.py;
+    if (!d.moved && Math.abs(dy) > TAP_SLOP) d.moved = true;
+    if (d.moved) setMobileHeight(clampNum(d.h - dy, MOBILE_MIN_H, mobileMaxH()));
+  };
+  const onHandlePointerUp = (e: ReactPointerEvent<HTMLElement>) => {
+    const d = sheetDragRef.current;
+    sheetDragRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (d && !d.moved) tutor?.minimize(); // a tap (no real drag) minimizes
+  };
+  // Keyboard activation (Enter/Space) fires click with detail 0 and no pointer
+  // events; pointer taps are already handled in pointerup, so ignore them here.
+  const onHandleClick = (e: ReactMouseEvent<HTMLElement>) => {
+    if (e.detail === 0) tutor?.minimize();
+  };
+
   // Re-clamp if the viewport shrinks under a dragged or expanded window, so it
   // never spills off-screen.
   useEffect(() => {
-    if (!dragged && !isSized) return;
+    if (!dragged && !isSized && mobileHeight === null) return;
     const onResize = () => {
       const el = winRef.current;
       if (!el) return;
@@ -253,10 +310,12 @@ export default function AskTutorChat({
         const maxH = r.bottom - DRAG_MARGIN;
         return { w: clampNum(s.w, RESIZE_MIN_W, maxW), h: clampNum(s.h, RESIZE_MIN_H, maxH) };
       });
+      // Keep a resized bottom sheet within the (possibly rotated) viewport.
+      setMobileHeight((h) => (h === null ? h : clampNum(h, MOBILE_MIN_H, mobileMaxH())));
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [dragged, isSized, clampOffset]);
+  }, [dragged, isSized, mobileHeight, clampOffset]);
 
   if (!tutor || status === 'closed') return null;
 
@@ -287,24 +346,31 @@ export default function AskTutorChat({
       aria-labelledby={labelId}
       data-dragged={dragged ? 'true' : undefined}
       data-sized={size ? 'true' : undefined}
+      data-msized={mobileHeight !== null ? 'true' : undefined}
       style={
-        dragged || size
+        dragged || size || mobileHeight !== null
           ? ({
               ...(dragged ? { '--atx': `${offset.x}px`, '--aty': `${offset.y}px` } : {}),
               ...(size ? { '--atw': `${size.w}px`, '--ath': `${size.h}px` } : {}),
+              ...(mobileHeight !== null ? { '--msh': `${mobileHeight}px` } : {}),
             } as CSSProperties)
           : undefined
       }
       className="ask-tutor-window fixed inset-x-0 bottom-0 z-[60] flex h-[80vh] flex-col overflow-hidden rounded-t-2xl border-t border-border bg-surface-raised shadow-lg min-[900px]:inset-x-auto min-[900px]:bottom-6 min-[900px]:left-6 min-[900px]:h-[70vh] min-[900px]:max-h-[34rem] min-[900px]:w-[23rem] min-[900px]:rounded-2xl min-[900px]:border"
     >
-      {/* Mobile grab handle doubles as a minimize affordance. */}
+      {/* Mobile grab handle: drag to resize the sheet, tap to minimize.
+          touch-action:none so the vertical drag resizes instead of scrolling. */}
       <button
         type="button"
-        onClick={tutor.minimize}
-        aria-label="Minimize tutor"
-        className="flex shrink-0 justify-center py-2 min-[900px]:hidden"
+        onPointerDown={onHandlePointerDown}
+        onPointerMove={onHandlePointerMove}
+        onPointerUp={onHandlePointerUp}
+        onPointerCancel={onHandlePointerUp}
+        onClick={onHandleClick}
+        aria-label="Drag to resize, or tap to minimize"
+        className="group flex shrink-0 touch-none cursor-ns-resize justify-center py-2.5 min-[900px]:hidden"
       >
-        <span className="block h-1.5 w-10 rounded-full bg-border-strong" />
+        <span className="block h-1.5 w-10 rounded-full bg-border-strong transition-colors group-active:bg-text-muted" />
       </button>
 
       <header
@@ -367,7 +433,7 @@ export default function AskTutorChat({
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
+      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4" aria-live="polite">
         <ul className="flex flex-col gap-4">
           {messages.map((m) => {
             // Tool-call step ("Retrieving company brief…") — a spinner while
