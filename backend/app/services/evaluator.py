@@ -144,16 +144,13 @@ class PositiveMoment(BaseModel):
 class ImprovementMoment(BaseModel):
     transcript_snippet: SnippetStr = Field(min_length=1, max_length=270)
     issue_type: Literal[
-        "too_vague",
         "missing_detail",
         "missing_result",
         "missing_reasoning",
-        "off_track",
+        "rambling",
         "unprofessional",
         "does_not_answer_question",
         "weak_wording",
-        "missed_opportunity",
-        "delivery",
     ]
     why_this_weakened: ProseStr390 = Field(min_length=1, max_length=390)
     how_to_strengthen: ProseStr390 = Field(min_length=1, max_length=390)
@@ -339,9 +336,10 @@ class EvaluatorOutput(BaseModel):
     system prompt tells the model the intended range and `_clamp` is the
     safety net for any fractional / out-of-range drift.
 
-    `delivery` is nullable: when the caller passes no `cv_summary`, the
-    prompt instructs the model to omit the key, preserving the original
-    5-score shape for camera-declined turns.
+    `delivery` is nullable and server-authoritative: the prompt does NOT ask
+    the model for it. `evaluate_turn` fills it from `_compute_delivery_score`
+    when `cv_summary` is present and forces it to None otherwise, preserving
+    the 5-score shape for camera-declined turns.
     """
 
     structure: int
@@ -351,7 +349,11 @@ class EvaluatorOutput(BaseModel):
     depth: int
     delivery: int | None = None
     feedback_detail: FeedbackDetail
-    notes: str
+    # Legacy flat summary. No longer requested in the prompt — the model omits
+    # it, so this defaults empty and `_drop_unanchored_moments` backfills it
+    # from `feedback_detail` via `_feedback_text`. Kept on the wire/DB for the
+    # frontend's `?? turn.feedback` main_takeaway fallback.
+    notes: str = ""
 
     @field_validator(
         "structure", "problem_solving", "impact", "initiative", "depth", "delivery",
@@ -815,4 +817,9 @@ async def evaluate_turn(
         result.delivery = _compute_delivery_score(cv_summary)
         _add_delivery_feedback(result.feedback_detail, cv_summary, result.delivery)
         _add_delivery_quick_win(result.feedback_detail, cv_summary, result.delivery)
+    else:
+        # The prompt no longer asks the model for a delivery score (delivery is
+        # server-authoritative). Null it defensively so a stray model-emitted
+        # value can never persist on a camera-declined turn.
+        result.delivery = None
     return _drop_unanchored_moments(result, transcript)
