@@ -111,7 +111,7 @@ export default function ScorePieChart({ className = '' }: { className?: string }
           className="font-display"
           style={{
             fill: '#FFFFFF',
-            fontWeight: 600,
+            fontWeight: 700,
             paintOrder: 'stroke',
             stroke: 'rgba(12, 8, 6, 0.5)',
             strokeWidth: 0.85,
