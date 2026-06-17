@@ -189,6 +189,15 @@ _PROFILE_SECURITY_CLAUSE = (
 )
 
 
+_DRIVER_PRECEDENCE = (
+    "Combine these inputs along separate axes so they don't compete: the "
+    "candidate's experience level sets the SCOPE and DIFFICULTY of the "
+    "scenario; the company's role signals and question themes (when present) "
+    "set the TOPIC; the STYLE above sets only whether you may name the "
+    "company. Apply each to its own dimension."
+)
+
+
 _RESEARCH_USAGE_INSTRUCTIONS = (
     "Using the research signal (when present): both styles may draw on the "
     "company's role signals and question themes above to shape the "
@@ -260,6 +269,7 @@ async def generate_opening_question(
         f"{_RESEARCH_USAGE_INSTRUCTIONS}\n\n"
         f"{avoid_section}"
         f"{style}\n\n"
+        f"{_DRIVER_PRECEDENCE}\n\n"
         "Now write the opening question — exactly ONE sentence, 20-25 words "
         "(never exceed 30), conversational, no preamble or surrounding "
         "quotes. Output only the question text."

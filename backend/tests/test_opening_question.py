@@ -220,8 +220,8 @@ def test_build_field_system_prompt_interpolates_category():
     # Category name is in the canonical preamble.
     assert "field/industry of Healthcare and Life Sciences" in prompt
     # Hard constraints survive.
-    assert "Exactly ONE sentence" in prompt
-    assert "15-22 words" in prompt
+    assert "exactly ONE sentence" in prompt
+    assert "20-25 words" in prompt
 
 
 def test_build_field_system_prompt_shows_all_themes():
@@ -300,3 +300,30 @@ def test_company_digest_includes_sample_question_themes_when_present():
     # The "inspiration only — dissect the theme, do NOT copy" instruction
     # must be co-located with the themes block, not pulled out.
     assert "dissect the theme" in digest
+
+
+def test_company_digest_gates_company_facts_for_standard_style():
+    """Standard style (`include_company_facts=False`) must NOT leak the
+    company-identifying facts it's told to suppress, but still passes the
+    role signals / themes both styles use to shape topic."""
+    digest = _company_digest(
+        _fake_brief(
+            role_signals=["ownership mindset"],
+            sample_question_themes=["incident response under pressure"],
+        ),
+        include_company_facts=False,
+    )
+    # Company-identifying facts are gated out.
+    assert "Company description" not in digest
+    assert "Anthropic builds frontier AI systems" not in digest
+    assert "Claude 4.6 released" not in digest
+    assert "helpful, harmless, honest" not in digest
+    # Shared topic signals survive.
+    assert "ownership mindset" in digest
+    assert "incident response under pressure" in digest
+
+
+def test_company_digest_empty_when_standard_style_and_no_signals():
+    """Standard style with no role signals / themes renders nothing — the
+    caller omits the block entirely rather than emitting an empty section."""
+    assert _company_digest(_fake_brief(), include_company_facts=False) == ""

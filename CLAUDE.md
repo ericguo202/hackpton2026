@@ -179,7 +179,7 @@ POST   /saved-questions/{id}/practice  { voice_id?, timezone? } → SessionCreat
     "improvement_moments": [
       {
         "transcript_snippet": "exact copied phrase",
-        "issue_type": "too_vague | missing_detail | missing_result | missing_reasoning | off_track | unprofessional | does_not_answer_question | weak_wording | missed_opportunity | delivery",
+        "issue_type": "missing_detail | missing_result | missing_reasoning | rambling | unprofessional | does_not_answer_question | weak_wording",
         "why_this_weakened": "short practical explanation",
         "how_to_strengthen": "specific bite-sized suggestion, not a full rewritten answer"
       }
