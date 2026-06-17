@@ -39,6 +39,7 @@ from app.schemas.user import (
     UserOut,
 )
 from app.services.daily_limit import check_and_reset as daily_check_and_reset
+from app.services.daily_limit import check_and_reset_chat
 from app.services.delivery_consent import (
     DELIVERY_ANALYTICS_NOTICE_VERSION,
     purge_delivery_analytics_for_user,
@@ -70,6 +71,10 @@ async def get_me(
     # refreshes the attached ORM instance, so the value below is current.
     if user.tier == UserTier.free:
         await daily_check_and_reset(db, user)
+        # Same rollover for the Ask Tutor daily chat counter so `daily_chat_count`
+        # reflects the user's local-today, letting the chat composer disable /
+        # show the "N left today" hint immediately on load.
+        await check_and_reset_chat(db, user)
 
     # Duplicate-email detection BEFORE onboarding. A users row's `email` is
     # written (and its UNIQUE constraint checked) only at the onboarding

@@ -26,6 +26,7 @@ import { useAskTutor } from './_askTutor';
 import { PieMark } from './PieMark';
 import { TutorMarkdown } from './TutorMarkdown';
 import { useTutorChat } from './useTutorChat';
+import { MAX_TUTOR_CHATS_PER_DAY } from '../../../types/tutor';
 
 // One-tap starters mapped to the three jobs the tutor exists for. Tapping one
 // fills the composer (it does NOT auto-send) so the user can edit before
@@ -71,7 +72,11 @@ export default function AskTutorChat({
   turnId?: string;
 }) {
   const tutor = useAskTutor();
-  const { messages, isStreaming, send } = useTutorChat(sessionId, turnId);
+  const { messages, isStreaming, send, remaining } = useTutorChat(sessionId, turnId);
+
+  // Daily chat-quota UI state. `remaining` is null for Pro / unknown (no cap).
+  const limitReached = remaining !== null && remaining <= 0;
+  const showLowHint = remaining !== null && remaining > 0 && remaining <= 3;
 
   const [text, setText] = useState('');
   const [contextSnippet, setContextSnippet] = useState<string | null>(null);
@@ -85,7 +90,8 @@ export default function AskTutorChat({
   const labelId = useId();
 
   const status = tutor?.status ?? 'closed';
-  const showStarters = messages.length <= 1 && !contextSnippet && !isStreaming;
+  const showStarters =
+    messages.length <= 1 && !contextSnippet && !isStreaming && !limitReached;
   // Typing dots: streaming, but the latest message isn't yet an in-progress
   // tutor bubble (nothing has streamed back, or only a tool chip has landed).
   const last = messages[messages.length - 1];
@@ -135,12 +141,12 @@ export default function AskTutorChat({
       // Clamp defensively so even a programmatic value-set can't outrun the
       // textarea's maxLength and trip the server's 300-char 422.
       const trimmed = raw.trim().slice(0, MAX_MESSAGE_CHARS);
-      if (!trimmed || isStreaming) return;
+      if (!trimmed || isStreaming || limitReached) return;
       void send(trimmed, contextSnippet ?? undefined);
       setText('');
       setContextSnippet(null);
     },
-    [isStreaming, send, contextSnippet],
+    [isStreaming, limitReached, send, contextSnippet],
   );
 
   // --- Desktop drag (the header is the handle) ----------------------------
@@ -474,7 +480,18 @@ export default function AskTutorChat({
           </div>
         )}
 
-        {MAX_MESSAGE_CHARS - text.length <= 40 && (
+        {limitReached ? (
+          <p className="mb-2 text-xs leading-5 text-critique" role="alert">
+            You&rsquo;ve reached your daily limit of {MAX_TUTOR_CHATS_PER_DAY} tutor
+            chats. It resets at midnight.
+          </p>
+        ) : showLowHint ? (
+          <p className="mb-2 text-xs text-text-subtle" aria-live="polite">
+            {remaining} chat{remaining === 1 ? '' : 's'} left today.
+          </p>
+        ) : null}
+
+        {!limitReached && MAX_MESSAGE_CHARS - text.length <= 40 && (
           <p
             className={
               'mb-1 text-right text-xs tabular-nums ' +
@@ -502,6 +519,7 @@ export default function AskTutorChat({
             rows={1}
             maxLength={MAX_MESSAGE_CHARS}
             value={text}
+            disabled={limitReached}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -509,12 +527,12 @@ export default function AskTutorChat({
                 submit(text);
               }
             }}
-            placeholder="Ask about this turn…"
-            className="max-h-[120px] min-h-[2.5rem] flex-1 resize-none rounded-2xl bg-surface-sunken px-3.5 py-2.5 text-sm leading-6 text-text placeholder:text-text-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface-raised"
+            placeholder={limitReached ? 'Daily chat limit reached' : 'Ask about this turn…'}
+            className="max-h-[120px] min-h-[2.5rem] flex-1 resize-none rounded-2xl bg-surface-sunken px-3.5 py-2.5 text-sm leading-6 text-text placeholder:text-text-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface-raised disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
             type="submit"
-            disabled={!text.trim() || isStreaming}
+            disabled={!text.trim() || isStreaming || limitReached}
             aria-label="Send message"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-highlight text-primary-700 transition-colors hover:bg-amber-deep disabled:opacity-40 disabled:hover:bg-highlight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
           >

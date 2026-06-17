@@ -29,6 +29,10 @@ class UserOut(BaseModel):
     email_conflict: bool = False
     tier: UserTier
     daily_session_count: int
+    # Successful Ask Tutor chat completions used today (free tier capped at 10).
+    # Rolled over to today's local date by GET /me so the client can disable the
+    # composer / show the "N left today" hint without a wasted send.
+    daily_chat_count: int
     delivery_analytics_consent_at: datetime | None
     delivery_analytics_consent_version: int | None
     delivery_analytics_revoked_at: datetime | None

@@ -26,3 +26,12 @@ export interface TutorTokenEvent {
 export interface TutorErrorEvent {
   message: string;
 }
+// The `done` event optionally carries the caller's remaining daily chat quota
+// (free tier only; absent for Pro / when the increment fails open).
+export interface TutorDoneEvent {
+  remaining?: number;
+}
+
+// Per-user daily cap on successful Ask Tutor chat completions (free tier).
+// Mirrors `DAILY_CHAT_LIMIT_FREE` in backend/app/services/daily_limit.py.
+export const MAX_TUTOR_CHATS_PER_DAY = 10;

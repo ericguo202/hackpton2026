@@ -15,7 +15,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, extractApiErrorDetail } from '../../../lib/api';
 import { readSSE } from '../../../lib/sse';
 import { useApi } from '../../../hooks/useApi';
+import { useMe } from '../../../hooks/useMe';
+import { MAX_TUTOR_CHATS_PER_DAY } from '../../../types/tutor';
 import type {
+  TutorDoneEvent,
   TutorErrorEvent,
   TutorHistoryItem,
   TutorMessageRequest,
@@ -55,6 +58,22 @@ const settleTools = (list: TutorMessage[]): TutorMessage[] =>
 
 export function useTutorChat(sessionId?: string, turnId?: string) {
   const { apiStream } = useApi();
+  const { me } = useMe();
+
+  // Remaining successful chats for today. null = unknown / Pro / unlimited.
+  // Seeded once from /me (free tier) and then driven live by the `done` event's
+  // `remaining` and a 429 (→ 0). Seeding happens during render (React-19
+  // "compare prop to tracked state" pattern) rather than in an effect, both to
+  // avoid set-state-in-effect and so a live decrement is never clobbered by a
+  // later broadcast /me.
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [seededFromMe, setSeededFromMe] = useState(false);
+  if (!seededFromMe && me) {
+    setSeededFromMe(true);
+    if (remaining === null && me.tier === 'free') {
+      setRemaining(Math.max(0, MAX_TUTOR_CHATS_PER_DAY - me.daily_chat_count));
+    }
+  }
 
   // Ref mirror so `send` can read the current list synchronously (to build the
   // history payload) without a stale closure. Seeded from the same initial
@@ -85,6 +104,8 @@ export function useTutorChat(sessionId?: string, turnId?: string) {
     async (raw: string, contextSnippet?: string) => {
       const trimmed = raw.trim();
       if (!trimmed || streamingRef.current || !sessionId || !turnId) return;
+      // Out of daily quota — defensive; the composer is also disabled in the UI.
+      if (remaining !== null && remaining <= 0) return;
 
       streamingRef.current = true;
       setIsStreaming(true);
@@ -169,6 +190,8 @@ export function useTutorChat(sessionId?: string, turnId?: string) {
                 { kind: 'text', id: nextId(), role: 'tutor', text: data.message },
               ]);
             } else if (event.type === 'done') {
+              const data = event.data as TutorDoneEvent;
+              if (typeof data?.remaining === 'number') setRemaining(data.remaining);
               apply(settleTools);
             }
           },
@@ -176,6 +199,12 @@ export function useTutorChat(sessionId?: string, turnId?: string) {
         );
       } catch (err) {
         if (controller.signal.aborted) return; // unmounted / superseded
+        if (err instanceof ApiError && err.status === 429) {
+          // Daily chat cap hit (stale client thought it had quota). Flip to the
+          // disabled / red-footer state; no chat bubble. `finally` still runs.
+          setRemaining(0);
+          return;
+        }
         let text = 'Something went wrong reaching the tutor. Please try again.';
         if (err instanceof ApiError) {
           if (err.status === 503) {
@@ -194,11 +223,11 @@ export function useTutorChat(sessionId?: string, turnId?: string) {
         if (mountedRef.current) setIsStreaming(false);
       }
     },
-    [apiStream, apply, sessionId, turnId],
+    [apiStream, apply, sessionId, turnId, remaining],
   );
 
   return useMemo(
-    () => ({ messages, isStreaming, send }),
-    [messages, isStreaming, send],
+    () => ({ messages, isStreaming, send, remaining }),
+    [messages, isStreaming, send, remaining],
   );
 }

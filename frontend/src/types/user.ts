@@ -34,6 +34,10 @@ export type MeResponse = {
   // starts), so abandoning a session doesn't burn a slot.
   tier: UserTier;
   daily_session_count: number;
+  // Successful Ask Tutor chat completions used today (free tier capped at 10).
+  // Rolled over to local-today by GET /me; the chat composer uses it to seed
+  // the remaining count (disable + "N left today" hint).
+  daily_chat_count: number;
   delivery_analytics_consent_at: string | null;
   delivery_analytics_consent_version: number | null;
   delivery_analytics_revoked_at: string | null;

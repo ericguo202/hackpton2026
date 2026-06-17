@@ -28,11 +28,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.sessions import _parse_company_summary
 from app.core.auth import get_current_user_db
+from app.db.models.enums import UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.tutor import TutorMessageIn
+from app.services.daily_limit import (
+    enforce_chat_daily_limit,
+    record_chat_completion,
+)
 from app.services.moderation import check_moderation
 from app.services.tutor import REDIRECT_LINE, TutorContext, stream_tutor_reply
 
@@ -115,7 +120,19 @@ async def ask_tutor(
     if turn is None or turn.session_id != session.id:
         raise HTTPException(status_code=404, detail="Turn not found")
 
-    # 2. Moderate the incoming message before any LLM spend. `flagged` → 422;
+    # 2. Daily chat-completion cap (free tier). Read-only pre-check BEFORE
+    #    moderation/LLM spend → 429 when the user is already out for the day.
+    #    The counter only advances on a successful completion (below).
+    await enforce_chat_daily_limit(db, user)
+
+    # Capture the bits the post-stream increment needs now, while the request
+    # ORM instance is still attached — the increment runs inside the generator,
+    # past this request session's lifecycle.
+    is_free = user.tier == UserTier.free
+    user_id = user.id
+    tz_name = user.timezone
+
+    # 3. Moderate the incoming message before any LLM spend. `flagged` → 422;
     #    a moderation outage raises ModerationUnavailableError → 503 (handled
     #    globally in main.py). Both land before the SSE stream opens.
     moderation = await check_moderation(
@@ -137,7 +154,7 @@ async def ask_tutor(
             detail=_MODERATION_REFUSAL,
         )
 
-    # 3. Build the lean context and stream the reply.
+    # 4. Build the lean context and stream the reply.
     ctx = _build_context(session, turn, user)
 
     message = body.message
@@ -151,7 +168,21 @@ async def ask_tutor(
     history = [{"role": h.role, "content": h.content} for h in body.history]
 
     async def event_stream():
+        # A "completion" is a successful LLM response: stream_tutor_reply emits a
+        # `done` event on success and an `error` (with no `done`) on any upstream
+        # failure. So we charge a slot iff we reach `done` without having seen an
+        # error — the user is never penalized for an OpenRouter/SDK error. The
+        # increment fails open: a counter hiccup must not corrupt the stream.
+        errored = False
         async for event in stream_tutor_reply(ctx, history, message):
+            if event["type"] == "error":
+                errored = True
+            elif event["type"] == "done" and not errored and is_free:
+                try:
+                    remaining = await record_chat_completion(user_id, tz_name)
+                    event = {**event, "remaining": remaining}
+                except Exception:  # noqa: BLE001 — never break the stream on this
+                    logger.exception("failed to record tutor chat completion")
             yield _sse(event)
 
     return StreamingResponse(
