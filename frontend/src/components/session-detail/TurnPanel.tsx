@@ -22,6 +22,9 @@
 import type { TurnDetail } from '../../types/history';
 import SaveQuestionButton from '../SaveQuestionButton';
 import { MomentFlashContext, useProvideMomentFlash } from './_momentFlash';
+import { AskTutorContext, useProvideAskTutor } from './ask-tutor/_askTutor';
+import AskTutorButton from './ask-tutor/AskTutorButton';
+import AskTutorChat from './ask-tutor/AskTutorChat';
 import {
   DeliveryFeedbackSection,
   InnerCard,
@@ -54,20 +57,24 @@ export default function TurnPanel({
   // The opening question (turn 1, non-followup) is the only saveable one.
   const isOpeningTurn = turn.turn_number === 1 && !turn.is_followup;
   const flash = useProvideMomentFlash(turn.id);
+  const askTutor = useProvideAskTutor();
 
   return (
     <MomentFlashContext.Provider value={flash}>
+    <AskTutorContext.Provider value={askTutor}>
     <div className="flex flex-col gap-4 p-6">
-      {isOpeningTurn && sessionId && (
-        <div className="flex justify-end">
+      {/* Action row: Save (opening turn only) + Ask Tutor (every turn). */}
+      <div className="flex items-start justify-end gap-2">
+        {isOpeningTurn && sessionId && (
           <SaveQuestionButton
             sessionId={sessionId}
             alreadySaved={savedQuestionId != null}
             evaluated={!evaluationFailed}
             sessionCompleted={sessionCompleted}
           />
-        </div>
-      )}
+        )}
+        <AskTutorButton />
+      </div>
       <div className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-2">
         <QuestionAnswerCard turn={turn} />
         <InnerCard>
@@ -96,6 +103,8 @@ export default function TurnPanel({
         />
       </div>
     </div>
+    <AskTutorChat subtitle={`About Turn ${turn.turn_number}`} />
+    </AskTutorContext.Provider>
     </MomentFlashContext.Provider>
   );
 }

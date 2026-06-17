@@ -26,6 +26,8 @@ import type { TranscriptToken } from '../../lib/fillerWords';
 import { segmentTranscriptByImprovements } from '../../lib/transcriptHighlight';
 import FillerRateBar from './FillerRateBar';
 import { useMomentFlash } from './_momentFlash';
+import { useAskTutor } from './ask-tutor/_askTutor';
+import AskAboutThisButton from './ask-tutor/AskAboutThisButton';
 import {
   SCORE_COLOR_MAP,
   SCORE_KEYS,
@@ -312,6 +314,9 @@ export function ImprovementMomentsCard({
   const moments = improvementMomentsOf(turn);
   const headingId = useId();
   const { flash, domIdFor } = useMomentFlash();
+  // Present only when a turn mounts the AskTutor provider (SessionDetail);
+  // null on Practice Results, which reuses this card without the tutor.
+  const tutor = useAskTutor();
   return (
     <InnerCard>
       <p
@@ -360,6 +365,13 @@ export function ImprovementMomentsCard({
                   <span className="font-medium text-text">How to strengthen it: </span>
                   {m.how_to_strengthen}
                 </p>
+                {tutor && (
+                  <div className="mt-2.5">
+                    <AskAboutThisButton
+                      onClick={() => tutor.openAbout(m.transcript_snippet)}
+                    />
+                  </div>
+                )}
               </li>
               );
             })}
