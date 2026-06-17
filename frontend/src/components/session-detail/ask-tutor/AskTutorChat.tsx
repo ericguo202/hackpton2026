@@ -17,19 +17,11 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowUp, Minus, Sparkles, X } from 'lucide-react';
+import { ArrowUp, Check, Loader2, Minus, Sparkles, X } from 'lucide-react';
 
 import { useAskTutor } from './_askTutor';
 import { PieMark } from './PieMark';
-
-type ChatRole = 'tutor' | 'user';
-interface ChatMessage {
-  id: string;
-  role: ChatRole;
-  text: string;
-}
-
-const GREETING = 'How can I help you today?';
+import { useTutorChat } from './useTutorChat';
 
 // One-tap starters mapped to the three jobs the tutor exists for. Tapping one
 // fills the composer (it does NOT auto-send) so the user can edit before
@@ -40,30 +32,29 @@ const STARTERS = [
   'Explain a flagged transcript snippet',
 ];
 
-const STUB_REPLY =
-  "I'm not connected to your interview yet, so I can't answer for real here. Once the tutor is live I'll work through this with you using your transcript and feedback.";
-
 // Desktop drag tuning. ANCHOR mirrors the window's resting bottom-6/left-6
 // inset (1.5rem); the drag offset is a translate() relative to that anchor.
 const DESKTOP_MQ = '(min-width: 900px)';
 const DRAG_MARGIN = 8;
 const DRAG_ANCHOR = 24;
 
-let messageSeq = 0;
-const nextId = () => `atm-${messageSeq++}`;
-
 const clip = (s: string, n: number) =>
   s.length > n ? `${s.slice(0, n).trimEnd()}…` : s;
 
-export default function AskTutorChat({ subtitle }: { subtitle: string }) {
+export default function AskTutorChat({
+  subtitle,
+  sessionId,
+  turnId,
+}: {
+  subtitle: string;
+  sessionId?: string;
+  turnId?: string;
+}) {
   const tutor = useAskTutor();
+  const { messages, isStreaming, send } = useTutorChat(sessionId, turnId);
 
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    { id: nextId(), role: 'tutor', text: GREETING },
-  ]);
   const [text, setText] = useState('');
   const [contextSnippet, setContextSnippet] = useState<string | null>(null);
-  const [thinking, setThinking] = useState(false);
   // Last deep-link nonce we've seeded from. Tracked so a snippet click seeds
   // the composer during render (React's "adjust state while rendering" pattern)
   // instead of in an effect, which would trip react-hooks/set-state-in-effect.
@@ -71,11 +62,15 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
 
   const taRef = useRef<HTMLTextAreaElement>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
-  const replyTimer = useRef<number | null>(null);
   const labelId = useId();
 
   const status = tutor?.status ?? 'closed';
-  const showStarters = messages.length <= 1 && !contextSnippet && !thinking;
+  const showStarters = messages.length <= 1 && !contextSnippet && !isStreaming;
+  // Typing dots: streaming, but the latest message isn't yet an in-progress
+  // tutor bubble (nothing has streamed back, or only a tool chip has landed).
+  const last = messages[messages.length - 1];
+  const showTyping =
+    isStreaming && !(last && last.kind === 'text' && last.role === 'tutor');
 
   const pending = tutor?.pendingSnippet;
   if (pending && pending.nonce !== seededNonce) {
@@ -111,32 +106,19 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
   // Keep the latest message in view.
   useEffect(() => {
     listEndRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages, thinking]);
+  }, [messages, showTyping]);
 
-  // Don't strand a pending stub reply if the panel unmounts (tab switch).
-  useEffect(
-    () => () => {
-      if (replyTimer.current) window.clearTimeout(replyTimer.current);
-    },
-    [],
-  );
-
-  const send = useCallback(
+  // Submit the composer: hand the text + any attached snippet to the streaming
+  // hook (which appends the user bubble), then clear the local input.
+  const submit = useCallback(
     (raw: string) => {
       const trimmed = raw.trim();
-      if (!trimmed || thinking) return;
-      setMessages((m) => [...m, { id: nextId(), role: 'user', text: trimmed }]);
+      if (!trimmed || isStreaming) return;
+      void send(trimmed, contextSnippet ?? undefined);
       setText('');
       setContextSnippet(null);
-      setThinking(true);
-      // TODO(backend): replace with the tutor API call (stream into a message).
-      replyTimer.current = window.setTimeout(() => {
-        setMessages((m) => [...m, { id: nextId(), role: 'tutor', text: STUB_REPLY }]);
-        setThinking(false);
-        replyTimer.current = null;
-      }, 900);
     },
-    [thinking],
+    [isStreaming, send, contextSnippet],
   );
 
   // --- Desktop drag (the header is the handle) ----------------------------
@@ -303,14 +285,47 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
 
       <div className="flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
         <ul className="flex flex-col gap-4">
-          {messages.map((m) =>
-            m.role === 'user' ? (
-              <li key={m.id} className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-highlight/20 px-3.5 py-2.5 text-sm leading-6 text-text">
-                  {m.text}
-                </div>
-              </li>
-            ) : (
+          {messages.map((m) => {
+            // Tool-call step ("Retrieving company brief…") — a spinner while
+            // running, a check once the model moves on.
+            if (m.kind === 'tool') {
+              return (
+                <li key={m.id} className="flex items-end gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-sunken">
+                    <PieMark className="h-4 w-4" />
+                  </span>
+                  <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2.5 text-xs text-text-muted">
+                    {m.state === 'running' ? (
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-deep" aria-hidden />
+                    ) : (
+                      <Check className="h-3.5 w-3.5 shrink-0 text-amber-deep" aria-hidden />
+                    )}
+                    <span>
+                      {m.label}
+                      {m.state === 'running' ? '…' : ''}
+                    </span>
+                  </div>
+                </li>
+              );
+            }
+            if (m.role === 'user') {
+              return (
+                <li key={m.id} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-highlight/20 px-3.5 py-2.5 text-sm leading-6 text-text">
+                    {m.contextSnippet && (
+                      <span className="mb-1 flex items-center gap-1 text-xs text-text-subtle">
+                        <Sparkles className="h-3 w-3 shrink-0 text-amber-deep" aria-hidden />
+                        <span className="italic">
+                          Re: &ldquo;{clip(m.contextSnippet, 10)}&rdquo;
+                        </span>
+                      </span>
+                    )}
+                    {m.text}
+                  </div>
+                </li>
+              );
+            }
+            return (
               <li key={m.id} className="flex items-end gap-2">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-sunken">
                   <PieMark className="h-4 w-4" />
@@ -319,9 +334,9 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
                   {m.text}
                 </div>
               </li>
-            ),
-          )}
-          {thinking && (
+            );
+          })}
+          {showTyping && (
             <li className="flex items-end gap-2">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-sunken">
                 <PieMark className="h-4 w-4" />
@@ -384,7 +399,7 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            send(text);
+            submit(text);
           }}
           className="flex items-end gap-2"
         >
@@ -400,7 +415,7 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                send(text);
+                submit(text);
               }
             }}
             placeholder="Ask about this turn…"
@@ -408,7 +423,7 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
           />
           <button
             type="submit"
-            disabled={!text.trim() || thinking}
+            disabled={!text.trim() || isStreaming}
             aria-label="Send message"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-highlight text-primary-700 transition-colors hover:bg-amber-deep disabled:opacity-40 disabled:hover:bg-highlight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
           >

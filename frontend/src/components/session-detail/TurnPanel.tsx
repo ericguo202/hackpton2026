@@ -103,7 +103,11 @@ export default function TurnPanel({
         />
       </div>
     </div>
-    <AskTutorChat subtitle={`About Turn ${turn.turn_number}`} />
+    <AskTutorChat
+      subtitle={`About Turn ${turn.turn_number}`}
+      sessionId={sessionId}
+      turnId={turn.id}
+    />
     </AskTutorContext.Provider>
     </MomentFlashContext.Provider>
   );
