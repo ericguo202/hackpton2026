@@ -437,6 +437,17 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
   animation: ask-tutor-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* Dragged state (desktop only): translate by the offset the drag handler set
+   via CSS vars. `animation: none` is required because the entrance keyframe
+   runs with fill-mode `both`, whose final transform would otherwise win over
+   this rule. Gated to >=900px so the mobile bottom sheet never translates. */
+@media (min-width: 900px) {
+  .ask-tutor-window[data-dragged='true'] {
+    animation: none;
+    transform: translate(var(--atx, 0px), var(--aty, 0px));
+  }
+}
+
 /* Tutor "is typing" dots — staggered via inline animation-delay per dot. */
 @keyframes tutor-dot {
   0%,

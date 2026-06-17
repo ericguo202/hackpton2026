@@ -16,6 +16,7 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowUp, Minus, Sparkles, X } from 'lucide-react';
 
 import { useAskTutor } from './_askTutor';
@@ -41,6 +42,12 @@ const STARTERS = [
 
 const STUB_REPLY =
   "I'm not connected to your interview yet, so I can't answer for real here. Once the tutor is live I'll work through this with you using your transcript and feedback.";
+
+// Desktop drag tuning. ANCHOR mirrors the window's resting bottom-6/left-6
+// inset (1.5rem); the drag offset is a translate() relative to that anchor.
+const DESKTOP_MQ = '(min-width: 900px)';
+const DRAG_MARGIN = 8;
+const DRAG_ANCHOR = 24;
 
 let messageSeq = 0;
 const nextId = () => `atm-${messageSeq++}`;
@@ -132,6 +139,82 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
     [thinking],
   );
 
+  // --- Desktop drag (the header is the handle) ----------------------------
+  // The window stays a `position: fixed` element anchored bottom-left; dragging
+  // only sets a translate() offset (applied via CSS vars + a desktop-gated
+  // rule), so the mobile bottom-sheet layout is never affected and minimize
+  // always returns the pill to the corner.
+  const winRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<
+    { px: number; py: number; ox: number; oy: number; w: number; h: number } | null
+  >(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragged, setDragged] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  // Keep the window MARGIN px inside every viewport edge. On-screen position of
+  // the bottom-left anchor: left = ANCHOR + ox, top = (vh - ANCHOR - h) + oy.
+  const clampOffset = useCallback((ox: number, oy: number, w: number, h: number) => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const minOx = DRAG_MARGIN - DRAG_ANCHOR;
+    const maxOx = vw - w - DRAG_MARGIN - DRAG_ANCHOR;
+    const minOy = DRAG_MARGIN - (vh - DRAG_ANCHOR - h);
+    const maxOy = DRAG_ANCHOR - DRAG_MARGIN;
+    return {
+      x: Math.min(Math.max(ox, minOx), Math.max(minOx, maxOx)),
+      y: Math.min(Math.max(oy, minOy), Math.max(minOy, maxOy)),
+    };
+  }, []);
+
+  const onHeaderPointerDown = (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return; // primary button only
+    if (!window.matchMedia(DESKTOP_MQ).matches) return; // docked on mobile
+    if ((e.target as HTMLElement).closest('button')) return; // let buttons click
+    const el = winRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    dragRef.current = {
+      px: e.clientX,
+      py: e.clientY,
+      ox: offset.x,
+      oy: offset.y,
+      w: r.width,
+      h: r.height,
+    };
+    setDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onHeaderPointerMove = (e: ReactPointerEvent<HTMLElement>) => {
+    const d = dragRef.current;
+    if (!d) return;
+    setOffset(clampOffset(d.ox + (e.clientX - d.px), d.oy + (e.clientY - d.py), d.w, d.h));
+    if (!dragged) setDragged(true);
+  };
+  const onHeaderPointerUp = (e: ReactPointerEvent<HTMLElement>) => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    setDragging(false);
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
+  const resetPosition = () => {
+    setOffset({ x: 0, y: 0 });
+    setDragged(false);
+  };
+
+  // Re-clamp if the viewport shrinks under a dragged window.
+  useEffect(() => {
+    if (!dragged) return;
+    const onResize = () => {
+      const el = winRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setOffset((o) => clampOffset(o.x, o.y, r.width, r.height));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [dragged, clampOffset]);
+
   if (!tutor || status === 'closed') return null;
 
   if (status === 'minimized') {
@@ -150,9 +233,16 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
 
   return (
     <div
+      ref={winRef}
       role="dialog"
       aria-modal="false"
       aria-labelledby={labelId}
+      data-dragged={dragged ? 'true' : undefined}
+      style={
+        dragged
+          ? ({ '--atx': `${offset.x}px`, '--aty': `${offset.y}px` } as CSSProperties)
+          : undefined
+      }
       className="ask-tutor-window fixed inset-x-0 bottom-0 z-[60] flex h-[80vh] flex-col overflow-hidden rounded-t-2xl border-t border-border bg-surface-raised shadow-lg min-[900px]:inset-x-auto min-[900px]:bottom-6 min-[900px]:left-6 min-[900px]:h-[70vh] min-[900px]:max-h-[34rem] min-[900px]:w-[23rem] min-[900px]:rounded-2xl min-[900px]:border"
     >
       {/* Mobile grab handle doubles as a minimize affordance. */}
@@ -165,7 +255,25 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
         <span className="block h-1.5 w-10 rounded-full bg-border-strong" />
       </button>
 
-      <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
+      <header
+        onPointerDown={onHeaderPointerDown}
+        onPointerMove={onHeaderPointerMove}
+        onPointerUp={onHeaderPointerUp}
+        onPointerCancel={onHeaderPointerUp}
+        onDoubleClick={(e) => {
+          if (
+            window.matchMedia(DESKTOP_MQ).matches &&
+            !(e.target as HTMLElement).closest('button')
+          ) {
+            resetPosition();
+          }
+        }}
+        title="Drag to move · double-click to reset"
+        className={
+          'flex shrink-0 select-none items-center gap-3 border-b border-border px-4 py-3 ' +
+          (dragging ? 'min-[900px]:cursor-grabbing' : 'min-[900px]:cursor-grab')
+        }
+      >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-sunken">
           <PieMark className="h-5 w-5" />
         </span>
@@ -179,7 +287,7 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
           type="button"
           onClick={tutor.minimize}
           aria-label="Minimize tutor"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-sunken hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-sunken hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           <Minus className="h-4 w-4" aria-hidden />
         </button>
@@ -187,7 +295,7 @@ export default function AskTutorChat({ subtitle }: { subtitle: string }) {
           type="button"
           onClick={tutor.close}
           aria-label="Close tutor"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-sunken hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-sunken hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           <X className="h-4 w-4" aria-hidden />
         </button>
