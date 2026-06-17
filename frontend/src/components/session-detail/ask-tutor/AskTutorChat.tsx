@@ -4,7 +4,9 @@
  * Non-modal by design: no dim backdrop, focus is NOT trapped, so the user can
  * read the feedback cards while the conversation stays parked. Three visual
  * states driven by the shared AskTutor context: closed (nothing), minimized
- * (a bottom-left pill), open (the window). Desktop docks it bottom-LEFT — the
+ * (a bottom-left pill), open (the window). On desktop the open window can be
+ * dragged by its header and expanded (header toggle) to fill the available
+ * height for reading a long reply without scrolling. Desktop docks it bottom-LEFT — the
  * bottom-right corner is taken by the global feedback FAB, and keeping the two
  * chat-shaped affordances in different corners stops them reading as the same
  * control. Below 900px it becomes a full-width bottom sheet.
@@ -17,7 +19,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowUp, Check, Loader2, Minus, Sparkles, X } from 'lucide-react';
+import { ArrowUp, Check, Loader2, Maximize2, Minimize2, Minus, Sparkles, X } from 'lucide-react';
 
 import { useAskTutor } from './_askTutor';
 import { PieMark } from './PieMark';
@@ -37,6 +39,16 @@ const STARTERS = [
 const DESKTOP_MQ = '(min-width: 900px)';
 const DRAG_MARGIN = 8;
 const DRAG_ANCHOR = 24;
+
+// Resize bounds (desktop only). The window is anchored bottom-left and grows
+// up + right, so "expand" fills the available height and widens to EXPAND_W —
+// enough to read a long reply without scrolling, while the feedback cards on
+// the right stay visible. Mobile stays the 80vh bottom sheet (already tall).
+const RESIZE_MIN_W = 320; // 20rem
+const RESIZE_MIN_H = 320;
+const EXPAND_W = 416; // 26rem
+const clampNum = (v: number, lo: number, hi: number) =>
+  Math.min(Math.max(v, lo), Math.max(lo, hi));
 
 const clip = (s: string, n: number) =>
   s.length > n ? `${s.slice(0, n).trimEnd()}…` : s;
@@ -133,6 +145,11 @@ export default function AskTutorChat({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragged, setDragged] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // Explicit desktop size (px) once the user expands/restores; null = the
+  // default compact box. Applied via CSS vars in a desktop-gated rule so the
+  // mobile bottom sheet is never touched, mirroring the drag-offset mechanism.
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const isSized = size !== null;
 
   // Keep the window MARGIN px inside every viewport edge. On-screen position of
   // the bottom-left anchor: left = ANCHOR + ox, top = (vh - ANCHOR - h) + oy.
@@ -182,20 +199,48 @@ export default function AskTutorChat({
   const resetPosition = () => {
     setOffset({ x: 0, y: 0 });
     setDragged(false);
+    setSize(null);
   };
 
-  // Re-clamp if the viewport shrinks under a dragged window.
+  // Expand to fill the available height (and widen to EXPAND_W) from wherever
+  // the window currently sits, or restore the compact default if already
+  // expanded. Computed off the live rect so it respects a dragged position.
+  const toggleExpand = useCallback(() => {
+    if (!window.matchMedia(DESKTOP_MQ).matches) return; // bottom sheet on mobile
+    if (size) {
+      setSize(null);
+      return;
+    }
+    const el = winRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const maxW = window.innerWidth - DRAG_MARGIN - r.left;
+    const maxH = r.bottom - DRAG_MARGIN;
+    setSize({
+      w: clampNum(EXPAND_W, RESIZE_MIN_W, maxW),
+      h: Math.max(RESIZE_MIN_H, maxH),
+    });
+  }, [size]);
+
+  // Re-clamp if the viewport shrinks under a dragged or expanded window, so it
+  // never spills off-screen.
   useEffect(() => {
-    if (!dragged) return;
+    if (!dragged && !isSized) return;
     const onResize = () => {
       const el = winRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setOffset((o) => clampOffset(o.x, o.y, r.width, r.height));
+      if (dragged) setOffset((o) => clampOffset(o.x, o.y, r.width, r.height));
+      setSize((s) => {
+        if (!s) return s;
+        const maxW = window.innerWidth - DRAG_MARGIN - r.left;
+        const maxH = r.bottom - DRAG_MARGIN;
+        return { w: clampNum(s.w, RESIZE_MIN_W, maxW), h: clampNum(s.h, RESIZE_MIN_H, maxH) };
+      });
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [dragged, clampOffset]);
+  }, [dragged, isSized, clampOffset]);
 
   if (!tutor || status === 'closed') return null;
 
@@ -220,9 +265,13 @@ export default function AskTutorChat({
       aria-modal="false"
       aria-labelledby={labelId}
       data-dragged={dragged ? 'true' : undefined}
+      data-sized={size ? 'true' : undefined}
       style={
-        dragged
-          ? ({ '--atx': `${offset.x}px`, '--aty': `${offset.y}px` } as CSSProperties)
+        dragged || size
+          ? ({
+              ...(dragged ? { '--atx': `${offset.x}px`, '--aty': `${offset.y}px` } : {}),
+              ...(size ? { '--atw': `${size.w}px`, '--ath': `${size.h}px` } : {}),
+            } as CSSProperties)
           : undefined
       }
       className="ask-tutor-window fixed inset-x-0 bottom-0 z-[60] flex h-[80vh] flex-col overflow-hidden rounded-t-2xl border-t border-border bg-surface-raised shadow-lg min-[900px]:inset-x-auto min-[900px]:bottom-6 min-[900px]:left-6 min-[900px]:h-[70vh] min-[900px]:max-h-[34rem] min-[900px]:w-[23rem] min-[900px]:rounded-2xl min-[900px]:border"
@@ -265,6 +314,20 @@ export default function AskTutorChat({
           </p>
           <p className="truncate text-xs text-text-muted">{subtitle}</p>
         </div>
+        <button
+          type="button"
+          onClick={toggleExpand}
+          aria-pressed={isSized}
+          aria-label={isSized ? 'Restore tutor window size' : 'Expand tutor window'}
+          title={isSized ? 'Restore size' : 'Expand'}
+          className="hidden h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-sunken hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring min-[900px]:flex"
+        >
+          {isSized ? (
+            <Minimize2 className="h-4 w-4" aria-hidden />
+          ) : (
+            <Maximize2 className="h-4 w-4" aria-hidden />
+          )}
+        </button>
         <button
           type="button"
           onClick={tutor.minimize}
