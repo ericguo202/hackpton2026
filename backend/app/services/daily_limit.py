@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.enums import UserTier
 from app.db.models.user import User
+from app.db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,10 @@ logger = logging.getLogger(__name__)
 # Per-day cap for free-tier users. Pro users skip this gate entirely at
 # the call site, so this constant only ever applies to free.
 DAILY_LIMIT_FREE = 5
+
+# Per-day cap on Ask Tutor chat COMPLETIONS for free-tier users. A completion
+# is a successful LLM response, not a sent message — see `record_chat_completion`.
+DAILY_CHAT_LIMIT_FREE = 10
 
 
 def _today_in_tz(tz_name: str | None) -> date:
@@ -163,3 +168,99 @@ async def increment(db: AsyncSession, user: User) -> None:
         )
     )
     await db.execute(stmt)
+
+
+# ── Ask Tutor chat-completion daily limit ──────────────────────────────────────
+# Same shape as the session limit above, on the `daily_chat_count` /
+# `chat_count_reset_date` columns, keyed on the same `_today_in_tz` local day.
+
+
+async def check_and_reset_chat(db: AsyncSession, user: User) -> int:
+    """Atomically roll the chat counter over if stale, then return its value.
+
+    Mirrors `check_and_reset` on the Ask Tutor columns: gated by
+    `chat_count_reset_date IS DISTINCT FROM :today` so the steady-state path
+    (already current for today) does zero writes — `/me` calls this on every
+    view. `IS DISTINCT FROM` also covers the first-ever (NULL) case.
+    """
+    today = _today_in_tz(user.timezone)
+    stmt = (
+        update(User)
+        .where(
+            User.id == user.id,
+            User.chat_count_reset_date.is_distinct_from(today),
+        )
+        .values(
+            daily_chat_count=0,
+            chat_count_reset_date=today,
+        )
+        .returning(User.daily_chat_count)
+    )
+    result = await db.execute(stmt)
+    row = result.scalar_one_or_none()
+    if row is not None:
+        await db.commit()
+        await db.refresh(
+            user, attribute_names=["daily_chat_count", "chat_count_reset_date"]
+        )
+        return row
+    return user.daily_chat_count
+
+
+async def enforce_chat_daily_limit(db: AsyncSession, user: User) -> None:
+    """429 if the free-tier daily Ask Tutor chat cap is already hit.
+
+    Read-only pre-check (no increment) — the counter only advances on a
+    successful completion via `record_chat_completion`. Pro users skip the gate.
+    Run before any moderation / LLM spend so an over-limit caller costs nothing.
+    """
+    if user.tier != UserTier.free:
+        return
+    current_count = await check_and_reset_chat(db, user)
+    if current_count >= DAILY_CHAT_LIMIT_FREE:
+        logger.info(
+            "Free-tier daily chat limit hit clerk_user_id=%s count=%s",
+            user.clerk_user_id, current_count,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"You have reached your daily limit of {DAILY_CHAT_LIMIT_FREE} "
+                "tutor chats. It resets at midnight."
+            ),
+        )
+
+
+async def record_chat_completion(user_id, tz_name: str | None) -> int:
+    """Count one successful chat completion; return the caller's remaining quota.
+
+    Called from inside the Ask Tutor SSE generator AFTER a reply streams
+    successfully, which is past the request-scoped DB session's lifecycle — so
+    this opens its OWN session (same isolation rationale as incident logging)
+    and commits inline. The atomic `CASE` both increments and rolls the counter
+    over on a new local day, so a completion straddling midnight opens a fresh
+    day at 1. Returns `max(0, limit - new_count)` remaining for the wire.
+    """
+    today = _today_in_tz(tz_name)
+    async with AsyncSessionLocal() as session:
+        stmt = (
+            update(User)
+            .where(User.id == user_id)
+            .values(
+                daily_chat_count=case(
+                    (
+                        or_(
+                            User.chat_count_reset_date.is_(None),
+                            User.chat_count_reset_date < today,
+                        ),
+                        1,
+                    ),
+                    else_=User.daily_chat_count + 1,
+                ),
+                chat_count_reset_date=today,
+            )
+            .returning(User.daily_chat_count)
+        )
+        new_count = (await session.execute(stmt)).scalar_one()
+        await session.commit()
+    return max(0, DAILY_CHAT_LIMIT_FREE - new_count)

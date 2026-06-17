@@ -21,6 +21,7 @@ from app.api.v1.endpoints import (
     saved_questions,
     session_feedback,
     sessions,
+    tutor,
     validation,
     webhooks,
 )
@@ -46,6 +47,11 @@ api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"]
 api_router.include_router(
     saved_questions.router, prefix="/saved-questions", tags=["saved-questions"]
 )
+
+# Protected. Ask Tutor chat, scoped to one turn. The route declares its full
+# nested path (/sessions/{id}/turns/{turn_id}/tutor), so it's registered with
+# no prefix.
+api_router.include_router(tutor.router, tags=["tutor"])
 
 # Protected. Required beta feedback after completed sessions.
 api_router.include_router(

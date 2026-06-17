@@ -73,6 +73,17 @@ class User(Base):
     # user creates their first session. Compared against `_today_in_tz`
     # using the user's stored IANA `timezone` (UTC fallback when missing).
     count_reset_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Ask Tutor analogue of the session counter above. Free users get 10
+    # SUCCESSFUL chat completions (not sent messages) per local calendar day;
+    # the counter increments only when the LLM responds successfully (see
+    # `daily_limit.record_chat_completion`) and resets lazily on a new local
+    # day, keyed on the same `timezone`. `chat_count_reset_date` is NULL until
+    # the user's first chat.
+    daily_chat_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    chat_count_reset_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # IANA name (e.g. "America/New_York"). Populated from the browser on
     # each session-create — we trust the latest client value, fall back to
     # UTC for any parse error so a missing/malformed TZ never blocks a

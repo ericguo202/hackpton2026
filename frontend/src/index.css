@@ -420,14 +420,80 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
   animation: moment-flash-border 1450ms ease-out;
 }
 
+/* Ask Tutor window entrance: a short rise + fade as it docks (bottom-left on
+   desktop, bottom sheet on mobile). Exponential ease-out, no bounce. */
+@keyframes ask-tutor-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ask-tutor-window {
+  animation: ask-tutor-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Dragged state (desktop only): translate by the offset the drag handler set
+   via CSS vars. `animation: none` is required because the entrance keyframe
+   runs with fill-mode `both`, whose final transform would otherwise win over
+   this rule. Gated to >=900px so the mobile bottom sheet never translates. */
+@media (min-width: 900px) {
+  .ask-tutor-window[data-dragged='true'] {
+    animation: none;
+    transform: translate(var(--atx, 0px), var(--aty, 0px));
+  }
+
+  /* Expanded state (desktop only): the user-set size from the header expand
+     toggle, applied via CSS vars. Overrides the default w-[23rem]/h-[70vh]/
+     max-h-[34rem] utilities (higher specificity). The width/height ease makes
+     the snap feel deliberate; transform is excluded so dragging stays instant. */
+  .ask-tutor-window {
+    transition: width 200ms cubic-bezier(0.16, 1, 0.3, 1),
+      height 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .ask-tutor-window[data-sized='true'] {
+    width: var(--atw);
+    height: var(--ath);
+    max-width: none;
+    max-height: none;
+  }
+}
+
+/* Tutor "is typing" dots — staggered via inline animation-delay per dot. */
+@keyframes tutor-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.tutor-dot {
+  animation: tutor-dot 1.1s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .anim-reveal,
   .anim-slide-in-left,
   .anim-slide-in-right,
   .anim-crossfade,
-  .moment-flash {
+  .moment-flash,
+  .ask-tutor-window {
     animation: none;
     opacity: 1;
+    transition: none;
+  }
+  .tutor-dot {
+    animation: none;
   }
 }
 

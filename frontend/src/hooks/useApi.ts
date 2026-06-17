@@ -46,5 +46,32 @@ export function useApi() {
     [getToken, isSignedIn],
   );
 
-  return { apiFetch, isReady: isLoaded };
+  // Same auth + error contract as `apiFetch`, but returns the raw `Response`
+  // instead of parsing JSON — for streaming endpoints (SSE) where the caller
+  // reads `res.body`. On a non-2xx the error body is read and thrown as an
+  // `ApiError` (so e.g. a 422 moderation block surfaces its `detail`).
+  const apiStream = useCallback(
+    async (path: string, init?: RequestInit): Promise<Response> => {
+      if (!isSignedIn) {
+        throw new ApiError(401, 'not signed in');
+      }
+      const token = await getToken();
+      if (!token) {
+        throw new ApiError(401, 'no session token');
+      }
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(init?.headers as Record<string, string> | undefined),
+      };
+      const res = await fetch(buildUrl(path), { ...init, headers });
+      if (!res.ok) {
+        throw new ApiError(res.status, await res.text());
+      }
+      return res;
+    },
+    [getToken, isSignedIn],
+  );
+
+  return { apiFetch, apiStream, isReady: isLoaded };
 }
