@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowUp, Check, Loader2, Maximize2, Minimize2, Minus, Sparkles, X } from 'lucide-react';
 
 import { useAskTutor } from './_askTutor';
@@ -245,7 +246,7 @@ export default function AskTutorChat({
   if (!tutor || status === 'closed') return null;
 
   if (status === 'minimized') {
-    return (
+    return createPortal(
       <button
         type="button"
         onClick={tutor.restore}
@@ -254,11 +255,16 @@ export default function AskTutorChat({
       >
         <PieMark className="h-5 w-5" />
         Ask Tutor
-      </button>
+      </button>,
+      document.body,
     );
   }
 
-  return (
+  // Portal to <body> so the viewport-fixed window lives in the root stacking
+  // context. Otherwise the SessionDetail tabpanel's `anim-crossfade` (an opacity
+  // animation = a stacking context) would trap the window's z-[60] beneath the
+  // sibling folder-tab strip (z-10), letting the tabs paint over the chat.
+  return createPortal(
     <div
       ref={winRef}
       role="dialog"
@@ -494,6 +500,7 @@ export default function AskTutorChat({
           </button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
