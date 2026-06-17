@@ -24,6 +24,7 @@ import { ArrowUp, Check, Loader2, Maximize2, Minimize2, Minus, Sparkles, X } fro
 
 import { useAskTutor } from './_askTutor';
 import { PieMark } from './PieMark';
+import { TutorMarkdown } from './TutorMarkdown';
 import { useTutorChat } from './useTutorChat';
 
 // One-tap starters mapped to the three jobs the tutor exists for. Tapping one
@@ -400,7 +401,7 @@ export default function AskTutorChat({
                   <PieMark className="h-4 w-4" />
                 </span>
                 <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2.5 text-sm leading-6 text-text">
-                  {m.text}
+                  <TutorMarkdown text={m.text} />
                 </div>
               </li>
             );
