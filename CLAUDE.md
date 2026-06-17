@@ -71,11 +71,13 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
   - **Stay-in-persona:** off-topic asks (joke, code, image, trivia) get EXACTLY the `REDIRECT_LINE` and nothing else.
   - **Constrained markdown:** the model may use ONLY `**bold**`, `*italic*`, hyphen bullets, and numbered lists — no headings/tables/code/blockquotes/links. Rendered by the frontend's `TutorMarkdown` (see `frontend/CLAUDE.md`). **Asterisks pass through verbatim** — this path has NO `_sanitize`-style asterisk stripper (unlike `followup.py`).
   - **Moderation precedes the stream:** each incoming message hits OpenAI moderation BEFORE the SSE opens → `flagged` returns a normal `422` (friendly tutor-bubble detail), outage → `503`; never a half-open stream.
+  - **Abuse caps (client + server).** (1) **Per-message length:** typed `message` capped at **300 chars** — `TutorMessageIn.message` `max_length=300` (server) mirrored by the composer's `maxLength` + a near-limit char counter (`MAX_MESSAGE_CHARS`). The attached "Ask about this" `context_snippet` is a **separate field** (cap 2000) and is NOT counted toward the 300. (2) **Daily volume:** free-tier users get **10 successful completions per local day** (`DAILY_CHAT_LIMIT_FREE`), mirroring the session daily-limit pattern in `daily_limit.py` (NOT the epoch-aligned `rate_limit.py` — it can't express "midnight in the user's IANA tz"). Counter on `users.daily_chat_count` / `chat_count_reset_date`, rolled lazily via the same `_today_in_tz(user.timezone)` reset (zero-write steady state).
+  - **Daily-limit mechanics (load-bearing):** the read-only `enforce_chat_daily_limit` pre-check runs in the endpoint **before** moderation/LLM spend → `429` when already at 10. The counter advances **only on a successful completion** — increment iff a `done` event fires (an upstream/SDK failure yields `error` + no `done`, so a failed reply is **not** charged). The increment (`record_chat_completion`) runs inside the SSE generator in its **own** `AsyncSessionLocal` session (past the request session's life, like incident logging) and injects `remaining` into the `done` event. `GET /me` rolls + returns `daily_chat_count`, so the frontend disables the composer + shows the red "resets at midnight" message at 0 and a muted "N left today" hint at ≤3, seeded from `/me` and updated live from `done.remaining`/`429`. Pro tier skips the gate (mirrors sessions).
   - **Ephemeral:** the backend persists NOTHING — the frontend holds the conversation in memory; leaving SessionDetail (a tab switch) discards it (blank slate on return). History is re-sent per request (text bubbles only; tool results re-fetched, never echoed) for multi-turn coherence.
 
 - **Interview voices (ElevenLabs).** `VoicePicker` has preset voices + "Surprise me". Per-session choice.
 
-- **Free tier with daily session limits.** 5 completed sessions per local calendar day. Counter increments at **finalization** (not creation — abandoning doesn't burn a slot). IANA timezone from browser (`users.timezone`, UTC fallback). Pre-check at `POST /sessions` **before** any LLM/API spend → 429. Race-safe atomic `UPDATE` in `daily_limit.py`. `GET /me` also runs `check_and_reset` — zero writes steady-state (UPDATE gated by `count_reset_date.is_distinct_from(today)`, NULL-safe).
+- **Free tier with daily session limits.** 5 completed sessions per local calendar day. Counter increments at **finalization** (not creation — abandoning doesn't burn a slot). IANA timezone from browser (`users.timezone`, UTC fallback). Pre-check at `POST /sessions` **before** any LLM/API spend → 429. Race-safe atomic `UPDATE` in `daily_limit.py`. `GET /me` also runs `check_and_reset` — zero writes steady-state (UPDATE gated by `count_reset_date.is_distinct_from(today)`, NULL-safe). **Second daily limit, same module:** Ask Tutor chats are capped at **10 successful completions/day** (`daily_chat_count` / `chat_count_reset_date`, `check_and_reset_chat` / `enforce_chat_daily_limit` / `record_chat_completion`) — see the Ask Tutor bullet for the success-only-increment nuance. `GET /me` rolls both counters for free tier.
 
 - **Incidents event log (internal/admin-only).** `user_created`, `user_signed_in`, `moderation_request`, `interview_session_started`, `error`. Written in a fresh DB session (failures never break request). Payload caps: `sent_content` 10k, `error` 8k, large JSON 2k. Auth events backend-observed (no Clerk webhooks); `user_signed_in` dedupes by Clerk `claims.sid`. Moderation incidents log only on OpenAI API fire (not deterministic local rejects). **Moderation fails closed:** `ModerationUnavailableError` writes `error` incident; callers return 503; `ensure_moderation_configured()` aborts boot if `OPENAI_API_KEY` unset. `interview_session_started` logs only after session persistence. 5xx/unhandled errors → `error`; normal 4xx does not.
 
@@ -118,6 +120,7 @@ Browser (React+Vite)
 ```sql
 users(id, clerk_user_id UNIQUE, email, name, resume_text, industry, target_role, experience_level, short_bio, completed_registration,
 tier user_tier DEFAULT 'free', daily_session_count INT DEFAULT 0, count_reset_date DATE NULL, timezone TEXT NULL,
+daily_chat_count INT DEFAULT 0, chat_count_reset_date DATE NULL,  -- Ask Tutor daily cap (10/day free); same tz reset as sessions (migration 0017)
 recent_opening_questions JSONB DEFAULT '[]', created_at, updated_at)
 
 interview_sessions(id, user_id FK, config_id FK, status, company, job_title, company_summary, overall_score, notes,
@@ -153,7 +156,7 @@ POST /sessions                { company, job_title, voice_id?, timezone? } → 2
 POST /sessions/{id}/turns     { audio_blob, cv_summary? } → { transcript, scores|null, feedback|null, feedback_detail|null, next_question, next_question_audio_url, is_final, evaluation_pending }
 GET  /sessions/{id}           full session + turns (incl. saved_question_id)
 GET  /sessions                user's session history
-GET  /me                      current user row (tier + daily_session_count)
+GET  /me                      current user row (tier + daily_session_count + daily_chat_count; rolls both daily counters for free tier)
 GET  /me/stats                aggregate scores over time
 
 POST   /saved-questions             { session_id } → 201 SavedQuestionOut | 404 | 422 (not completed / opening turn unscored) | 409 (5-cap)
@@ -162,7 +165,7 @@ GET    /saved-questions/{id}        frozen question + summary + attempts[] (per-
 DELETE /saved-questions/{id}        → 204 (linked sessions survive — FK ON DELETE SET NULL)
 POST   /saved-questions/{id}/practice  { voice_id?, timezone? } → SessionCreateOut (re-practice; skips research/question LLM calls) | 429 (daily limit)
 
-POST /sessions/{id}/turns/{turn_id}/tutor  { message, history[], context_snippet? } → text/event-stream (SSE: tool|token|done|error) | 404 | 422 (moderation block) | 503 (moderation down). Ephemeral — nothing persisted.
+POST /sessions/{id}/turns/{turn_id}/tutor  { message (≤300 chars), history[], context_snippet? } → text/event-stream (SSE: tool|token|done|error; `done` carries `remaining` for free tier) | 404 | 422 (moderation block / message too long) | 429 (daily chat cap) | 503 (moderation down). Ephemeral — nothing persisted; 429 pre-check + the success-only increment are the daily-limit gate.
 ```
 
 `timezone` is an IANA name from `Intl.DateTimeFormat().resolvedOptions().timeZone`, persisted on `users.timezone`. Missing/unparseable → UTC. TTS audio: base64 inline in JSON — no S3.
