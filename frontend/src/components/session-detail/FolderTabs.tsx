@@ -12,8 +12,10 @@
  * sits outside the card on the left/right gutters with a hover tooltip
  * pill. It shares the design language so it lives in the same module.
  *
- * Both are desktop-only — the orchestrator gates them with
- * `hidden min-[900px]:flex`.
+ * `FolderTabs` + `SideNavButton` are desktop-only (gated with
+ * `hidden min-[900px]:flex`). `PagerArrow` is their mobile counterpart: the
+ * chevron in the top pager row that replaces both below 900px, where the
+ * bottom edge is reserved for the floating Ask Tutor + feedback buttons.
  */
 
 import { useRef, type KeyboardEvent } from 'react';
@@ -139,6 +141,48 @@ export function SideNavButton({ direction, onClick, targetLabel, hidden = false 
         'transition-colors hover:bg-surface-sunken ' +
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ' +
         'focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+      }
+    >
+      {isNext ? <ChevronRight size={20} aria-hidden /> : <ChevronLeft size={20} aria-hidden />}
+    </button>
+  );
+}
+
+type PagerArrowProps = {
+  direction: 'prev' | 'next';
+  onClick: () => void;
+  /** Inert (greyed, non-interactive) at the first/last tab. */
+  disabled: boolean;
+  /** Target tab name for the accessible label, e.g. "Turn 1". */
+  label?: string;
+};
+
+/**
+ * Chevron button for the mobile top pager. Reuses SideNavButton's circular
+ * 44px vocabulary (a comfortable touch target) and adds a disabled end-state
+ * so the pager keeps its symmetric three-slot layout (arrow · position ·
+ * arrow) instead of collapsing. Uses `active:` not `hover:` for press
+ * feedback since touch has no reliable hover.
+ */
+export function PagerArrow({ direction, onClick, disabled, label }: PagerArrowProps) {
+  const isNext = direction === 'next';
+  const ariaLabel = disabled
+    ? isNext ? 'No next tab' : 'No previous tab'
+    : isNext ? `Go to next tab: ${label}` : `Go to previous tab: ${label}`;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      className={
+        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ' +
+        'transition-colors focus-visible:outline-none focus-visible:ring-2 ' +
+        'focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
+        (disabled
+          ? 'cursor-not-allowed border-border bg-surface-sunken text-text-muted/40'
+          : 'cursor-pointer border-border-strong bg-surface-raised text-text active:bg-surface-sunken')
       }
     >
       {isNext ? <ChevronRight size={20} aria-hidden /> : <ChevronLeft size={20} aria-hidden />}
