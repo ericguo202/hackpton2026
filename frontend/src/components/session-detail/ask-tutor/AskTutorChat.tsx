@@ -56,12 +56,19 @@ const RESIZE_MIN_H = 320;
 const EXPAND_W = 416; // 26rem
 
 // Mobile bottom-sheet resize. Dragging the grab handle sets an explicit height
-// between MOBILE_MIN_H (enough for header + composer + a peek of messages) and
-// MOBILE_MAX_VH of the viewport, so the sheet can be compressed out of the way
-// or pulled up to read a long reply. A move past TAP_SLOP px counts as a drag;
-// anything shorter is a tap and still minimizes (the handle's legacy role).
+// up to MOBILE_MAX_VH of the viewport, so the sheet can be compressed out of the
+// way or pulled up to read a long reply. A move past TAP_SLOP px counts as a
+// drag; anything shorter is a tap and still minimizes (the handle's legacy role).
+//
+// The compress floor is NOT a fixed constant: the composer must always stay
+// visible (otherwise the sheet is unusable and re-opening recovers awkwardly),
+// but its height varies — the starter chips, the snippet chip and the char
+// counter all grow it. So the floor is measured live from the non-scrolling
+// chrome (handle + header + composer) plus a thin peek of the message list.
+// MOBILE_MIN_H is only a fallback for the first frame before refs are measured.
 const MOBILE_MIN_H = 240;
 const MOBILE_MAX_VH = 0.92;
+const SHEET_PEEK = 8;
 const TAP_SLOP = 5;
 const mobileMaxH = () => Math.round(window.innerHeight * MOBILE_MAX_VH);
 
@@ -188,6 +195,23 @@ export default function AskTutorChat({
   // Tracks an in-flight handle drag and whether it has crossed TAP_SLOP, so
   // pointerup can tell a tap (→ minimize) from a resize (→ do nothing).
   const sheetDragRef = useRef<{ py: number; h: number; moved: boolean } | null>(null);
+  // Measured to compute the live compress floor (see sheetFloorH).
+  const handleRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+
+  // Smallest sheet height that still shows the handle, header and composer in
+  // full — the message list collapses to a thin SHEET_PEEK sliver. Measured
+  // live so it tracks the composer growing (starter chips / snippet / counter),
+  // and never exceeds the max so the clamp range stays valid.
+  const sheetFloorH = useCallback(() => {
+    const chrome =
+      (handleRef.current?.offsetHeight ?? 0) +
+      (headerRef.current?.offsetHeight ?? 0) +
+      (composerRef.current?.offsetHeight ?? 0);
+    const floor = chrome > 0 ? chrome + SHEET_PEEK : MOBILE_MIN_H;
+    return Math.min(floor, mobileMaxH());
+  }, []);
 
   // Keep the window MARGIN px inside every viewport edge. On-screen position of
   // the bottom-left anchor: left = ANCHOR + ox, top = (vh - ANCHOR - h) + oy.
@@ -281,7 +305,7 @@ export default function AskTutorChat({
     if (!d) return;
     const dy = e.clientY - d.py;
     if (!d.moved && Math.abs(dy) > TAP_SLOP) d.moved = true;
-    if (d.moved) setMobileHeight(clampNum(d.h - dy, MOBILE_MIN_H, mobileMaxH()));
+    if (d.moved) setMobileHeight(clampNum(d.h - dy, sheetFloorH(), mobileMaxH()));
   };
   const onHandlePointerUp = (e: ReactPointerEvent<HTMLElement>) => {
     const d = sheetDragRef.current;
@@ -310,12 +334,29 @@ export default function AskTutorChat({
         const maxH = r.bottom - DRAG_MARGIN;
         return { w: clampNum(s.w, RESIZE_MIN_W, maxW), h: clampNum(s.h, RESIZE_MIN_H, maxH) };
       });
-      // Keep a resized bottom sheet within the (possibly rotated) viewport.
-      setMobileHeight((h) => (h === null ? h : clampNum(h, MOBILE_MIN_H, mobileMaxH())));
+      // Keep a resized bottom sheet within the (possibly rotated) viewport, and
+      // re-assert the composer-visible floor in case the chrome reflowed.
+      setMobileHeight((h) => (h === null ? h : clampNum(h, sheetFloorH(), mobileMaxH())));
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [dragged, isSized, mobileHeight, clampOffset]);
+  }, [dragged, isSized, mobileHeight, clampOffset, sheetFloorH]);
+
+  // The composer's height is dynamic (starter chips, snippet chip, char counter,
+  // the auto-growing textarea). If it grows while the sheet is compressed, lift
+  // the sheet so the composer never clips below the floor. A ResizeObserver is
+  // the right subscription here — it catches every reflow without enumerating
+  // each cause, and re-attaches when the window opens (status dep). No-op while
+  // unsized (mobileHeight null), so desktop is untouched.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      setMobileHeight((h) => (h === null ? null : Math.max(h, sheetFloorH())));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [status, sheetFloorH]);
 
   if (!tutor || status === 'closed') return null;
 
@@ -361,6 +402,7 @@ export default function AskTutorChat({
       {/* Mobile grab handle: drag to resize the sheet, tap to minimize.
           touch-action:none so the vertical drag resizes instead of scrolling. */}
       <button
+        ref={handleRef}
         type="button"
         onPointerDown={onHandlePointerDown}
         onPointerMove={onHandlePointerMove}
@@ -374,6 +416,7 @@ export default function AskTutorChat({
       </button>
 
       <header
+        ref={headerRef}
         onPointerDown={onHeaderPointerDown}
         onPointerMove={onHeaderPointerMove}
         onPointerUp={onHeaderPointerUp}
@@ -509,7 +552,10 @@ export default function AskTutorChat({
         <div ref={listEndRef} />
       </div>
 
-      <div className="shrink-0 border-t border-border px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+      <div
+        ref={composerRef}
+        className="shrink-0 border-t border-border px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3"
+      >
         {contextSnippet && (
           <div className="mb-2.5 flex items-start gap-2 rounded-lg bg-surface-sunken px-3 py-2">
             <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-deep" aria-hidden />
