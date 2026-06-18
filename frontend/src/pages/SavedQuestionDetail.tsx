@@ -37,23 +37,18 @@ import { useSavedQuestionDetail } from '../hooks/useSavedQuestionDetail';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { buildRadarData } from '../lib/radarData';
+import { SCORE_DIMENSIONS, type ScoreKey } from '../lib/scoreDimensions';
 import type {
   SavedQuestionAttempt,
   SavedQuestionDetail as SavedQuestionDetailType,
 } from '../types/savedQuestions';
 import type { PracticeLocationState } from './Practice';
 
-// Same chart palette + ordering as History.tsx (sourced from --color-chart-*).
-const DIMENSIONS = [
-  { key: 'structure',       label: 'Structure',       color: 'var(--color-chart-1)' },
-  { key: 'problem_solving', label: 'Problem Solving', color: 'var(--color-chart-2)' },
-  { key: 'impact',          label: 'Impact',          color: 'var(--color-chart-3)' },
-  { key: 'initiative',      label: 'Initiative',      color: 'var(--color-chart-4)' },
-  { key: 'depth',           label: 'Depth',           color: 'var(--color-chart-5)' },
-  { key: 'delivery',        label: 'Delivery',        color: 'var(--color-chart-6)' },
-] as const;
+// Chart series key/label/color = the canonical SCORE_DIMENSIONS (same palette +
+// ordering as History.tsx, sourced from --color-chart-*).
+const DIMENSIONS = SCORE_DIMENSIONS;
 
-type DimensionKey = (typeof DIMENSIONS)[number]['key'];
+type DimensionKey = ScoreKey;
 
 function num(v: string | number | null | undefined): number | null {
   if (v === null || v === undefined || v === '') return null;

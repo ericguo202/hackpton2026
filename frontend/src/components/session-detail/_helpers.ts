@@ -7,32 +7,24 @@
  * num() / turnAverage in two places.
  */
 
+import { SCORE_DIMENSIONS, type ScoreKey } from '../../lib/scoreDimensions';
 import type { ImprovementMoment, TurnDetail } from '../../types/history';
 
-/** Score dimension keys in display order, paired with their UI labels. */
-export const SCORE_KEYS = [
-  ['structure',       'Structure'],
-  ['problem_solving', 'Problem Solving'],
-  ['impact',          'Impact'],
-  ['initiative',      'Initiative'],
-  ['depth',           'Depth'],
-  ['delivery',        'Delivery'],
-] as const;
+export type { ScoreKey };
 
-export type ScoreKey = (typeof SCORE_KEYS)[number][0];
+/** Score dimension keys in display order, paired with their UI labels. */
+export const SCORE_KEYS = SCORE_DIMENSIONS.map(
+  (d) => [d.key, d.label] as const,
+);
 
 /**
- * Per-dimension chart colors — must match History.tsx DIMENSIONS so the
- * trend chart and the per-session tiles share one visual language.
+ * Per-dimension chart colors, keyed by dimension. Derived from the canonical
+ * `SCORE_DIMENSIONS` so the trend chart and the per-session tiles share one
+ * visual language with zero hand-mirroring.
  */
-export const SCORE_COLOR_MAP: Record<ScoreKey, string> = {
-  structure:       'var(--color-chart-1)',
-  problem_solving: 'var(--color-chart-2)',
-  impact:          'var(--color-chart-3)',
-  initiative:      'var(--color-chart-4)',
-  depth:           'var(--color-chart-5)',
-  delivery:        'var(--color-chart-6)',
-};
+export const SCORE_COLOR_MAP = Object.fromEntries(
+  SCORE_DIMENSIONS.map((d) => [d.key, d.color]),
+) as Record<ScoreKey, string>;
 
 /** Wire-format Decimal-as-string → number, with null passthrough. */
 export function num(v: string | null | undefined): number | null {

@@ -66,11 +66,6 @@ _VOICE_POOL: tuple[VoiceProfile, ...] = (
 _VOICE_BY_ID: dict[str, VoiceProfile] = {v.id: v for v in _VOICE_POOL}
 
 
-def list_voices() -> tuple[VoiceProfile, ...]:
-    """All voice profiles in display order. Stable, safe to expose to FE."""
-    return _VOICE_POOL
-
-
 def is_valid_voice_id(voice_id: str) -> bool:
     """True iff `voice_id` is one of the public IDs in the pool.
 

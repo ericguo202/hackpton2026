@@ -9,22 +9,16 @@
  * `SavedQuestionDetail.tsx` (averaged over the last ≤5 evaluated attempts).
  */
 
-// Canonical radar dimensions — same keys/order/palette as the pages' line-chart
-// DIMENSIONS (sourced from --color-chart-*), kept here so both pages render an
-// identical radar. The radar is single-series ink; these colors tint only the
-// axis labels + vertex dots. `short` is the abbreviated angle-axis tick (the long
-// "Problem Solving" would clip in the narrow 1/3 column); the full `label` is kept
-// for the tooltip.
-const RADAR_DIMENSIONS = [
-  { key: 'structure',       label: 'Structure',       short: 'Structure',     color: 'var(--color-chart-1)' },
-  { key: 'problem_solving', label: 'Problem Solving', short: 'Prob. Solving', color: 'var(--color-chart-2)' },
-  { key: 'impact',          label: 'Impact',          short: 'Impact',        color: 'var(--color-chart-3)' },
-  { key: 'initiative',      label: 'Initiative',      short: 'Initiative',    color: 'var(--color-chart-4)' },
-  { key: 'depth',           label: 'Depth',           short: 'Depth',         color: 'var(--color-chart-5)' },
-  { key: 'delivery',        label: 'Delivery',        short: 'Delivery',      color: 'var(--color-chart-6)' },
-] as const;
+// Radar dimensions = the canonical score dimensions (same keys/order/palette as
+// the pages' line charts). The radar is single-series ink; these colors tint
+// only the axis labels + vertex dots. `short` is the abbreviated angle-axis tick
+// (the long "Problem Solving" would clip in the narrow 1/3 column); the full
+// `label` is kept for the tooltip.
+import { SCORE_DIMENSIONS, type ScoreKey } from './scoreDimensions';
 
-export type RadarDimensionKey = (typeof RADAR_DIMENSIONS)[number]['key'];
+const RADAR_DIMENSIONS = SCORE_DIMENSIONS;
+
+export type RadarDimensionKey = ScoreKey;
 
 /** A window row: per-dimension value (0-10) or null when that dimension has no
  *  score (e.g. delivery with the camera off). Callers map their session/attempt

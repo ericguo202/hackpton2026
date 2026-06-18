@@ -12,7 +12,7 @@
 
 import { Link } from 'react-router';
 
-export function PieMark({ className }: { className?: string }) {
+function PieMark({ className }: { className?: string }) {
   return (
     <svg
       viewBox="-158 -164 316 316"

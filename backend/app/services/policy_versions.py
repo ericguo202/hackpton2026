@@ -10,16 +10,5 @@ The frontend mirrors these by hand in `frontend/src/lib/policyAcceptance.ts` —
 keep the two in sync (same discipline as `DELIVERY_ANALYTICS_NOTICE_VERSION`).
 """
 
-from app.db.models.user import User
-
-
 CURRENT_TERMS_VERSION = 1
 CURRENT_PRIVACY_VERSION = 1
-
-
-def has_accepted_current_policies(user: User) -> bool:
-    """True only when the user has accepted the current Terms AND Privacy versions."""
-    return (
-        user.terms_accepted_version == CURRENT_TERMS_VERSION
-        and user.privacy_accepted_version == CURRENT_PRIVACY_VERSION
-    )

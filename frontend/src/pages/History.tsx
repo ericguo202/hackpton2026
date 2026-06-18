@@ -39,6 +39,7 @@ import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { useSessions } from '../hooks/useSessions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { buildRadarData } from '../lib/radarData';
+import { SCORE_DIMENSIONS, type ScoreKey } from '../lib/scoreDimensions';
 import type {
   DimensionAverages,
   FillerWordStat,
@@ -47,20 +48,13 @@ import type {
 import type { SavedQuestionListItem } from '../types/savedQuestions';
 import type { PracticeLocationState } from './Practice';
 
-// Chart series colors are sourced from the dedicated --color-chart-*
-// palette in index.css, NOT the primary/secondary/etc. ramps. Those
-// ramps are intentionally monochromatic warm-earth and render as
-// indistinguishable near-black on the chart.
-const DIMENSIONS = [
-  { key: 'structure',       label: 'Structure',       color: 'var(--color-chart-1)' },
-  { key: 'problem_solving', label: 'Problem Solving', color: 'var(--color-chart-2)' },
-  { key: 'impact',          label: 'Impact',          color: 'var(--color-chart-3)' },
-  { key: 'initiative',      label: 'Initiative',      color: 'var(--color-chart-4)' },
-  { key: 'depth',           label: 'Depth',           color: 'var(--color-chart-5)' },
-  { key: 'delivery',        label: 'Delivery',        color: 'var(--color-chart-6)' },
-] as const;
+// Chart series key/label/color come from the canonical SCORE_DIMENSIONS
+// (colors sourced from the dedicated --color-chart-* palette in index.css, NOT
+// the primary/secondary ramps — those are monochromatic warm-earth and render
+// as indistinguishable near-black on a chart).
+const DIMENSIONS = SCORE_DIMENSIONS;
 
-type DimensionKey = (typeof DIMENSIONS)[number]['key'];
+type DimensionKey = ScoreKey;
 
 /** Wire-format Decimal-as-string → number, with null passthrough. */
 function num(v: string | null | undefined): number | null {

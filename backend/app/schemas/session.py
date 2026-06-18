@@ -27,7 +27,7 @@ class SessionCreateIn(BaseModel):
     company: str = Field(min_length=1, max_length=60)
     job_title: str = Field(min_length=1, max_length=200)
     # Optional ElevenLabs voice ID picked from the start-form picker. The
-    # endpoint validates this against `voice_pool.list_voices()` and
+    # endpoint validates this against `voice_pool.is_valid_voice_id()` and
     # silently falls back to the deterministic-random voice when the
     # caller omits it (or sends an unknown ID), so older clients keep
     # working unchanged.

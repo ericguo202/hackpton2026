@@ -6,9 +6,10 @@
  * row needs (`remove`, `rePractice`) so the page doesn't hand-roll fetches.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 
 import { useApi } from './useApi';
+import { useFetch } from './useFetch';
 import type {
   SavedQuestionListItem,
   SavedQuestionOut,
@@ -23,30 +24,9 @@ export type RePracticeResult = {
 };
 
 export function useSavedQuestions() {
-  const { apiFetch, isReady } = useApi();
-  const [saved, setSaved] = useState<SavedQuestionListItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const fetchSaved = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await apiFetch<SavedQuestionListItem[]>(
-        '/api/v1/saved-questions',
-      );
-      setSaved(data);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [apiFetch]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (isReady) void fetchSaved();
-  }, [isReady, fetchSaved]);
+  const { apiFetch } = useApi();
+  const { data: saved, refetch: fetchSaved, ...rest } =
+    useFetch<SavedQuestionListItem[]>('/api/v1/saved-questions');
 
   const save = useCallback(
     async (sessionId: string) => {
@@ -80,5 +60,5 @@ export function useSavedQuestions() {
     [apiFetch],
   );
 
-  return { saved, isLoading, error, refetch: fetchSaved, save, remove, rePractice, isReady };
+  return { saved, refetch: fetchSaved, save, remove, rePractice, ...rest };
 }
