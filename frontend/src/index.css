@@ -463,22 +463,40 @@ h3 { font-size: 1.25rem;                              line-height: 1.3;  letter-
   }
 }
 
-/* Tutor "is typing" dots — staggered via inline animation-delay per dot. */
+/* Resized state (mobile only): the bottom sheet's height after the user drags
+   the grab handle to compress or grow it. Applied via a CSS var so the desktop
+   drag/size geometry above is never touched. Higher specificity than the base
+   `h-[80vh]` utility wins; no transition so dragging tracks the finger. */
+@media (max-width: 899px) {
+  .ask-tutor-window[data-msized='true'] {
+    height: var(--msh);
+  }
+}
+
+/* Tutor "is typing" dots — staggered via inline animation-delay per dot.
+   translate3d (not translateY) + will-change force each dot onto its own
+   compositing layer. Without it, iOS Safari silently drops the animation when
+   the dots live inside the momentum-scrolling message list (overflow-y-auto):
+   a long-standing WebKit bug where opacity/transform anims on descendants of a
+   scroll container aren't painted. Chrome composites them regardless. */
 @keyframes tutor-dot {
   0%,
   60%,
   100% {
     opacity: 0.3;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
   30% {
     opacity: 1;
-    transform: translateY(-2px);
+    transform: translate3d(0, -2px, 0);
   }
 }
 
 .tutor-dot {
   animation: tutor-dot 1.1s ease-in-out infinite;
+  will-change: transform, opacity;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -16,9 +16,9 @@ import AccountButton from '../components/AccountButton';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import { Button } from '../components/ui/button';
 import {
   FolderTabs,
+  PagerArrow,
   SideNavButton,
   type FolderTab,
 } from '../components/session-detail/FolderTabs';
@@ -127,7 +127,10 @@ export default function SessionDetail() {
       />
 
       <main className="flex-1">
-        <div className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-6 min-[900px]:px-16 py-8 min-[900px]:py-12">
+        {/* pb-28 on mobile keeps the last scrolled content clear of the
+            bottom-corner Ask Tutor + feedback FABs; desktop restores the
+            symmetric py-12. */}
+        <div className="w-full max-w-[80rem] 2xl:max-w-[88rem] mx-auto px-6 min-[900px]:px-16 pt-8 pb-28 min-[900px]:py-12">
 
           {isLoading && (
             <p className="text-sm text-text-muted">Loading session…</p>
@@ -161,13 +164,33 @@ export default function SessionDetail() {
                 </div>
 
                 <div className="flex-1 min-w-0 flex flex-col">
-                  {/* Mobile tab indicator. Visible only below 900px since
-                      desktop already labels the active section in the tabs.
-                      Lives inside the middle column so it shares the same
-                      left edge as the card. */}
-                  <p className="min-[900px]:hidden mb-3 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-                    {tabs[safeIndex]?.label} · {safeIndex + 1} of {tabs.length}
-                  </p>
+                  {/* Mobile top pager. Below 900px this replaces both the
+                      desktop folder tabs and the gutter side-arrows: chevrons
+                      switch tabs (inert at the ends), the centre shows
+                      position, and horizontal swipe on the panel does the
+                      same. It lives at the top so the bottom edge stays clear
+                      for the floating Ask Tutor + feedback buttons, which
+                      otherwise overlapped a bottom nav row. */}
+                  <div className="min-[900px]:hidden mb-3 flex items-center gap-3">
+                    <PagerArrow
+                      direction="prev"
+                      onClick={() => setActiveTabIndex(safeIndex - 1)}
+                      disabled={prevTab === null}
+                      label={prevTab?.label}
+                    />
+                    <p
+                      aria-live="polite"
+                      className="flex-1 text-center text-eyebrow uppercase tracking-eyebrow text-text-muted"
+                    >
+                      {tabs[safeIndex]?.label} · {safeIndex + 1} of {tabs.length}
+                    </p>
+                    <PagerArrow
+                      direction="next"
+                      onClick={() => setActiveTabIndex(safeIndex + 1)}
+                      disabled={nextTab === null}
+                      label={nextTab?.label}
+                    />
+                  </div>
 
                   {/* Desktop folder tabs. Live inside the middle column so
                       the strip aligns with the card's left edge — placing
@@ -239,32 +262,6 @@ export default function SessionDetail() {
                       );
                     })()}
                   </section>
-
-                  {/* Mobile-only previous / next row. Hidden on desktop
-                      because the side circular buttons handle nav there. */}
-                  <div className="min-[900px]:hidden mt-6 flex items-center justify-between gap-3">
-                    {prevTab ? (
-                      <Button
-                        variant="outline"
-                        type="button"
-                        onClick={() => setActiveTabIndex(safeIndex - 1)}
-                      >
-                        ← Prev: {prevTab.label}
-                      </Button>
-                    ) : (
-                      <div className="flex-1" />
-                    )}
-                    {nextTab ? (
-                      <Button
-                        type="button"
-                        onClick={() => setActiveTabIndex(safeIndex + 1)}
-                      >
-                        Next: {nextTab.label} →
-                      </Button>
-                    ) : (
-                      <div className="flex-1" />
-                    )}
-                  </div>
                 </div>
 
                 <div className="hidden min-[900px]:flex items-start">
