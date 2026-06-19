@@ -58,6 +58,7 @@ from app.services.incidents import (
     log_error,
     log_injection_detected,
     log_interview_session_started,
+    log_jd_mismatch_acknowledged,
 )
 from app.services.job_description import (
     check_job_description_match,
@@ -312,6 +313,21 @@ async def create_session(
                     ),
                 },
             )
+    elif job_description and body.acknowledge_mismatch:
+        # The user re-submitted to override a flagged mismatch. Log it as a
+        # warning for abuse visibility (the daily session cap bounds the actual
+        # spend); the match LLM's reason isn't re-derived on this path.
+        logger.info(
+            "Session-create JD mismatch acknowledged clerk_user_id=%s",
+            user.clerk_user_id,
+        )
+        await log_jd_mismatch_acknowledged(
+            user=user,
+            job_description=job_description,
+            company=body.company,
+            job_title=body.job_title,
+            db=db,
+        )
 
     try:
         brief = await research_company(
