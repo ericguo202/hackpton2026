@@ -37,6 +37,15 @@ class SessionCreateIn(BaseModel):
     # Untrusted: the backend falls back to UTC if missing / unparseable so
     # a stale or stripped value can't block a legitimate session.
     timezone: str | None = Field(default=None, max_length=64)
+    # Optional pasted job description. When present, it replaces Serper as the
+    # research source for the company brief and triggers a profile-consistency
+    # match-check. 6000 mirrors the client-side cap in AdvancedPanel.tsx; a
+    # client maxLength alone is trivially bypassed, so enforce it here too.
+    job_description: str | None = Field(default=None, max_length=6000)
+    # Set by the frontend on the re-submit after the user confirms a flagged
+    # role/industry/company ↔ job-description mismatch, so the server skips the
+    # match-check and proceeds with session creation.
+    acknowledge_mismatch: bool = Field(default=False)
 
 
 class CompanyBriefOut(BaseModel):

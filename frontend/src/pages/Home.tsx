@@ -30,6 +30,7 @@ import AdvancedPanel from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
 import DeliveryConsentDialog from '../components/DeliveryConsentDialog';
 import FlashBanner from '../components/FlashBanner';
+import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
 import ScoreDimensions from '../components/ScoreDimensions';
@@ -41,7 +42,23 @@ import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { trackEvent } from '../lib/analytics';
+import { violatesContentPolicy } from '../lib/contentPolicy';
 import type { PracticeLocationState } from './Practice';
+
+/**
+ * Pull the `{message}` out of the 409 job-description-mismatch body. The
+ * backend sends `detail: { code, message }` (a non-string detail), so
+ * `extractApiErrorDetail` returns the raw JSON — parse the message ourselves.
+ */
+function mismatchMessageFrom(err: ApiError): string {
+  try {
+    const detail = JSON.parse(err.body)?.detail;
+    if (detail && typeof detail.message === 'string') return detail.message;
+  } catch {
+    /* fall through */
+  }
+  return "Your target role, industry, or company doesn't seem to match this job description.";
+}
 
 type Surface = 'basic' | 'advanced' | 'privacy';
 
@@ -146,8 +163,12 @@ export default function Home() {
 
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [jobDescription, setJobDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
+  // Open when the backend flags a JD ↔ profile mismatch (409). Confirming
+  // re-submits with `acknowledge_mismatch: true`.
+  const [mismatch, setMismatch] = useState<string | null>(null);
   // Persisted across sessions; Practice.tsx reads the same key for its
   // auto-submit effect.
   const [autoSubmit, setAutoSubmit] = useLocalStoragePref('auto_submit_enabled', false);
@@ -180,9 +201,18 @@ export default function Home() {
   // need to know the consent choice — it just creates the session.
   async function createAndGoToSession(
     deliveryAnalyticsWillBeEnabled = deliveryConsentActive,
+    acknowledgeMismatch = false,
   ) {
     const trimmed = company.trim();
     if (!trimmed) return;
+
+    // Instant client-side injection check on the pasted JD (mirrors the bio /
+    // résumé gate); the backend re-checks authoritatively. Empty JD is fine.
+    const jd = jobDescription.trim();
+    if (jd && violatesContentPolicy(jd)) {
+      setSetupError('The job description contains content that violates our usage policies. Please revise it.');
+      return;
+    }
 
     try {
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -205,6 +235,8 @@ export default function Home() {
           // on the server side (UTC fallback on parse failure).
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(voiceId ? { voice_id: voiceId } : {}),
+          ...(jd ? { job_description: jd } : {}),
+          ...(acknowledgeMismatch ? { acknowledge_mismatch: true } : {}),
         }),
       });
       trackEvent('practice_session_started', {
@@ -213,6 +245,7 @@ export default function Home() {
         delivery_analytics_enabled: deliveryAnalyticsWillBeEnabled,
         user_tier: me?.tier ?? 'unknown',
       });
+      setMismatch(null);
       const state: PracticeLocationState = {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
@@ -222,6 +255,14 @@ export default function Home() {
       };
       navigate('/practice', { state });
     } catch (err) {
+      // 409 = the pasted job description doesn't appear to match the target
+      // role/industry/company. Ask the user to confirm; on confirm we re-submit
+      // with acknowledge_mismatch=true (which skips the server match-check).
+      if (err instanceof ApiError && err.status === 409) {
+        setMismatch(mismatchMessageFrom(err));
+        setSubmitting(false);
+        return;
+      }
       // 429 = free-tier daily-limit hit. Surface as a FlashBanner notice
       // (overlay near the top) rather than the inline error block, since
       // it's not a transient form error — the user can't retry by
@@ -476,6 +517,8 @@ export default function Home() {
                         onVoiceSelect={setVoiceId}
                         showQuestionText={showQuestionText}
                         onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
+                        jobDescription={jobDescription}
+                        onJobDescriptionChange={setJobDescription}
                         disabled={submitting}
                       />
                     </>
@@ -527,6 +570,8 @@ export default function Home() {
             onVoiceSelect={setVoiceId}
             showQuestionText={showQuestionText}
             onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
+            jobDescription={jobDescription}
+            onJobDescriptionChange={setJobDescription}
             disabled={submitting}
           />
 
@@ -554,6 +599,14 @@ export default function Home() {
         onCancel={() => {
           if (!consentBusy) setConsentModalOpen(false);
         }}
+      />
+
+      <MismatchConfirmDialog
+        open={mismatch !== null}
+        message={mismatch ?? ''}
+        busy={submitting}
+        onCancel={() => setMismatch(null)}
+        onConfirm={() => { void createAndGoToSession(deliveryConsentActive, true); }}
       />
     </div>
   );

@@ -59,6 +59,10 @@ from app.services.incidents import (
     log_injection_detected,
     log_interview_session_started,
 )
+from app.services.job_description import (
+    check_job_description_match,
+    looks_like_gibberish,
+)
 from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
@@ -204,20 +208,41 @@ async def create_session(
     # job-title never reaches OpenAI moderation, Serper, OpenRouter, or
     # ElevenLabs. The delimiters + untrusted-data clause in `research_company`
     # are the recall layer for subtler attempts this high-precision regex skips.
-    if contains_injection(body.company) or contains_injection(body.job_title):
+    if (
+        contains_injection(body.company)
+        or contains_injection(body.job_title)
+        or contains_injection(body.job_description)
+    ):
         logger.info(
             "Session-create rejected by injection gate clerk_user_id=%s",
             user.clerk_user_id,
         )
         await log_injection_detected(
             source="sessions.company",
-            text=f"company={body.company!r} job_title={body.job_title!r}",
+            text=(
+                f"company={body.company!r} job_title={body.job_title!r} "
+                f"job_description={body.job_description!r}"
+            ),
             user=user,
             db=db,
         )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Input contains content that violates our usage policy.",
+        )
+
+    # Conservative gibberish gate on the pasted job description (only when one
+    # was supplied). Free / local, so it runs before any billed call. A real
+    # posting always passes; only obvious keysmash / symbol-soup is rejected.
+    job_description = (body.job_description or "").strip()
+    if job_description and looks_like_gibberish(job_description):
+        logger.info(
+            "Session-create rejected by JD gibberish gate clerk_user_id=%s",
+            user.clerk_user_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="That job description doesn't look valid. Please paste a real posting.",
         )
 
     # Pre-flight moderation on the two user-authored string inputs that
@@ -234,6 +259,10 @@ async def create_session(
     moderation_targets = [("sessions.company", body.company)]
     if body.job_title != user.target_role:
         moderation_targets.append(("sessions.job_title", body.job_title))
+    # The pasted job description is freshly user-supplied each session, so it
+    # always needs moderation when present.
+    if job_description:
+        moderation_targets.append(("sessions.job_description", job_description))
     checks = await asyncio.gather(*(
         check_moderation(value, user=user, db=db, metadata={"source": source})
         for source, value in moderation_targets
@@ -253,9 +282,43 @@ async def create_session(
             detail="Input contains content that violates our usage policy.",
         )
 
+    # Consistency guard: when a job description is pasted, confirm it lines up
+    # with the candidate's declared industry / role / company before spending
+    # any research credits. A clear mismatch (e.g. an IB posting against a SWE
+    # profile) would confuse research + the opening-question generator, so we
+    # block with a 409 and let the user explicitly continue (re-submitting with
+    # `acknowledge_mismatch=true`). The check itself fails open — an LLM outage
+    # never blocks a legitimate session.
+    if job_description and not body.acknowledge_mismatch:
+        match = await check_job_description_match(
+            company=body.company,
+            job_title=body.job_title,
+            industry=user.industry,
+            job_description=job_description,
+        )
+        if not match.match:
+            logger.info(
+                "Session-create JD mismatch clerk_user_id=%s reason=%r",
+                user.clerk_user_id, match.reason,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "job_description_mismatch",
+                    "message": (
+                        match.reason
+                        or "Your target role, industry, or company doesn't "
+                        "seem to match this job description."
+                    ),
+                },
+            )
+
     try:
         brief = await research_company(
-            body.company, body.job_title, user.experience_level
+            body.company,
+            body.job_title,
+            user.experience_level,
+            job_description=job_description or None,
         )
     except CompanyNotFoundError:
         raise HTTPException(
