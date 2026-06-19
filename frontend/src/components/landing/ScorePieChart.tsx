@@ -1,38 +1,65 @@
 /**
- * Hero brand visual: the six scored dimensions drawn as a literal pie. Each
- * slice is one dimension in its chart color (the same hues used in the
- * Methodology legend and the feedback specimen), ringed by a wavy amber crust,
- * with the dimension name set white along the slice's radial axis. Decorative
- * but honest: it names exactly what a session measures, no separate legend.
+ * Hero brand visual: "Explore the six." The pie that names what a session
+ * measures, turned from a static rainbow into an interactive legend.
+ *
+ * At rest it is an outlined pie — an amber scallop crust over six unfilled
+ * wedges with the dimension names in the page text color. Hovering, tapping, or
+ * keyboard-focusing a wedge fills THAT ONE wedge amber, lifts it outward along
+ * its bisector, and swaps the caption below to that dimension's plain-language
+ * definition. Only ever one hue is on screen at a time, which is the point: it
+ * answers "too colorful" while staying honestly a pie (the slogan's echo).
+ *
+ * Doctrine (DESIGN.md): strict two-color — amber identity, warm neutrals, zero
+ * cherry (cherry is reserved for the page's one CTA). The active wedge wears
+ * amber with DARK INK on top (the Amber-Is-Garnish rule), never white. The
+ * outlined rest state keeps dark mode trivial: no bright fill blob on espresso,
+ * since fills are transparent and strokes/labels ride theme-swapped tokens.
+ *
+ * Accessibility: each wedge is a focusable control whose accessible name is the
+ * dimension plus its definition, so screen-reader users get the same content on
+ * focus that sighted users get in the caption (the caption is therefore
+ * aria-hidden to avoid double-speak). Roving tabindex + arrow/Home/End keys move
+ * between wedges; a transparent fill gives each wedge a full hover/hit area.
  *
  * The crust is the brand mark's scallop: 12 equal outward arcs (the favicon's
- * arc/vertex proportion, ~0.359), phased so a scallop peak centers on each
- * slice and a valley falls on each cut line.
- *
- * Labels: each sits on its slice's bisector (the vertex→border axis), rotated
- * to that axis and flipped on the lower three so all six read right-side-up.
- * White fill plus a thin translucent dark outline (paint-order stroke) keeps
- * them legible over any slice color in either theme; the dark-mode chart hues
- * are light pastels, so white alone would not read.
- *
- * Theme-aware for free: fills reference the --color-chart-* / --color-amber
- * custom properties, which html.dark swaps. Geometry is static, computed once
- * at module load.
+ * arc/vertex proportion, ~0.359), phased so a peak centers on each wedge and a
+ * valley falls on each cut line. Geometry is static, computed once at load.
  */
 
+import { useRef, useState, type KeyboardEvent } from 'react';
+
 const DIMENSIONS = [
-  { name: 'Structure', varName: '--color-chart-1' },
-  { name: 'Problem solving', varName: '--color-chart-2' },
-  { name: 'Impact', varName: '--color-chart-3' },
-  { name: 'Initiative', varName: '--color-chart-4' },
-  { name: 'Depth', varName: '--color-chart-5' },
-  { name: 'Delivery', varName: '--color-chart-6' },
+  {
+    name: 'Structure',
+    definition: 'A clear arc: the situation, what you did, and how it ended.',
+  },
+  {
+    name: 'Problem solving',
+    definition: 'The reasoning and the trade-offs behind your decisions.',
+  },
+  {
+    name: 'Impact',
+    definition: 'The result, ideally with a number that shows it mattered.',
+  },
+  {
+    name: 'Initiative',
+    definition: 'Where you owned the call instead of waiting to be told.',
+  },
+  {
+    name: 'Depth',
+    definition: 'Specific detail that proves you were actually there.',
+  },
+  {
+    name: 'Delivery',
+    definition: 'How you came across on camera: eye contact, pace, presence.',
+  },
 ] as const;
 
 const R_FILL = 84; // filling radius (the pie itself)
 const R_VALLEY = 88.5; // scallop valleys; the thin amber band sits between fill and valley
 const R_LABEL = 46; // radius the label is centered on, along the slice bisector
 const N_SCALLOPS = 12;
+const LIFT = 5; // outward nudge (user units) applied to the active wedge
 const CRUST_ARC = +(R_VALLEY * (50 / 139.37)).toFixed(2); // favicon crust proportion
 
 // 0° at top, sweeping clockwise.
@@ -54,7 +81,12 @@ const SLICES = DIMENSIONS.map((d, i) => {
   if (rot > 90) rot -= 180;
   if (rot < -90) rot += 180;
 
-  return { ...d, path, lx, ly, rot };
+  // Outward unit vector along the bisector, scaled by LIFT, for the active nudge.
+  const rad = ((mid - 90) * Math.PI) / 180;
+  const dx = +(LIFT * Math.cos(rad)).toFixed(2);
+  const dy = +(LIFT * Math.sin(rad)).toFixed(2);
+
+  return { ...d, path, lx, ly, rot, dx, dy };
 });
 
 // Scalloped crust outline: 12 outward arcs between valley vertices.
@@ -69,59 +101,152 @@ const CRUST_PATH = (() => {
 })();
 
 export default function ScorePieChart({ className = '' }: { className?: string }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [focusIdx, setFocusIdx] = useState<number | null>(null);
+  const [rovingIdx, setRovingIdx] = useState(0); // which wedge owns the tab stop
+  const groupRef = useRef<HTMLDivElement>(null);
+  const wedgeRefs = useRef<(SVGGElement | null)[]>([]);
+
+  // Keyboard focus wins over hover, so a focused wedge stays revealed even if
+  // the pointer drifts to another.
+  const active = focusIdx ?? hoverIdx;
+
+  function focusWedge(i: number) {
+    setRovingIdx(i);
+    wedgeRefs.current[i]?.focus();
+  }
+
+  function onKeyDown(e: KeyboardEvent<SVGGElement>, i: number) {
+    let next: number | null = null;
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        next = (i + 1) % SLICES.length;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        next = (i + SLICES.length - 1) % SLICES.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = SLICES.length - 1;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    focusWedge(next);
+  }
+
+  const activeDim = active === null ? null : DIMENSIONS[active];
+
   return (
-    <svg
-      viewBox="0 0 200 200"
-      role="img"
-      aria-label="A pie split into the six dimensions each answer is scored on: structure, problem solving, impact, initiative, depth, and delivery."
-      className={`mx-auto block w-full max-w-[26rem] ${className}`}
+    <div
+      ref={groupRef}
+      role="group"
+      aria-label="What each answer is scored on, across six dimensions"
+      className={`mx-auto w-full max-w-[26rem] ${className}`}
     >
-      {/* Wavy amber crust behind the slices; the scalloped rim shows through. */}
-      <path
-        d={CRUST_PATH}
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        style={{ fill: 'var(--color-amber)', stroke: 'var(--color-amber-deep)' }}
-      />
-
-      {/* Filling: six dimension slices, separated by surface-colored cut lines. */}
-      {SLICES.map((s) => (
+      <svg viewBox="0 0 200 200" className="block w-full overflow-visible">
+        {/* Wavy amber crust outline behind the wedges (line-drawing at rest). */}
         <path
-          key={s.name}
-          d={s.path}
-          strokeWidth="2.5"
+          d={CRUST_PATH}
+          fill="none"
+          strokeWidth="1.5"
           strokeLinejoin="round"
-          style={{ fill: `var(${s.varName})`, stroke: 'var(--color-surface)' }}
+          style={{ stroke: 'var(--color-amber-deep)' }}
         />
-      ))}
 
-      {/* Tidy the point where the six cuts converge. */}
-      <circle cx="100" cy="100" r="2.5" style={{ fill: 'var(--color-surface)' }} />
+        {SLICES.map((s, i) => {
+          const isActive = active === i;
+          return (
+            <g
+              key={s.name}
+              ref={(el) => {
+                wedgeRefs.current[i] = el;
+              }}
+              role="button"
+              tabIndex={rovingIdx === i ? 0 : -1}
+              aria-label={`${s.name}. ${s.definition}`}
+              className="pie-slice"
+              onMouseEnter={() => setHoverIdx(i)}
+              onMouseLeave={() => setHoverIdx((p) => (p === i ? null : p))}
+              onFocus={() => {
+                setFocusIdx(i);
+                setRovingIdx(i);
+              }}
+              onBlur={(e) => {
+                // Keep the reveal if focus is moving to a sibling wedge (its own
+                // onFocus will take over); only clear when leaving the group.
+                if (!groupRef.current?.contains(e.relatedTarget as Node | null)) {
+                  setFocusIdx(null);
+                }
+              }}
+              onClick={() => focusWedge(i)}
+              onKeyDown={(e) => onKeyDown(e, i)}
+              style={{ transform: isActive ? `translate(${s.dx}px, ${s.dy}px)` : undefined }}
+            >
+              <path
+                d={s.path}
+                strokeWidth={isActive ? 0 : 1.25}
+                strokeLinejoin="round"
+                style={{
+                  // Transparent (not "none") keeps the whole wedge hoverable.
+                  fill: isActive ? 'var(--color-amber)' : 'transparent',
+                  // Rest outline is the soft red-pink of the CTA's chevron chip
+                  // (cherry + 15% white, i.e. accent-fg/15 over cherry): a brand
+                  // red that reads as warm rather than "too red", and holds on
+                  // both the cream and espresso surfaces without a theme swap.
+                  stroke: isActive
+                    ? 'transparent'
+                    : 'color-mix(in srgb, var(--color-cherry) 85%, #ffffff)',
+                }}
+              />
+              <text
+                x={s.lx.toFixed(2)}
+                y={s.ly.toFixed(2)}
+                transform={`rotate(${s.rot.toFixed(2)} ${s.lx.toFixed(2)} ${s.ly.toFixed(2)})`}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize="7"
+                className="font-display"
+                style={{
+                  // Dark ink on the amber fill (Amber-Is-Garnish); page text
+                  // color on the unfilled rest state. Both hold in either theme.
+                  fill: isActive ? 'var(--color-primary-700)' : 'var(--color-text)',
+                  fontWeight: isActive ? 700 : 600,
+                  letterSpacing: '0.01em',
+                  pointerEvents: 'none',
+                }}
+              >
+                {s.name}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
 
-      {/* Dimension names, white on the slice's radial axis. */}
-      {SLICES.map((s) => (
-        <text
-          key={`${s.name}-label`}
-          x={s.lx.toFixed(2)}
-          y={s.ly.toFixed(2)}
-          transform={`rotate(${s.rot.toFixed(2)} ${s.lx.toFixed(2)} ${s.ly.toFixed(2)})`}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize="7"
-          className="font-display"
-          style={{
-            fill: '#FFFFFF',
-            fontWeight: 700,
-            paintOrder: 'stroke',
-            stroke: 'rgba(12, 8, 6, 0.5)',
-            strokeWidth: 0.85,
-            strokeLinejoin: 'round',
-            letterSpacing: '0.01em',
-          }}
-        >
-          {s.name}
-        </text>
-      ))}
-    </svg>
+      {/* Caption. aria-hidden because each wedge's accessible name already
+          carries the definition; this is the sighted-user mirror. Fixed min
+          height so swapping text never shifts the hero layout. */}
+      <div aria-hidden="true" className="mt-5 min-h-[4.75rem] text-center">
+        <div key={active ?? 'rest'} className="anim-crossfade">
+          {activeDim === null ? (
+            <p className="text-pretty text-sm leading-relaxed text-text-subtle">
+              Hover a slice to see what each answer is scored on.
+            </p>
+          ) : (
+            <>
+              <p className="font-display text-base font-semibold text-text">{activeDim.name}</p>
+              <p className="text-pretty mt-1 text-sm leading-relaxed text-text-muted">
+                {activeDim.definition}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
