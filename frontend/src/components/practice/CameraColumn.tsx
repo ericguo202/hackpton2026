@@ -72,9 +72,12 @@ export function CameraColumn({
             there's horizontal breathing room when the transcript column opens
             (camera column is 50vw, box is 45vw → ~2.5vw gutter on each side).
             The empty/declined panel reads as a powered-down screen by inverting
-            the surface: a dark ink panel on the cream light theme, a near-white
-            panel on the espresso dark theme — so it never blends into the page. */}
-        <div className="aspect-video w-full overflow-hidden rounded-lg bg-primary-700 dark:bg-primary-100">
+            the surface: the espresso page bg (dark mode's #1E1711) on the cream
+            light theme, the vanilla-cream page bg (light mode's #F5E7CF) on the
+            espresso dark theme — so it never blends into the page. Raw hex (no
+            single token expresses "the other theme's surface"), matching the
+            camera-box raw-hex precedent. */}
+        <div className="aspect-video w-full overflow-hidden rounded-lg bg-[#1E1711] dark:bg-[#F5E7CF]">
           {showPreview && replayUrl ? (
             <video src={replayUrl} controls className="h-full w-full object-cover" />
           ) : videoStream ? (
