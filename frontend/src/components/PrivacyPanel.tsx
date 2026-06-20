@@ -32,6 +32,10 @@ type Props = {
   consentLabel: string | null;
   onGrant: () => void;
   onRevoke: () => void;
+  // The Google Analytics toggle belongs only on the dedicated /settings Privacy
+  // tab. On the Home setup screen the Privacy surface is scoped to delivery
+  // analytics, so this is set false there to omit the GA block.
+  showAnalytics?: boolean;
 };
 
 export default function PrivacyPanel({
@@ -41,6 +45,7 @@ export default function PrivacyPanel({
   consentLabel,
   onGrant,
   onRevoke,
+  showAnalytics = true,
 }: Props) {
   const [checked, setChecked] = useState(false);
   // Tracked only to force a re-render after a toggle; the displayed state is the
@@ -72,7 +77,7 @@ export default function PrivacyPanel({
 
   return (
     <div className="space-y-4">
-      {analyticsEnabled() && (
+      {showAnalytics && analyticsEnabled() && (
         <div className="rounded border border-border bg-surface-sunken px-3 py-3">
           <p className="text-sm font-medium text-text">
             Google Analytics

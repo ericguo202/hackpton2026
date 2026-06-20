@@ -537,6 +537,7 @@ export default function Home() {
                         consentLabel={deliveryConsentLabel}
                         onGrant={() => { void grantConsent(); }}
                         onRevoke={() => { void revokeConsent(); }}
+                        showAnalytics={false}
                       />
                     </>
                   )}
@@ -584,6 +585,7 @@ export default function Home() {
             consentLabel={deliveryConsentLabel}
             onGrant={() => { void grantConsent(); }}
             onRevoke={() => { void revokeConsent(); }}
+            showAnalytics={false}
           />
         </div>
       </main>

@@ -23,6 +23,7 @@ type Props = {
   consentLabel: string | null;
   onGrant: () => void;
   onRevoke: () => void;
+  showAnalytics?: boolean;
 };
 
 export default function PrivacyPanelDrawer({
@@ -34,6 +35,7 @@ export default function PrivacyPanelDrawer({
   consentLabel,
   onGrant,
   onRevoke,
+  showAnalytics = true,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -84,6 +86,7 @@ export default function PrivacyPanelDrawer({
           consentLabel={consentLabel}
           onGrant={onGrant}
           onRevoke={onRevoke}
+          showAnalytics={showAnalytics}
         />
       </div>
 
