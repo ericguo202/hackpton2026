@@ -10,13 +10,21 @@
 
 import type { ReactNode } from 'react';
 
+import { violatesContentPolicy } from '../lib/contentPolicy';
 import VoicePickerGrid from './VoicePickerGrid';
+
+// Mirrors the server-side cap in `SessionCreateIn.job_description`.
+export const MAX_JOB_DESCRIPTION_CHARS = 6000;
+// Show the remaining-characters counter only once the user is close to the cap.
+const JOB_DESCRIPTION_COUNTER_THRESHOLD = 500;
 
 type Props = {
   voiceId: string | null;
   onVoiceSelect: (id: string | null) => void;
   showQuestionText: boolean;
   onToggleShowQuestionText: () => void;
+  jobDescription: string;
+  onJobDescriptionChange: (value: string) => void;
   disabled: boolean;
 };
 
@@ -25,8 +33,14 @@ export default function AdvancedPanel({
   onVoiceSelect,
   showQuestionText,
   onToggleShowQuestionText,
+  jobDescription,
+  onJobDescriptionChange,
   disabled,
 }: Props) {
+  const remaining = MAX_JOB_DESCRIPTION_CHARS - jobDescription.length;
+  const showCounter = remaining <= JOB_DESCRIPTION_COUNTER_THRESHOLD;
+  const policyError = jobDescription.trim() !== '' && violatesContentPolicy(jobDescription);
+
   return (
     <div className="space-y-6">
       <Section
@@ -38,6 +52,42 @@ export default function AdvancedPanel({
           onSelect={onVoiceSelect}
           disabled={disabled}
         />
+      </Section>
+
+      <Section
+        label="Job description"
+        hint="Paste a posting to tailor the opening question to this specific role. Optional."
+      >
+        <textarea
+          value={jobDescription}
+          onChange={(e) => onJobDescriptionChange(e.target.value)}
+          disabled={disabled}
+          maxLength={MAX_JOB_DESCRIPTION_CHARS}
+          rows={6}
+          placeholder="Paste the job description here…"
+          aria-invalid={policyError}
+          className="h-40 w-full resize-none overflow-y-auto rounded border border-border bg-surface-sunken px-3 py-2 text-sm text-text placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        <div className="flex items-center justify-between gap-3">
+          {policyError ? (
+            <p role="alert" className="text-sm text-critique">
+              This content violates our usage policies. Please revise it.
+            </p>
+          ) : (
+            <span />
+          )}
+          {showCounter && (
+            <p
+              className={
+                remaining <= 0
+                  ? 'text-sm text-critique'
+                  : 'text-sm text-text-subtle'
+              }
+            >
+              {remaining.toLocaleString()} left
+            </p>
+          )}
+        </div>
       </Section>
 
       <Section

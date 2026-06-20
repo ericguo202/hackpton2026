@@ -26,6 +26,8 @@ type Props = {
   onVoiceSelect: (id: string | null) => void;
   showQuestionText: boolean;
   onToggleShowQuestionText: () => void;
+  jobDescription: string;
+  onJobDescriptionChange: (value: string) => void;
   disabled: boolean;
 };
 
@@ -36,6 +38,8 @@ export default function AdvancedPanelDrawer({
   onVoiceSelect,
   showQuestionText,
   onToggleShowQuestionText,
+  jobDescription,
+  onJobDescriptionChange,
   disabled,
 }: Props) {
   useEffect(() => {
@@ -87,6 +91,8 @@ export default function AdvancedPanelDrawer({
           onVoiceSelect={onVoiceSelect}
           showQuestionText={showQuestionText}
           onToggleShowQuestionText={onToggleShowQuestionText}
+          jobDescription={jobDescription}
+          onJobDescriptionChange={onJobDescriptionChange}
           disabled={disabled}
         />
       </div>

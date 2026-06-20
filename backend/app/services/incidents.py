@@ -39,6 +39,7 @@ EVENT_MODERATION_REQUEST = "moderation_request"
 EVENT_INTERVIEW_SESSION_STARTED = "interview_session_started"
 EVENT_SAVE_QUESTION = "save_question"
 EVENT_INJECTION_DETECTED = "injection_detected"
+EVENT_JD_MISMATCH_ACK = "job_description_mismatch_ack"
 EVENT_ERROR = "error"
 
 
@@ -303,6 +304,35 @@ async def log_injection_detected(
         session_id=session_id,
         sent_content=text,
         metadata=meta,
+        db=db,
+    )
+
+
+async def log_jd_mismatch_acknowledged(
+    *,
+    user: User | None = None,
+    job_description: str | None = None,
+    company: str | None = None,
+    job_title: str | None = None,
+    db: AsyncSession | None = None,
+) -> None:
+    """Record that a user explicitly proceeded past a flagged JD mismatch.
+
+    The consistency guard 409s when the candidate's target industry/role/company
+    don't line up with the pasted job description; re-submitting with
+    `acknowledge_mismatch=true` overrides it. We log that override as a WARNING
+    so abuse (made-up postings, profile/JD whiplash) is visible after the fact —
+    cheaper than pre-filtering, since the daily session cap already bounds spend.
+    The match LLM's reason isn't available here (the acknowledged re-POST skips
+    the check), so we keep the offending JD + the declared company/title for
+    audit. Best-effort like all incident logging — never raises.
+    """
+    await log_incident(
+        event_type=EVENT_JD_MISMATCH_ACK,
+        severity=SEVERITY_WARNING,
+        user=user,
+        sent_content=job_description,
+        metadata={"company": company, "job_title": job_title},
         db=db,
     )
 
