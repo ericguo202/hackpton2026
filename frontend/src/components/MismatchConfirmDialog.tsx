@@ -42,7 +42,7 @@ export function MismatchConfirmDialog({ open, message, busy, onCancel, onConfirm
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="mismatch-title" className="font-display text-xl text-text">
-          Does this job description match?
+          Double-check this job description
         </h3>
         <p className="mt-3 text-sm leading-relaxed text-text-muted">
           {message}
