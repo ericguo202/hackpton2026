@@ -133,6 +133,11 @@ def _truncate_to(limit: int, *, ellipsis: bool) -> Callable[[Any], Any]:
 SnippetStr = Annotated[str, BeforeValidator(_truncate_to(270, ellipsis=False))]
 ProseStr270 = Annotated[str, BeforeValidator(_truncate_to(270, ellipsis=True))]
 ProseStr390 = Annotated[str, BeforeValidator(_truncate_to(390, ellipsis=True))]
+# Wider cap reserved for the forward-coaching `NextTake` fields. The coaching
+# prompt still targets 270/390, but the "Improve next" card is scrollable, so we
+# give the schema headroom above the prompt's targets — an occasional overshoot
+# validates in full rather than landing a broken-looking "..." in front of users.
+ProseStr500 = Annotated[str, BeforeValidator(_truncate_to(500, ellipsis=True))]
 
 
 class PositiveMoment(BaseModel):
@@ -173,8 +178,8 @@ class NextTake(BaseModel):
     field defaults `None` so a coaching failure (or legacy turns) just omits it.
     """
 
-    focus: ProseStr270 = Field(min_length=1, max_length=270)
-    approach: ProseStr390 = Field(min_length=1, max_length=390)
+    focus: ProseStr500 = Field(min_length=1, max_length=500)
+    approach: ProseStr500 = Field(min_length=1, max_length=500)
 
 
 class FeedbackDetail(BaseModel):
