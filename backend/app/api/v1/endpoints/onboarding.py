@@ -49,6 +49,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.user import UserOut
 from app.services._injection import contains_injection
+from app.services.incidents import log_injection_detected
 from app.services.moderation import check_moderation
 from app.services.rate_limit import rate_limited
 
@@ -226,7 +227,20 @@ async def onboarding(
     # This is the AUTHORITATIVE check for PDF-extracted résumé text, which the
     # client can't inspect to validate. bio + pasted résumé are also gated
     # client-side for instant feedback.
-    if contains_injection(short_bio) or contains_injection(final_resume_text):
+    bio_injection = contains_injection(short_bio)
+    resume_injection = contains_injection(final_resume_text)
+    if bio_injection or resume_injection:
+        # Which field tripped (résumé text is PDF-extracted and the client can't
+        # vet it, so distinguishing it in the audit trail matters). Log the
+        # offending text so the deterministic regex layer has full Incidents
+        # coverage — every hit lands as a `warning`.
+        field = "short_bio" if bio_injection else "resume_text"
+        await log_injection_detected(
+            source=f"onboarding.{field}",
+            text=short_bio if bio_injection else final_resume_text,
+            user=user,
+            db=db,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(

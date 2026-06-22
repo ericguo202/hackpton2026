@@ -698,12 +698,21 @@ async def test_content_calibration_prevents_unsupported_neutral_fives(monkeypatc
 
 async def test_injection_transcript_scored_as_nonanswer_without_llm(monkeypatch):
     """A transcript that trips the deterministic injection gate must score as a
-    zeroed non-answer and must NOT spend an LLM call."""
+    zeroed non-answer, must NOT spend an LLM call, and must log the regex hit to
+    Incidents as a warning."""
 
     def _boom():
         raise AssertionError("LLM must not be called for an injection transcript")
 
+    incidents: list = []
+
+    async def _log_injection_detected(**kwargs):
+        incidents.append(kwargs)
+
     monkeypatch.setattr("app.services.evaluator.get_client", _boom)
+    monkeypatch.setattr(
+        "app.services.evaluator.log_injection_detected", _log_injection_detected
+    )
 
     result = await evaluate_turn(
         question="Tell me about a project you led.",
@@ -714,6 +723,8 @@ async def test_injection_transcript_scored_as_nonanswer_without_llm(monkeypatch)
         assert getattr(result, field) == 0
     assert result.feedback_detail.positive_moments == []
     assert result.delivery is None
+    assert len(incidents) == 1
+    assert incidents[0]["source"] == "evaluator.transcript"
 
 
 async def test_injection_gate_still_scores_delivery_from_cv_summary(monkeypatch):
@@ -723,7 +734,13 @@ async def test_injection_gate_still_scores_delivery_from_cv_summary(monkeypatch)
     def _boom():
         raise AssertionError("LLM must not be called for an injection transcript")
 
+    async def _log_injection_detected(**kwargs):
+        return None
+
     monkeypatch.setattr("app.services.evaluator.get_client", _boom)
+    monkeypatch.setattr(
+        "app.services.evaluator.log_injection_detected", _log_injection_detected
+    )
 
     cv_summary = {
         "frames_processed": 180,

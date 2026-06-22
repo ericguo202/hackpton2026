@@ -29,6 +29,7 @@ from pydantic import ValidationError
 from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import FieldCategory
 from app.services._injection import contains_injection
+from app.services.incidents import log_injection_detected
 from app.services._openrouter import (
     create_chat_with_fallback,
     extract_json_object,
@@ -164,6 +165,10 @@ async def generate_next_take(
             "(transcript_len=%d)",
             len(transcript),
         )
+        # Backstop hit (submit_turn 422s + logs first in the normal flow). Still
+        # log so the regex layer has full Incidents coverage. No user/session
+        # context here; log_injection_detected opens its own session, never raises.
+        await log_injection_detected(source="coaching.transcript", text=transcript)
         return None
 
     user_prompt = _build_user_prompt(

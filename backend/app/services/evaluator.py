@@ -35,6 +35,7 @@ from app.db.models.enums import ExperienceLevel
 from app.services._field_rubrics import build_system_instruction
 from app.services._field_prompts import FieldCategory
 from app.services._injection import CONTENT_INJECTION_RE
+from app.services.incidents import log_injection_detected
 from app.services._openrouter import (
     create_chat_with_fallback,
     extract_json_object,
@@ -789,6 +790,11 @@ async def evaluate_turn(
             "(transcript_len=%d)",
             len(transcript or ""),
         )
+        # Backstop hit: in the normal flow `submit_turn` 422s (and logs) before
+        # this runs, so this only fires for an off-path caller — but the regex
+        # layer must log every hit. No user/session context here (pure service
+        # fn); `log_injection_detected` opens its own session and never raises.
+        await log_injection_detected(source="evaluator.transcript", text=transcript)
         result = _injection_nonanswer()
         if cv_summary is not None:
             result.delivery = _compute_delivery_score(cv_summary)
