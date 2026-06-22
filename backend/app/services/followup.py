@@ -27,11 +27,13 @@ import re
 from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import FieldCategory
 from app.services._injection import contains_injection
-from app.services._openrouter import get_client
+from app.services._openrouter import create_chat_with_fallback, get_client
 
 logger = logging.getLogger(__name__)
 
 FOLLOWUP_MODEL = "deepseek/deepseek-v4-flash"
+# Backup if the primary follow-up model is unavailable on OpenRouter.
+FOLLOWUP_FALLBACK_MODEL = "deepseek/deepseek-v3.2"
 
 _FALLBACK = "Can you walk me through a specific challenge you faced and how you resolved it?"
 
@@ -216,8 +218,9 @@ async def generate_followup(
     # it's a stable cache prefix shared across every follow-up call. Keep the
     # per-request data (context/question/transcript) in the user message — don't
     # interpolate it into the system message or the prefix stops matching.
-    response = await client.chat.completions.create(
-        model=FOLLOWUP_MODEL,
+    response = await create_chat_with_fallback(
+        client,
+        models=(FOLLOWUP_MODEL, FOLLOWUP_FALLBACK_MODEL),
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT + _SECURITY_CLAUSE},
             {"role": "user", "content": user_prompt},
@@ -225,10 +228,11 @@ async def generate_followup(
         temperature=0.4,
         max_tokens=256,
         timeout=30.0,
-        # deepseek-v4-flash reasons by default; this is a fast single-line
-        # generation that doesn't need a reasoning trace, so disable it to keep
-        # latency and cost down.
+        # deepseek reasons by default; this is a fast single-line generation that
+        # doesn't need a reasoning trace, so disable it on both the primary and
+        # the deepseek-v3.2 fallback to keep latency and cost down.
         extra_body={"reasoning": {"enabled": False}},
+        label="followup",
     )
     raw = response.choices[0].message.content or ""
     logger.debug("Followup raw response: %r", raw)

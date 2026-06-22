@@ -38,11 +38,17 @@ from app.services._field_prompts import (
     FIELD_CATEGORIES,
     FieldCategory,
 )
-from app.services._openrouter import extract_json_object, get_client
+from app.services._openrouter import (
+    create_chat_with_fallback,
+    extract_json_object,
+    get_client,
+)
 
 logger = logging.getLogger(__name__)
 
 RESEARCH_MODEL = "google/gemini-2.5-flash"
+# Backup if the primary research model is unavailable on OpenRouter.
+RESEARCH_FALLBACK_MODEL = "deepseek/deepseek-v3.2"
 SERPER_URL = "https://google.serper.dev/search"
 SERPER_TIMEOUT_SECONDS = 10.0
 
@@ -476,12 +482,14 @@ async def _create_research_completion(
             }
         )
 
-    response = await client.chat.completions.create(
-        model=RESEARCH_MODEL,
+    response = await create_chat_with_fallback(
+        client,
+        models=(RESEARCH_MODEL, RESEARCH_FALLBACK_MODEL),
         messages=messages,
         temperature=0.2,
         response_format={"type": "json_object"},
         timeout=60.0,
+        label="company_research",
     )
     return response.choices[0].message.content or ""
 

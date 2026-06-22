@@ -29,12 +29,18 @@ from pydantic import ValidationError
 from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import FieldCategory
 from app.services._injection import contains_injection
-from app.services._openrouter import extract_json_object, get_client
+from app.services._openrouter import (
+    create_chat_with_fallback,
+    extract_json_object,
+    get_client,
+)
 from app.services.evaluator import EvaluatorOutput, NextTake
 
 logger = logging.getLogger(__name__)
 
 COACHING_MODEL = "deepseek/deepseek-v4-flash"
+# Backup if the primary coaching model is unavailable on OpenRouter.
+COACHING_FALLBACK_MODEL = "deepseek/deepseek-v3.2"
 
 _SYSTEM_PROMPT = """\
 You are a behavioral-interview coach. The candidate just answered a question and \
@@ -172,8 +178,9 @@ async def generate_next_take(
         # the per-request data (context/question/transcript/evaluator notes) in
         # the user message — interpolating it into the system message breaks the
         # shared prefix.
-        response = await client.chat.completions.create(
-            model=COACHING_MODEL,
+        response = await create_chat_with_fallback(
+            client,
+            models=(COACHING_MODEL, COACHING_FALLBACK_MODEL),
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT + _SECURITY_CLAUSE},
                 {"role": "user", "content": user_prompt},
@@ -188,9 +195,11 @@ async def generate_next_take(
             # keep the timeout tight.
             timeout=30.0,
             response_format={"type": "json_object"},
-            # deepseek-v4-flash reasons by default; disable it explicitly so this
-            # stays a fast, cheap, single-shot generation.
+            # deepseek reasons by default; disable it explicitly on both the
+            # primary and the deepseek-v3.2 fallback so this stays a fast, cheap,
+            # single-shot generation.
             extra_body={"reasoning": {"enabled": False}},
+            label="coaching",
         )
         raw = response.choices[0].message.content or ""
         data = json.loads(extract_json_object(raw))

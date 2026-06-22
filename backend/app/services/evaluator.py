@@ -35,11 +35,18 @@ from app.db.models.enums import ExperienceLevel
 from app.services._field_rubrics import build_system_instruction
 from app.services._field_prompts import FieldCategory
 from app.services._injection import CONTENT_INJECTION_RE
-from app.services._openrouter import extract_json_object, get_client
+from app.services._openrouter import (
+    create_chat_with_fallback,
+    extract_json_object,
+    get_client,
+)
 
 logger = logging.getLogger(__name__)
 
+# Primary is deepseek-v4-pro (high-reasoning) under evaluation; deepseek-v3.2
+# (the prior evaluator model) is the backup if v4-pro is unavailable.
 EVAL_MODEL = "deepseek/deepseek-v4-pro"
+EVAL_FALLBACK_MODEL = "deepseek/deepseek-v3.2"
 
 # Personal calibration from `backend/recordings/calibration_20260418_230315`.
 # These are the bands that separated the user's normal / engaged delivery
@@ -797,8 +804,9 @@ async def evaluate_turn(
     # eval in the same field and re-bills at the cache-read rate. Keep all
     # per-request data (question/transcript/history) in the user message below;
     # interpolating any of it into the system message would break the cache.
-    response = await client.chat.completions.create(
-        model=EVAL_MODEL,
+    response = await create_chat_with_fallback(
+        client,
+        models=(EVAL_MODEL, EVAL_FALLBACK_MODEL),
         messages=[
             {
                 "role": "system",
@@ -813,7 +821,10 @@ async def evaluate_turn(
         temperature=0.2,
         response_format={"type": "json_object"},
         timeout=180.0,
-        extra_body={"reasoning": {"effort": "high"}}
+        # Both models are reasoning-capable deepseek; keep high effort on the
+        # v3.2 fallback too so eval quality holds if v4-pro is unavailable.
+        extra_body={"reasoning": {"effort": "high"}},
+        label="evaluator",
     )
     text = response.choices[0].message.content or ""
     result = EvaluatorOutput.model_validate_json(extract_json_object(text))

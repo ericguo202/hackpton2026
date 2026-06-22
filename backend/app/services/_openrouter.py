@@ -14,9 +14,15 @@ handles that cleanly without a repair loop.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from openai import AsyncOpenAI
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -43,6 +49,49 @@ def get_client() -> AsyncOpenAI:
         base_url=OPENROUTER_BASE_URL,
     )
     return _client
+
+
+async def create_chat_with_fallback(
+    client: AsyncOpenAI,
+    *,
+    models: Sequence[str],
+    extra_body_by_model: Mapping[str, Mapping[str, Any]] | None = None,
+    label: str = "LLM",
+    **kwargs: Any,
+):
+    """Call OpenRouter chat completions, trying each model in `models` order.
+
+    On any exception from a non-final model, logs and advances to the next
+    (e.g. a primary model outage → `deepseek/deepseek-v3.2` fallback). The
+    LAST model's exception propagates unchanged, so every caller keeps its
+    existing fail-soft policy (canned default / null scores / re-raise).
+
+    Reasoning params differ across providers, so `extra_body_by_model` supplies
+    a per-model `extra_body`; a model absent from the map uses the shared
+    `extra_body` passed in `**kwargs` (or none). All other kwargs (messages,
+    temperature, response_format, timeout, …) are shared across attempts.
+    """
+    extra_body_by_model = extra_body_by_model or {}
+    last_exc: Exception | None = None
+    for i, model in enumerate(models):
+        call_kwargs = dict(kwargs)
+        call_kwargs["model"] = model
+        if model in extra_body_by_model:
+            call_kwargs["extra_body"] = dict(extra_body_by_model[model])
+        try:
+            return await client.chat.completions.create(**call_kwargs)
+        except Exception as exc:  # noqa: BLE001 — any SDK/provider error rolls to fallback
+            last_exc = exc
+            if i + 1 < len(models):
+                logger.warning(
+                    "%s model %s failed; falling back to %s: %s",
+                    label, model, models[i + 1], exc,
+                )
+                continue
+            raise
+    # `models` is always non-empty at call sites; guard for the empty case.
+    assert last_exc is not None
+    raise last_exc
 
 
 def extract_json_object(text: str) -> str:

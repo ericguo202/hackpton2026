@@ -52,13 +52,15 @@ from app.services._field_prompts import (
     build_field_system_prompt,
 )
 from app.services._injection import contains_injection
-from app.services._openrouter import get_client
+from app.services._openrouter import create_chat_with_fallback, get_client
 from app.services.company_research import CompanyBrief
 from app.services.incidents import log_injection_detected
 
 logger = logging.getLogger(__name__)
 
 OPENING_MODEL = "google/gemini-3.5-flash"
+# Backup if the primary opening-question model is unavailable on OpenRouter.
+OPENING_FALLBACK_MODEL = "deepseek/deepseek-v3.2"
 _RESUME_CHAR_LIMIT = 1500
 
 
@@ -281,8 +283,9 @@ async def generate_opening_question(
     # today — that's expected, not a bug, and isn't worth padding to fix. Static
     # content still goes first / per-request data in the user message, so it'll
     # cache automatically if the system prompt ever grows past the threshold.
-    response = await client.chat.completions.create(
-        model=OPENING_MODEL,
+    response = await create_chat_with_fallback(
+        client,
+        models=(OPENING_MODEL, OPENING_FALLBACK_MODEL),
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
@@ -291,7 +294,13 @@ async def generate_opening_question(
         timeout=60.0,
         # gemini-3.5-flash reasons by default; this is a single short generation
         # that doesn't need a reasoning trace, so keep it minimal for latency/cost.
-        extra_body={"reasoning": {"effort": "minimal"}},
+        # The deepseek-v3.2 fallback doesn't accept the OpenAI-style "minimal"
+        # effort level, so disable reasoning on that path instead.
+        extra_body_by_model={
+            OPENING_MODEL: {"reasoning": {"effort": "minimal"}},
+            OPENING_FALLBACK_MODEL: {"reasoning": {"enabled": False}},
+        },
+        label="opening_question",
     )
     text = response.choices[0].message.content or ""
     return _strip_wrapping_quotes(text)
