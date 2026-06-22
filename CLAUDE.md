@@ -28,6 +28,11 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
   - **Empty-omission pattern (load-bearing):** `_company_digest` surfaces these **only when non-empty** — reused by `followup.py` and `SessionDetail.tsx` Overview.
   - **Recent-questions avoid-list:** `users.recent_opening_questions` (JSONB, `'[]'` default, migration `0008_recent_opening_qs`) caches 3 most recent questions, newest-first. Injected into user prompt as avoid-list (empty-omission). Rolled via `([opening_q] + old)[:3]`, **reassigned not mutated** (SQLAlchemy dirty-tracking). **Reset to `[]`** in `onboarding.py` whenever `target_role`/`industry`/`experience_level` changes. Not in `UserOut`.
 
+- **Optional pasted job description (per-session).** Setup's Advanced panel takes an optional posting (`SessionCreateIn.job_description`, ≤6000 chars, mirrored client-side `MAX_JOB_DESCRIPTION_CHARS` in `AdvancedPanel.tsx`). When present it becomes the **sole research source** — `research_company(..., job_description=...)` **skips both Serper queries** and derives the brief from the posting via `_research_from_job_description` + `_JD_SYSTEM_INSTRUCTION` (same contract/category list/anti-hallucination posture as the Serper path, existence-validation dropped since the match-check already vetted the company; kept a separate static block for its own Gemini implicit-cache prefix). Brief cleanup is the shared `_normalize_brief_payload` (category fallback + list caps) used by both paths. `job_description.py` owns the two setup-time pieces, **all in `POST /sessions` before any billed call:**
+  - **Gibberish gate** (`looks_like_gibberish`, free/local) → `422`. Conservative hard block — rejects only empty/no-letters, symbol-soup (alphabetic ratio `<0.45` over ≥40 chars), or low-entropy keysmash (≥24 letters, ≤4 distinct). Real postings always pass. **Can't reuse `_looks_like_junk`** (its >120-char reject kills every real JD).
+  - **Profile↔JD match-check** (`check_job_description_match`, `openai/gpt-oss-120b:free`, low reasoning) → `409 {code: "job_description_mismatch", message}` on a clear mismatch (different professional domain, or company/posting obviously fake/joke). **Fails open** — any SDK/parse error returns a match so an LLM outage never blocks a real session (this is a UX guardrail, NOT a security boundary; injection + moderation are the hard blocks and run on the JD too). Skipped when `acknowledge_mismatch=true`.
+  - **Acknowledge override:** frontend re-submits with `acknowledge_mismatch=true` (the `MismatchConfirmDialog` "Continue anyway" path); server skips the match-check and logs `job_description_mismatch_ack` (warning, `log_jd_mismatch_acknowledged`) for after-the-fact abuse visibility — the daily-session cap bounds spend.
+
 - **Field-tailored, confusion-aware follow-up question.** `followup.py` (DeepSeek v4 Flash, no reasoning).
   - `generate_followup` accepts `category`, `role_signals`, `sample_question_themes`, `experience_level` (all default `None` — legacy `brief_out is None` sessions work). Experience level is one calibration line, not a matrix lookup.
   - **Confused-candidate rule:** off-topic/nonsensical/single-word → gently redirect concretely; do NOT echo back or pretend it was substantive.
@@ -79,7 +84,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
 
 - **Free tier with daily session limits.** 5 completed sessions per local calendar day. Counter increments at **finalization** (not creation — abandoning doesn't burn a slot). IANA timezone from browser (`users.timezone`, UTC fallback). Pre-check at `POST /sessions` **before** any LLM/API spend → 429. Race-safe atomic `UPDATE` in `daily_limit.py`. `GET /me` also runs `check_and_reset` — zero writes steady-state (UPDATE gated by `count_reset_date.is_distinct_from(today)`, NULL-safe). **Second daily limit, same module:** Ask Tutor chats are capped at **10 successful completions/day** (`daily_chat_count` / `chat_count_reset_date`, `check_and_reset_chat` / `enforce_chat_daily_limit` / `record_chat_completion`) — see the Ask Tutor bullet for the success-only-increment nuance. `GET /me` rolls both counters for free tier.
 
-- **Incidents event log (internal/admin-only).** `user_created`, `user_signed_in`, `moderation_request`, `interview_session_started`, `error`. Written in a fresh DB session (failures never break request). Payload caps: `sent_content` 10k, `error` 8k, large JSON 2k. Auth events backend-observed (no Clerk webhooks); `user_signed_in` dedupes by Clerk `claims.sid`. Moderation incidents log only on OpenAI API fire (not deterministic local rejects). **Moderation fails closed:** `ModerationUnavailableError` writes `error` incident; callers return 503; `ensure_moderation_configured()` aborts boot if `OPENAI_API_KEY` unset. `interview_session_started` logs only after session persistence. 5xx/unhandled errors → `error`; normal 4xx does not.
+- **Incidents event log (internal/admin-only).** `user_created`, `user_signed_in`, `moderation_request`, `interview_session_started`, `save_question`, `injection_detected`, `job_description_mismatch_ack` (warning — user proceeded past a flagged JD↔profile mismatch; keeps JD + declared company/title for audit), `error`. Written in a fresh DB session (failures never break request). Payload caps: `sent_content` 10k, `error` 8k, large JSON 2k. Auth events backend-observed (no Clerk webhooks); `user_signed_in` dedupes by Clerk `claims.sid`. Moderation incidents log only on OpenAI API fire (not deterministic local rejects). **Moderation fails closed:** `ModerationUnavailableError` writes `error` incident; callers return 503; `ensure_moderation_configured()` aborts boot if `OPENAI_API_KEY` unset. `interview_session_started` logs only after session persistence. 5xx/unhandled errors → `error`; normal 4xx does not.
 
 ---
 
@@ -87,7 +92,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
 
 - **Frontend**: React + Vite, Clerk (auth), recharts, MediaRecorder, MediaPipe (webcam delivery analytics)
 - **Backend**: FastAPI, Alembic + Postgres, OpenAI Python SDK pointed at OpenRouter (`https://openrouter.ai/api/v1`)
-- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v3.2` evaluator, `google/gemini-2.5-flash` research, `google/gemini-3.5-flash` opening (minimal reasoning), `deepseek/deepseek-v4-flash` follow-up + coaching + Ask Tutor (all no reasoning), `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback), Serper
+- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v4-pro` evaluator (high reasoning, `deepseek/deepseek-v3.2` fallback), `google/gemini-2.5-flash` research, `google/gemini-3.5-flash` opening (minimal reasoning), `deepseek/deepseek-v4-flash` follow-up + coaching + Ask Tutor (all no reasoning), `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback, `openai/gpt-oss-120b:free` JD↔profile match-check (low reasoning, fails open)), Serper
 - **Auth**: Clerk JWT verified via `python-jose` against `CLERK_JWT_ISSUER` JWKS
 
 ---
@@ -99,7 +104,7 @@ Browser (React+Vite)
   │── Clerk JWT ──────────────────────► FastAPI
   │── MediaRecorder blob ─────────────► FastAPI
                                           │── ElevenLabs STT (audio → transcript)
-                                          │── OpenRouter (DeepSeek v3.2 evaluator, Gemini research + opening question, DeepSeek v4 Flash follow-up)
+                                          │── OpenRouter (DeepSeek v4 Pro evaluator, Gemini research + opening question, DeepSeek v4 Flash follow-up)
                                           │── ElevenLabs TTS (text → audio)
                                           │── Serper API (company research)
                                           └── Postgres (via Alembic)
@@ -107,10 +112,10 @@ Browser (React+Vite)
 
 **Up to five LLM calls per session via OpenRouter.** #1/#2 at session start; #3 after turn 1 (follow-up); #4 evaluates each turn in bg; #5 forward coaching right after #4. Turn 1 eval+coaching runs while user answers turn 2. Final-turn eval+coaching in `_run_background_finalize`, then metrics written + session → `completed`.
 
-1. **Company research + field classification** (`google/gemini-2.5-flash`). Two parallel Serper queries → `CompanyBrief(description, headlines, values, category, role_signals, sample_question_themes)`. `category` ∈ 15 buckets.
+1. **Company research + field classification** (`google/gemini-2.5-flash`). Two parallel Serper queries → `CompanyBrief(description, headlines, values, category, role_signals, sample_question_themes)`. `category` ∈ 15 buckets. **When a job description is pasted, Serper is skipped** and the brief is derived from the posting alone (`_research_from_job_description` + `_JD_SYSTEM_INSTRUCTION`); both paths funnel through `_normalize_brief_payload`. A separate cheap match-check (`openai/gpt-oss-120b:free`, low reasoning, fails open) screens the JD↔profile pairing first — see the "Optional pasted job description" MVP bullet.
 2. **Opening question** (`google/gemini-3.5-flash`, minimal reasoning). System by `build_field_system_prompt(brief.category, rng=None)`; user prompt appends `role_signals`/`sample_question_themes` only when non-empty.
 3. **Follow-up question** (non-final turns, `deepseek/deepseek-v4-flash`, no reasoning). System = hard rules (10–25 words, references something concrete, ends in `?`) + confused-candidate + output-format; output through `_sanitize_followup`.
-4. **Evaluate** (`deepseek/deepseek-v3.2`, JSON mode, detached bg task). Rubric from `_field_rubrics.FIELD_RUBRICS` keyed on `brief.category`.
+4. **Evaluate** (`deepseek/deepseek-v4-pro`, high reasoning, `deepseek/deepseek-v3.2` fallback, JSON mode, detached bg task). Rubric from `_field_rubrics.FIELD_RUBRICS` keyed on `brief.category`.
 5. **Forward coaching** (`deepseek/deepseek-v4-flash`, no reasoning, `coaching.py:generate_next_take`, JSON mode). Deliberately SEPARATE call (NOT folded into evaluator's LOCKED prompt). Input: question + transcript + `main_takeaway` + top `improvement_moments`. Writes `feedback_detail.next_take` (`NextTake{focus, approach}`). **Fails soft**: any error → `next_take` null, scoring unaffected.
 
 ---
@@ -152,7 +157,7 @@ All routes except `/health` require Clerk JWT via a FastAPI dependency.
 
 ```
 POST /onboarding              { resume_file, industry, target_role, short_bio }
-POST /sessions                { company, job_title, voice_id?, timezone? } → 201 { session_id, summary, first_question, first_question_audio_url } | 429 (daily limit)
+POST /sessions                { company, job_title, voice_id?, timezone?, job_description? (≤6000), acknowledge_mismatch? } → 201 { session_id, summary, first_question, first_question_audio_url } | 422 (JD gibberish) | 409 { code:"job_description_mismatch", message } (JD↔profile mismatch; re-submit with acknowledge_mismatch=true) | 429 (daily limit)
 POST /sessions/{id}/turns     { audio_blob, cv_summary? } → { transcript, scores|null, feedback|null, feedback_detail|null, next_question, next_question_audio_url, is_final, evaluation_pending }
 GET  /sessions/{id}           full session + turns (incl. saved_question_id)
 GET  /sessions                user's session history
@@ -212,7 +217,7 @@ POST /sessions/{id}/turns/{turn_id}/tutor  { message (≤300 chars), history[], 
 }
 ```
 
-- **Models:** Evaluator → `deepseek/deepseek-v3.2`. Research → `google/gemini-2.5-flash`; opening → `google/gemini-3.5-flash` (minimal reasoning); follow-up → `deepseek/deepseek-v4-flash` (no reasoning). No other model mixing.
+- **Models:** Evaluator → `deepseek/deepseek-v4-pro` (high reasoning, `deepseek/deepseek-v3.2` fallback). Research → `google/gemini-2.5-flash`; opening → `google/gemini-3.5-flash` (minimal reasoning); follow-up → `deepseek/deepseek-v4-flash` (no reasoning). No other model mixing.
 - **Scores:** five content dims LLM-scored 0–10 ints, then `_calibrate_content_scores` (only lowers); `delivery` computed server-side by `_compute_delivery_score` (never trusted from the model). All six nullable on the wire.
 - **Delivery feedback:** built server-side from `cv_summary` (never LLM, not in prompt); omitted when camera declined. `summary` required; four cues optional, each ≤270 chars.
 - **Forward coaching:** `feedback_detail.next_take` (`{focus ≤270, approach ≤390}`) NOT from evaluator — written by coaching call (#5) and merged before persistence. Null on legacy turns / coaching failure.
