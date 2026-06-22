@@ -39,7 +39,7 @@ from app.services._openrouter import extract_json_object, get_client
 
 logger = logging.getLogger(__name__)
 
-EVAL_MODEL = "openai/gpt-5-mini"
+EVAL_MODEL = "deepseek/deepseek-v4-pro"
 
 # Personal calibration from `backend/recordings/calibration_20260418_230315`.
 # These are the bands that separated the user's normal / engaged delivery
@@ -813,7 +813,7 @@ async def evaluate_turn(
         temperature=0.2,
         response_format={"type": "json_object"},
         timeout=180.0,
-        extra_body={"reasoning": {"effort": "medium"}}
+        extra_body={"reasoning": {"effort": "high"}}
     )
     text = response.choices[0].message.content or ""
     result = EvaluatorOutput.model_validate_json(extract_json_object(text))
