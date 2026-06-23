@@ -15,6 +15,7 @@ Adding a new route group is a three-step ritual:
 
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
+    custom_questions,
     health,
     me,
     onboarding,
@@ -46,6 +47,13 @@ api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"]
 # Protected. Save & re-practice opening questions.
 api_router.include_router(
     saved_questions.router, prefix="/saved-questions", tags=["saved-questions"]
+)
+
+# Protected. Manage candidate-authored custom interview questions.
+api_router.include_router(
+    custom_questions.router,
+    prefix="/custom-questions",
+    tags=["custom-questions"],
 )
 
 # Protected. Ask Tutor chat, scoped to one turn. The route declares its full

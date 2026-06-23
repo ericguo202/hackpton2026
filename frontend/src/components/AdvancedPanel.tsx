@@ -8,9 +8,11 @@
  * wrappers don't need to change.
  */
 
+import { Check } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { violatesContentPolicy } from '../lib/contentPolicy';
+import type { CustomQuestion } from '../types/customQuestions';
 import VoicePickerGrid from './VoicePickerGrid';
 
 // Mirrors the server-side cap in `SessionCreateIn.job_description`.
@@ -25,6 +27,9 @@ type Props = {
   onToggleShowQuestionText: () => void;
   jobDescription: string;
   onJobDescriptionChange: (value: string) => void;
+  customQuestions: CustomQuestion[];
+  selectedCustomQuestionId: string | null;
+  onSelectCustomQuestion: (id: string | null) => void;
   disabled: boolean;
 };
 
@@ -35,6 +40,9 @@ export default function AdvancedPanel({
   onToggleShowQuestionText,
   jobDescription,
   onJobDescriptionChange,
+  customQuestions,
+  selectedCustomQuestionId,
+  onSelectCustomQuestion,
   disabled,
 }: Props) {
   const remaining = MAX_JOB_DESCRIPTION_CHARS - jobDescription.length;
@@ -88,6 +96,63 @@ export default function AdvancedPanel({
             </p>
           )}
         </div>
+      </Section>
+
+      <Section
+        label="Custom question"
+        hint="Use one of your own questions instead of a generated one. Manage your questions on the Personalize page."
+      >
+        {customQuestions.length === 0 ? (
+          <p className="text-sm text-text-subtle">
+            No custom questions yet. Add some on the Personalize page.
+          </p>
+        ) : (
+          <ul className="max-h-56 space-y-2 overflow-y-auto pr-1">
+            {customQuestions.map((q) => {
+              const selected = selectedCustomQuestionId === q.id;
+              return (
+                <li key={q.id}>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    aria-pressed={selected}
+                    onClick={() =>
+                      onSelectCustomQuestion(selected ? null : q.id)
+                    }
+                    className={
+                      'flex w-full items-start gap-2 rounded border px-3 py-2 text-left text-sm transition-colors ' +
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ' +
+                      'focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +
+                      'disabled:cursor-not-allowed disabled:opacity-50 ' +
+                      (selected
+                        ? 'border-accent bg-accent/10 text-text'
+                        : 'cursor-pointer border-border bg-surface-sunken text-text-muted hover:border-border-strong hover:text-text')
+                    }
+                  >
+                    <span
+                      aria-hidden
+                      className={
+                        'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ' +
+                        (selected
+                          ? 'border-accent bg-accent text-accent-fg'
+                          : 'border-border-strong')
+                      }
+                    >
+                      {selected && <Check className="h-3 w-3" />}
+                    </span>
+                    <span className="min-w-0">{q.question_text}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {selectedCustomQuestionId !== null && (
+          <p className="text-xs text-text-subtle">
+            Your selected question replaces the opening question. The company you
+            enter still tailors the follow-up.
+          </p>
+        )}
       </Section>
 
       <Section

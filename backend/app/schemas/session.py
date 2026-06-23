@@ -46,6 +46,12 @@ class SessionCreateIn(BaseModel):
     # role/industry/company ↔ job-description mismatch, so the server skips the
     # match-check and proceeds with session creation.
     acknowledge_mismatch: bool = Field(default=False)
+    # Optional id of a candidate-authored custom question (from
+    # /api/v1/custom-questions). When present, the session still runs company
+    # research but SKIPS the opening-question LLM call — the custom question's
+    # text becomes turn 1 verbatim (it was screened at creation time). 404 if it
+    # isn't the caller's.
+    custom_question_id: UUID | None = Field(default=None)
 
 
 class CompanyBriefOut(BaseModel):

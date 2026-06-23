@@ -18,6 +18,7 @@ import { useEffect } from 'react';
 
 import AdvancedPanel from './AdvancedPanel';
 import { Button } from './ui/button';
+import type { CustomQuestion } from '../types/customQuestions';
 
 type Props = {
   open: boolean;
@@ -28,6 +29,9 @@ type Props = {
   onToggleShowQuestionText: () => void;
   jobDescription: string;
   onJobDescriptionChange: (value: string) => void;
+  customQuestions: CustomQuestion[];
+  selectedCustomQuestionId: string | null;
+  onSelectCustomQuestion: (id: string | null) => void;
   disabled: boolean;
 };
 
@@ -40,6 +44,9 @@ export default function AdvancedPanelDrawer({
   onToggleShowQuestionText,
   jobDescription,
   onJobDescriptionChange,
+  customQuestions,
+  selectedCustomQuestionId,
+  onSelectCustomQuestion,
   disabled,
 }: Props) {
   useEffect(() => {
@@ -93,6 +100,9 @@ export default function AdvancedPanelDrawer({
           onToggleShowQuestionText={onToggleShowQuestionText}
           jobDescription={jobDescription}
           onJobDescriptionChange={onJobDescriptionChange}
+          customQuestions={customQuestions}
+          selectedCustomQuestionId={selectedCustomQuestionId}
+          onSelectCustomQuestion={onSelectCustomQuestion}
           disabled={disabled}
         />
       </div>

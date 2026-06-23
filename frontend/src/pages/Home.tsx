@@ -37,6 +37,7 @@ import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
+import { useCustomQuestions } from '../hooks/useCustomQuestions';
 import { useDeliveryConsent } from '../hooks/useDeliveryConsent';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
@@ -164,6 +165,13 @@ export default function Home() {
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [jobDescription, setJobDescription] = useState('');
+  // The caller's custom questions + which one (if any) is selected for this
+  // session. When selected, the backend skips the opening-question LLM call and
+  // uses the chosen question verbatim (research still runs).
+  const { questions: customQuestions } = useCustomQuestions();
+  const [selectedCustomQuestionId, setSelectedCustomQuestionId] = useState<
+    string | null
+  >(null);
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   // Open when the backend flags a JD ↔ profile mismatch (409). Confirming
@@ -237,6 +245,9 @@ export default function Home() {
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
           ...(acknowledgeMismatch ? { acknowledge_mismatch: true } : {}),
+          ...(selectedCustomQuestionId
+            ? { custom_question_id: selectedCustomQuestionId }
+            : {}),
         }),
       });
       trackEvent('practice_session_started', {
@@ -519,6 +530,9 @@ export default function Home() {
                         onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
                         jobDescription={jobDescription}
                         onJobDescriptionChange={setJobDescription}
+                        customQuestions={customQuestions ?? []}
+                        selectedCustomQuestionId={selectedCustomQuestionId}
+                        onSelectCustomQuestion={setSelectedCustomQuestionId}
                         disabled={submitting}
                       />
                     </>
@@ -573,6 +587,9 @@ export default function Home() {
             onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
             jobDescription={jobDescription}
             onJobDescriptionChange={setJobDescription}
+            customQuestions={customQuestions ?? []}
+            selectedCustomQuestionId={selectedCustomQuestionId}
+            onSelectCustomQuestion={setSelectedCustomQuestionId}
             disabled={submitting}
           />
 

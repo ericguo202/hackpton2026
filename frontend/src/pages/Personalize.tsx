@@ -24,6 +24,7 @@ import { FileText, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
 import AccountButton from '../components/AccountButton';
+import CustomQuestionsManager from '../components/CustomQuestionsManager';
 import IndustryAutocompleteField from '../components/IndustryAutocompleteField';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import RoleAutocompleteField from '../components/RoleAutocompleteField';
@@ -221,9 +222,10 @@ function PersonalizeForm({ me, refetch }: FormProps) {
   }
 
   return (
+    <>
     <form
       onSubmit={handleSubmit}
-      className="mx-auto w-full max-w-[80rem] 2xl:max-w-[88rem] px-8 py-8 min-[900px]:px-16 min-[900px]:py-10"
+      className="mx-auto w-full max-w-[80rem] 2xl:max-w-[88rem] px-8 pt-8 pb-2 min-[900px]:px-16 min-[900px]:pt-10"
     >
       <div className="mb-6 flex flex-col gap-5 min-[900px]:flex-row min-[900px]:items-end min-[900px]:justify-between">
         <div>
@@ -497,6 +499,13 @@ function PersonalizeForm({ me, refetch }: FormProps) {
         </Button>
       </div>
     </form>
+
+    {/* Independent section: its own state + Add button, never navigates away
+        (the profile form above redirects to / on save; this one doesn't). */}
+    <div className="mx-auto w-full max-w-[80rem] 2xl:max-w-[88rem] px-8 pb-10 min-[900px]:px-16">
+      <CustomQuestionsManager />
+    </div>
+    </>
   );
 }
 
