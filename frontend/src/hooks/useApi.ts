@@ -41,6 +41,12 @@ export function useApi() {
       if (!res.ok) {
         throw new ApiError(res.status, await res.text());
       }
+      // 204 No Content (DELETE endpoints) / any empty body has nothing to
+      // parse — return undefined instead of letting res.json() throw on the
+      // empty string (which would skip a caller's post-mutation refetch).
+      if (res.status === 204) {
+        return undefined as T;
+      }
       return res.json() as Promise<T>;
     },
     [getToken, isSignedIn],

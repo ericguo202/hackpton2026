@@ -63,6 +63,19 @@ export default function CustomQuestionsManager() {
   const lines = useMemo(() => splitLines(draft), [draft]);
   const canSubmit = lines.length > 0 && !submitting && !atCap;
 
+  async function handleDelete(id: string) {
+    setError(null);
+    try {
+      await remove(id);
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? extractApiErrorDetail(err)
+          : (err as Error).message,
+      );
+    }
+  }
+
   async function handleAdd() {
     setError(null);
     setAddedCount(null);
@@ -216,7 +229,7 @@ export default function CustomQuestionsManager() {
                   <button
                     type="button"
                     aria-label="Delete question"
-                    onClick={() => void remove(q.id)}
+                    onClick={() => void handleDelete(q.id)}
                     className="shrink-0 rounded p-1 text-text-muted transition-colors hover:text-critique focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                   >
                     <Trash2 className="h-4 w-4" aria-hidden />
