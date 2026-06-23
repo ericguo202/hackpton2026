@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # phrasing wrapping a crude or trivial subject). Same JSON-mode + fail-open
 # posture as the JD match-check; custom-question creation is rare and capped at
 # 10/user, so the spend is negligible.
-VALIDATE_MODEL = "google/gemini-2.5-flash-lite"
+VALIDATE_MODEL = "openai/gpt-oss-120b:free"
 VALIDATE_LLM_TIMEOUT_SECONDS = 20.0
 
 
@@ -148,6 +148,7 @@ async def validate_custom_question(
             temperature=0.0,
             response_format={"type": "json_object"},
             timeout=VALIDATE_LLM_TIMEOUT_SECONDS,
+            extra_body={"reasoning": {"effort": "low"}},
         )
         text = response.choices[0].message.content or ""
         payload = json.loads(extract_json_object(text))
