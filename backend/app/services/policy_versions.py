@@ -8,7 +8,13 @@ acceptance gate re-prompts them before they can use the Service.
 
 The frontend mirrors these by hand in `frontend/src/lib/policyAcceptance.ts` —
 keep the two in sync (same discipline as `DELIVERY_ANALYTICS_NOTICE_VERSION`).
+
+`CURRENT_BIOMETRIC_VERSION` versions the Biometric Data Retention Policy document.
+Unlike Terms/Privacy it is NOT part of the forced acceptance gate (so it has no
+frontend mirror), but bumping it — like bumping any of these constants — triggers
+the policy-change notification email in `policy_notifications.py`.
 """
 
 CURRENT_TERMS_VERSION = 1
 CURRENT_PRIVACY_VERSION = 1
+CURRENT_BIOMETRIC_VERSION = 1

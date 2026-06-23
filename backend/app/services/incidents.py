@@ -7,6 +7,8 @@ handling.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import traceback
 from collections.abc import Mapping, Sequence
@@ -22,8 +24,15 @@ from app.core.config import settings
 from app.db.models.incident import Incident
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
+from app.services.email import mailgun_configured, send_email
 
 logger = logging.getLogger(__name__)
+
+# Strong refs to in-flight warning-alert email tasks so they aren't garbage
+# collected mid-send (same pattern as `_finalize_tasks` in sessions.py). The
+# email send is fire-and-forget so a request-path warning log — e.g. a 422
+# injection block — isn't delayed by Mailgun I/O.
+_email_tasks: set[asyncio.Task[None]] = set()
 
 MAX_SENT_CONTENT_CHARS = 10_000
 MAX_ERROR_CHARS = 8_000
@@ -155,6 +164,8 @@ async def log_incident(
     naturally, but the write is isolated in its own short-lived session. That
     keeps a broken incident insert from aborting the caller's transaction.
     """
+    triggered_at = datetime.now(timezone.utc)
+
     fields = _user_fields(user)
     if user_id is not None:
         fields["user_id"] = user_id
@@ -182,6 +193,84 @@ async def log_incident(
             await owned_db.commit()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Incident logging failed for %s: %s", event_type, exc)
+        return
+
+    # Every warning-level incident gets an ops alert email (best-effort,
+    # fire-and-forget so it never adds latency to a request-path log). Skip the
+    # task entirely when Mailgun isn't configured (no-op in tests/dev).
+    if severity == SEVERITY_WARNING and mailgun_configured():
+        task = asyncio.create_task(
+            _send_warning_incident_email(
+                event_type=event_type,
+                triggered_at=triggered_at,
+                sent_content=values["sent_content"],
+                returned_content=values["returned_content"],
+                error=values["error"],
+                metadata=values["metadata"],
+            )
+        )
+        _email_tasks.add(task)
+        task.add_done_callback(_email_tasks.discard)
+
+
+def _format_warning_email_body(
+    *,
+    event_type: str,
+    triggered_at: datetime,
+    sent_content: str | None,
+    returned_content: Any,
+    error: str | None,
+    metadata: Any,
+) -> str:
+    """Render the plain-text body of a warning-incident alert."""
+
+    def _block(value: Any) -> str:
+        if value is None or value == {} or value == "":
+            return "(none)"
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value, indent=2, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            return repr(value)
+
+    return (
+        "A warning-level incident was logged in InterviewPie.\n\n"
+        f"Incident type: {event_type}\n"
+        f"Time of trigger: {triggered_at.isoformat()}\n\n"
+        f"Metadata:\n{_block(metadata)}\n\n"
+        f"Sent content:\n{_block(sent_content)}\n\n"
+        f"Returned content:\n{_block(returned_content)}\n\n"
+        f"Error:\n{_block(error)}\n"
+    )
+
+
+async def _send_warning_incident_email(
+    *,
+    event_type: str,
+    triggered_at: datetime,
+    sent_content: str | None,
+    returned_content: Any,
+    error: str | None,
+    metadata: Any,
+) -> None:
+    """Email the ops recipient about one warning incident. Never raises."""
+    try:
+        body = _format_warning_email_body(
+            event_type=event_type,
+            triggered_at=triggered_at,
+            sent_content=sent_content,
+            returned_content=returned_content,
+            error=error,
+            metadata=metadata,
+        )
+        await send_email(
+            to=settings.MAILGUN_INCIDENT_RECIPIENT,
+            subject=f"[InterviewPie] Warning incident: {event_type}",
+            text=body,
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort alert, never propagate
+        logger.warning("Warning-incident email failed for %s: %s", event_type, exc)
 
 
 async def log_user_created(

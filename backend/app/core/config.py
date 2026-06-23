@@ -129,6 +129,26 @@ class Settings(BaseSettings):
     # not retained indefinitely. Scrubbed by the same daily retention sweep.
     INCIDENT_CONTENT_RETENTION_DAYS: int = 90
 
+    # Mailgun transactional email. Used for two things: (1) alerting ops on every
+    # warning-level incident, (2) notifying all users when a policy version bumps.
+    # API key + sending domain are optional at boot (like OPENROUTER_API_KEY) so
+    # tests/dev import `settings` without live credentials — `email.send_email`
+    # no-ops when either is missing. MAILGUN_BASE_URL switches to
+    # `https://api.eu.mailgun.net/v3` for EU-region domains.
+    MAILGUN_API_KEY: str | None = None
+    MAILGUN_DOMAIN: str | None = None
+    MAILGUN_BASE_URL: str = "https://api.mailgun.net/v3"
+    MAILGUN_FROM: str = "InterviewPie <noreply@interviewpie.com>"
+    # Recipient for warning-level incident alerts.
+    MAILGUN_INCIDENT_RECIPIENT: str = "interviewpie@gmail.com"
+
+    # Public site host used to build the "view the latest version" links in
+    # policy-change emails (matches the production origin in ALLOWED_ORIGINS).
+    POLICY_NOTIFICATION_BASE_URL: str = "https://interviewpie.com"
+    # Gate the startup policy-change notification sweep. Off in dev/tests where
+    # we don't want a boot to email anyone.
+    POLICY_NOTIFICATION_ENABLED: bool = True
+
     @property
     def DATABASE_URL(self) -> str:
         """SQLAlchemy async URL composed from the POSTGRES_* parts above."""
