@@ -88,7 +88,11 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
 
 - **Free tier with daily session limits.** 5 completed sessions per local calendar day. Counter increments at **finalization** (not creation — abandoning doesn't burn a slot). IANA timezone from browser (`users.timezone`, UTC fallback). Pre-check at `POST /sessions` **before** any LLM/API spend → 429. Race-safe atomic `UPDATE` in `daily_limit.py`. `GET /me` also runs `check_and_reset` — zero writes steady-state (UPDATE gated by `count_reset_date.is_distinct_from(today)`, NULL-safe). **Second daily limit, same module:** Ask Tutor chats are capped at **10 successful completions/day** (`daily_chat_count` / `chat_count_reset_date`, `check_and_reset_chat` / `enforce_chat_daily_limit` / `record_chat_completion`) — see the Ask Tutor bullet for the success-only-increment nuance. `GET /me` rolls both counters for free tier.
 
-- **Incidents event log (internal/admin-only).** `user_created`, `user_signed_in`, `moderation_request`, `interview_session_started`, `save_question`, `injection_detected`, `job_description_mismatch_ack` (warning — user proceeded past a flagged JD↔profile mismatch; keeps JD + declared company/title for audit), `error`. Written in a fresh DB session (failures never break request). Payload caps: `sent_content` 10k, `error` 8k, large JSON 2k. Auth events backend-observed (no Clerk webhooks); `user_signed_in` dedupes by Clerk `claims.sid`. Moderation incidents log only on OpenAI API fire (not deterministic local rejects). **Moderation fails closed:** `ModerationUnavailableError` writes `error` incident; callers return 503; `ensure_moderation_configured()` aborts boot if `OPENAI_API_KEY` unset. `interview_session_started` logs only after session persistence. 5xx/unhandled errors → `error`; normal 4xx does not.
+- **Incidents event log (internal/admin-only).** `user_created`, `user_signed_in`, `moderation_request`, `interview_session_started`, `save_question`, `injection_detected`, `job_description_mismatch_ack` (warning — user proceeded past a flagged JD↔profile mismatch; keeps JD + declared company/title for audit), `error`. Written in a fresh DB session (failures never break request). Payload caps: `sent_content` 10k, `error` 8k, large JSON 2k. Auth events backend-observed (no Clerk webhooks); `user_signed_in` dedupes by Clerk `claims.sid`. Moderation incidents log only on OpenAI API fire (not deterministic local rejects). **Moderation fails closed:** `ModerationUnavailableError` writes `error` incident; callers return 503; `ensure_moderation_configured()` aborts boot if `OPENAI_API_KEY` unset. `interview_session_started` logs only after session persistence. 5xx/unhandled errors → `error`; normal 4xx does not. **Every `severity='warning'` insert triggers an ops-alert email** — see the next bullet.
+
+- **Transactional email (Mailgun) — ops alerts + policy-change broadcasts.** `app/services/email.py` is a ~20-line httpx wrapper over Mailgun's `messages` endpoint (mirrors `tts.py`/`company_research.py`, no SDK). `send_email(*, to, subject, text, from_addr=None) -> bool` is **best-effort by contract — NEVER raises**: returns `False` (and logs a warning) when unconfigured or on any HTTP/transport error, so a mail failure can't break incident logging, request handling, or boot. `mailgun_configured()` short-circuits when `MAILGUN_API_KEY`/`MAILGUN_DOMAIN` are unset (no-op in dev/tests). Two callers:
+  - **Warning-incident alerts (`incidents.py`).** Hooked generically inside `log_incident` AFTER the successful commit: any `severity == SEVERITY_WARNING` row spawns `_send_warning_incident_email` **fire-and-forget** via `asyncio.create_task` (strong-ref'd in module-level `_email_tasks`, like `_finalize_tasks` in `sessions.py`) so a request-path warning log (e.g. a 422 injection block) isn't delayed by mail I/O. Covers `injection_detected`, `job_description_mismatch_ack`, and moderation hard-blocks with **no per-call-site change** — future warning types are covered automatically. Email → `MAILGUN_INCIDENT_RECIPIENT`, subject `[InterviewPie] Warning incident: {event_type}`, body = type + trigger time + the already-clipped `metadata`/`sent_content`/`returned_content`/`error`. `triggered_at` is captured at the top of `log_incident`. Skipped entirely when Mailgun is unconfigured.
+  - **Policy-change broadcast (`policy_notifications.py`).** Policy versions are source constants in `policy_versions.py` (`CURRENT_TERMS_VERSION`, `CURRENT_PRIVACY_VERSION`, `CURRENT_BIOMETRIC_VERSION`); bumping one emails every user with a non-null `email` (any onboarding state — users accept ToS/Privacy before onboarding). `run_policy_notification_sweep_once()` runs **once at startup** (the only moment a deploy could have bumped a version), wired in `main.py` lifespan via `start_policy_notification_sweep()` (gated by `POLICY_NOTIFICATION_ENABLED`, spawned as a background task so a slow batch never delays readiness). Mechanics mirror `delivery_retention_scheduler`: a **distinct Postgres advisory lock** (`0x5D11_3E47_2026_0622`) so one blue/green replica acts, and a **first-run baseline** — a missing `policy_notification_state` row is seeded to the current version **without emailing** (never blast users about a version they already hold). The bumped version is **claimed (state row advanced) under the lock BEFORE any mail goes out** so the peer replica can't double-send; trade-off (accepted) — a crash mid-batch won't re-notify for that policy. Subject `We've Updated Our {display_name}`; terms/privacy bodies carry a re-prompt line (frontend forced-acceptance gate), biometric does not (`/legal/biometric-data-retention` is not in the gate, so no frontend mirror); links use `POLICY_NOTIFICATION_BASE_URL` + per-policy path. Per-recipient send (users never see each other), per-recipient failures tolerated. When Mailgun is unconfigured the sweep still seeds/advances state (so a later config change doesn't backlog a "change" to spam) but skips sends.
 
 ---
 
@@ -96,7 +100,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
 
 - **Frontend**: React + Vite, Clerk (auth), recharts, MediaRecorder, MediaPipe (webcam delivery analytics)
 - **Backend**: FastAPI, Alembic + Postgres, OpenAI Python SDK pointed at OpenRouter (`https://openrouter.ai/api/v1`)
-- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v4-pro` evaluator (high reasoning, `deepseek/deepseek-v3.2` fallback), `google/gemini-2.5-flash` research, `google/gemini-3.5-flash` opening (minimal reasoning), `deepseek/deepseek-v4-flash` follow-up + coaching + Ask Tutor (all no reasoning), `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback, `openai/gpt-oss-120b:free` JD↔profile match-check (low reasoning, fails open)), Serper
+- **APIs**: ElevenLabs (STT + TTS), OpenRouter (`deepseek/deepseek-v4-pro` evaluator (high reasoning, `deepseek/deepseek-v3.2` fallback), `google/gemini-2.5-flash` research, `google/gemini-3.5-flash` opening (minimal reasoning), `deepseek/deepseek-v4-flash` follow-up + coaching + Ask Tutor (all no reasoning), `google/gemini-2.5-flash-lite` autocomplete + `openai/gpt-oss-120b` fallback, `openai/gpt-oss-120b:free` JD↔profile match-check (low reasoning, fails open)), Serper, Mailgun (transactional email via httpx — warning-incident alerts + policy-change broadcasts; best-effort, never raises)
 - **Auth**: Clerk JWT verified via `python-jose` against `CLERK_JWT_ISSUER` JWKS
 
 ---
@@ -151,6 +155,9 @@ session_metrics(id, session_id FK, avg_structure, avg_problem_solving, avg_initi
 
 incidents(id, event_type, severity, user_id FK NULL, clerk_user_id TEXT NULL, session_id FK NULL, occurred_at,
 idempotency_key UNIQUE NULL, sent_content TEXT NULL, returned_content JSONB NULL, error TEXT NULL, metadata JSONB DEFAULT '{}')
+
+policy_notification_state(policy_key TEXT PRIMARY KEY,  -- 'terms' | 'privacy' | 'biometric'
+notified_version INTEGER NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())  -- migration 0018_policy_notif (down_revision 0017_chat_daily_limit); last policy version users were emailed about, so a source-constant bump is detectable across deploys/replicas
 ```
 
 ---
@@ -257,6 +264,13 @@ OPENROUTER_API_KEY      # single key for all LLM calls
 ELEVENLABS_API_KEY
 ELEVENLABS_VOICE_ID     # default voice; per-session override via VoicePicker
 SERPER_API_KEY
+MAILGUN_API_KEY         # transactional email; unset → email service no-ops (mailgun_configured() false)
+MAILGUN_DOMAIN          # Mailgun sending domain
+MAILGUN_BASE_URL        # default https://api.mailgun.net/v3 (use api.eu.mailgun.net/v3 for EU region)
+MAILGUN_FROM            # default "InterviewPie <noreply@interviewpie.com>"
+MAILGUN_INCIDENT_RECIPIENT      # default interviewpie@gmail.com; warning-incident ops alerts
+POLICY_NOTIFICATION_BASE_URL    # default https://interviewpie.com; link host for policy-change emails
+POLICY_NOTIFICATION_ENABLED     # default true; gates the startup policy-bump sweep (off in dev/tests)
 ```
 
 ---
