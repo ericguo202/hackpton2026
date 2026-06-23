@@ -37,6 +37,7 @@ import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
+import { useCustomQuestions } from '../hooks/useCustomQuestions';
 import { useDeliveryConsent } from '../hooks/useDeliveryConsent';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
@@ -105,6 +106,33 @@ function AutoSubmitPill({
   );
 }
 
+function ShowQuestionTextPill({
+  showQuestionText,
+  onToggle,
+  disabled,
+}: {
+  showQuestionText: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      aria-pressed={showQuestionText}
+      title="Show the question on screen during your turn. You can also toggle this mid-session."
+      className={
+        showQuestionText
+          ? 'rounded-full border border-accent bg-accent px-3 py-1 text-xs font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+          : 'cursor-pointer rounded-full border border-border bg-transparent px-3 py-1 text-xs text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+      }
+    >
+      Question text: {showQuestionText ? 'On' : 'Off'}
+    </button>
+  );
+}
+
 const SURFACE_LABELS: Record<Surface, string> = {
   basic: 'Basic',
   advanced: 'Advanced',
@@ -164,6 +192,13 @@ export default function Home() {
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [jobDescription, setJobDescription] = useState('');
+  // The caller's custom questions + which one (if any) is selected for this
+  // session. When selected, the backend skips the opening-question LLM call and
+  // uses the chosen question verbatim (research still runs).
+  const { questions: customQuestions } = useCustomQuestions();
+  const [selectedCustomQuestionId, setSelectedCustomQuestionId] = useState<
+    string | null
+  >(null);
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   // Open when the backend flags a JD ↔ profile mismatch (409). Confirming
@@ -237,6 +272,9 @@ export default function Home() {
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
           ...(acknowledgeMismatch ? { acknowledge_mismatch: true } : {}),
+          ...(selectedCustomQuestionId
+            ? { custom_question_id: selectedCustomQuestionId }
+            : {}),
         }),
       });
       trackEvent('practice_session_started', {
@@ -417,6 +455,11 @@ export default function Home() {
                     onToggle={() => setAutoSubmit((v) => !v)}
                     disabled={submitting}
                   />
+                  <ShowQuestionTextPill
+                    showQuestionText={showQuestionText}
+                    onToggle={() => setShowQuestionText((v) => !v)}
+                    disabled={submitting}
+                  />
                   <button
                     type="button"
                     onClick={() =>
@@ -496,10 +539,15 @@ export default function Home() {
                         />
                       </label>
 
-                      <div className="mt-8">
+                      <div className="mt-8 flex flex-wrap items-center gap-2">
                         <AutoSubmitPill
                           autoSubmit={autoSubmit}
                           onToggle={() => setAutoSubmit((v) => !v)}
+                          disabled={submitting}
+                        />
+                        <ShowQuestionTextPill
+                          showQuestionText={showQuestionText}
+                          onToggle={() => setShowQuestionText((v) => !v)}
                           disabled={submitting}
                         />
                       </div>
@@ -515,10 +563,11 @@ export default function Home() {
                       <AdvancedPanel
                         voiceId={voiceId}
                         onVoiceSelect={setVoiceId}
-                        showQuestionText={showQuestionText}
-                        onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
                         jobDescription={jobDescription}
                         onJobDescriptionChange={setJobDescription}
+                        customQuestions={customQuestions ?? []}
+                        selectedCustomQuestionId={selectedCustomQuestionId}
+                        onSelectCustomQuestion={setSelectedCustomQuestionId}
                         disabled={submitting}
                       />
                     </>
@@ -569,10 +618,11 @@ export default function Home() {
             onClose={() => setSurface('basic')}
             voiceId={voiceId}
             onVoiceSelect={setVoiceId}
-            showQuestionText={showQuestionText}
-            onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
             jobDescription={jobDescription}
             onJobDescriptionChange={setJobDescription}
+            customQuestions={customQuestions ?? []}
+            selectedCustomQuestionId={selectedCustomQuestionId}
+            onSelectCustomQuestion={setSelectedCustomQuestionId}
             disabled={submitting}
           />
 

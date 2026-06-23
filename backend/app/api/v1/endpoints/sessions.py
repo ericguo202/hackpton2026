@@ -21,6 +21,7 @@ from sqlalchemy.sql import func
 
 from app.core.auth import get_current_user_db
 from app.db.models.enums import ExperienceLevel, SessionStatus, UserTier
+from app.db.models.custom_question import CustomQuestion
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
 from app.db.models.session_metrics import SessionMetrics
@@ -236,6 +237,18 @@ async def create_session(
             detail="Input contains content that violates our usage policy.",
         )
 
+    # Resolve an optional custom question up front (ownership 404) so an invalid
+    # id fails fast — before any billed moderation / research / TTS spend. When
+    # present it replaces the opening-question LLM call below; research still
+    # runs so the follow-up + evaluator stay field-tailored.
+    custom_question: CustomQuestion | None = None
+    if body.custom_question_id is not None:
+        custom_question = await db.get(CustomQuestion, body.custom_question_id)
+        if custom_question is None or custom_question.user_id != user.id:
+            raise HTTPException(
+                status_code=404, detail="Custom question not found"
+            )
+
     # Conservative gibberish gate on the pasted job description (only when one
     # was supplied). Free / local, so it runs before any billed call. A real
     # posting always passes; only obvious keysmash / symbol-soup is rejected.
@@ -349,13 +362,18 @@ async def create_session(
         "Session research complete: company=%r job_title=%r category=%r",
         body.company, body.job_title, brief.category,
     )
-    # Pass the candidate's recent opening questions (already loaded on the
-    # user row by get_current_user_db — no extra query) as an avoid-list so
-    # the generator doesn't repeat near-identical questions across sessions.
-    opening_q = await generate_opening_question(
-        user, brief, body.job_title,
-        recent_questions=user.recent_opening_questions,
-    )
+    if custom_question is not None:
+        # The candidate picked their own question — skip the opening-question
+        # LLM call entirely and use the (already-screened) custom text verbatim.
+        opening_q = custom_question.question_text
+    else:
+        # Pass the candidate's recent opening questions (already loaded on the
+        # user row by get_current_user_db — no extra query) as an avoid-list so
+        # the generator doesn't repeat near-identical questions across sessions.
+        opening_q = await generate_opening_question(
+            user, brief, body.job_title,
+            recent_questions=user.recent_opening_questions,
+        )
 
     # Generate the session UUID up front so the voice can be resolved
     # before the row hits the DB. This lets TTS and the INSERT run in
@@ -379,6 +397,9 @@ async def create_session(
             session_id=session_id,
             voice_id=voice_id,
             experience_level=user.experience_level,
+            # A custom question is a deliberate, reusable pick — don't push it
+            # into the generation avoid-list (it isn't a generated question).
+            roll_recent=custom_question is None,
         ),
     )
     await log_interview_session_started(
@@ -388,6 +409,7 @@ async def create_session(
         metadata={
             "company": body.company,
             "job_title": body.job_title,
+            "custom_question": custom_question is not None,
         },
     )
 

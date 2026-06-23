@@ -7,6 +7,7 @@ Model package — importing this module registers every ORM class on
 from app.db.models.user import User
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
+from app.db.models.custom_question import CustomQuestion
 from app.db.models.incident import Incident
 from app.db.models.policy_notification_state import PolicyNotificationState
 from app.db.models.rate_limit import RateLimit
@@ -18,6 +19,7 @@ __all__ = [
     "User",
     "InterviewSession",
     "InterviewTurn",
+    "CustomQuestion",
     "Incident",
     "PolicyNotificationState",
     "RateLimit",
