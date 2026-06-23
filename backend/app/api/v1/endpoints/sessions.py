@@ -209,10 +209,14 @@ async def create_session(
     # job-title never reaches OpenAI moderation, Serper, OpenRouter, or
     # ElevenLabs. The delimiters + untrusted-data clause in `research_company`
     # are the recall layer for subtler attempts this high-precision regex skips.
+    # STRICT gate (these are not interview answers): company + job_title are
+    # short structured fields (also block a bare "API key"); the pasted job
+    # description is long free-text (tolerates "API key rotation" prose). The
+    # interview-turn transcript gate in `submit_turn` stays on the relaxed regex.
     if (
-        contains_injection(body.company)
-        or contains_injection(body.job_title)
-        or contains_injection(body.job_description)
+        contains_injection(body.company, strict=True, short_field=True)
+        or contains_injection(body.job_title, strict=True, short_field=True)
+        or contains_injection(body.job_description, strict=True)
     ):
         logger.info(
             "Session-create rejected by injection gate clerk_user_id=%s",

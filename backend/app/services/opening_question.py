@@ -231,13 +231,16 @@ async def generate_opening_question(
     # session-create. If one slips through, log a warning + best-effort incident
     # for visibility, then PROCEED: we must still produce an opening question, and
     # the <candidate_profile> delimiters + system clause are the active defense.
+    # Uses the STRICT gate (this is profile content, never an interview answer);
+    # strict-LONG, not -short, since the blob includes résumé prose where a bare
+    # "API key" is legitimate.
     profile_text = " ".join(
         s for s in (
             user.resume_text, user.short_bio, user.target_role,
             user.industry, job_title,
         ) if s
     )
-    if contains_injection(profile_text):
+    if contains_injection(profile_text, strict=True):
         logger.warning(
             "Prompt-injection pattern in candidate profile during opening-"
             "question generation (user_id=%s); proceeding with delimiter defense",

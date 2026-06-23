@@ -10,11 +10,15 @@ untrusted-data system clause in each LLM caller, which catch obfuscation,
 scrambled-word exploits, and novel phrasings this regex deliberately won't risk
 blocking.
 
-`CONTENT_INJECTION_RE` is the canonical pattern reused by `evaluator`,
-`opening_question`, `followup`, `coaching`, the `submit_turn` transcript gate, and
-the `onboarding` bio/résumé gate. `profile_validation` ORs it with a bare
-`act as` for its short structured autocomplete fields (see that module). The
-frontend keeps a hand-maintained mirror in `frontend/src/lib/contentPolicy.ts`.
+`CONTENT_INJECTION_RE` is the relaxed pattern; it is used ONLY where AI-safety
+vocabulary is legitimate — the interview-turn transcript gate (`submit_turn`,
+`evaluator`, `followup`, `coaching`) and the Ask Tutor chat. Every other
+free-text input (résumé, bio, company, job description, role, industry) uses the
+stricter `STRICT_INJECTION_RE` / `STRICT_SHORT_INJECTION_RE` via
+`contains_injection(..., strict=True[, short_field=True])` — see the strict-layer
+note below. `profile_validation` ORs the strict-short gate with a bare `act as`
+for its short structured autocomplete fields (see that module). The frontend
+keeps a hand-maintained mirror in `frontend/src/lib/contentPolicy.ts`.
 
 What we DON'T match (false-positive traps — left to the delimiter/clause layer):
   * bare "DAN"            — matches the name "Dan"; we match spelled-out
@@ -77,10 +81,76 @@ _PATTERNS = [
 CONTENT_INJECTION_RE = re.compile("|".join(_PATTERNS), re.IGNORECASE)
 
 
-def contains_injection(text: str | None) -> bool:
+# ── Strict layer — every free-text input EXCEPT interview turns + the chatbot ──
+#
+# Interview-turn transcripts and the Ask Tutor chat stay on the relaxed
+# CONTENT_INJECTION_RE above, because candidates legitimately discuss AI-safety /
+# prompt-hardening vocabulary there. Every OTHER free-text input — résumé, short
+# bio, company, job description, target role, industry — has no reason to contain
+# instruction-override or credential-exfiltration phrasing, so it gets this
+# stricter gate. Two additions over the relaxed layer:
+#
+#   1. Target-noun-free override. The relaxed override REQUIRES a trailing
+#      "instructions"/"prompts"/... noun, so a typo'd or absent target ("ignore
+#      all prior instrucdtions", "disregard previous") slips through. Here the
+#      verb + a temporal qualifier (previous/prior/earlier/…) is enough — note we
+#      anchor on the *temporal* word, NOT the quantifier "all", so legitimate
+#      technical prose ("ignore all warnings", "bypass all rate limits") is left
+#      alone. The verbs are matched ONLY in imperative present tense, so past-
+#      tense résumé accomplishments ("bypassed all prior limits", "ignored
+#      earlier advice") never trip it.
+#   2. API-credential exfiltration. Long free-text fields (résumé/bio/JD) block
+#      only "send/write … API key" — "write API documentation", "managed API key
+#      rotation" are legitimate prose there. Short structured fields
+#      (company/role/industry) additionally block any "send/write API…" and a
+#      bare "API key", neither of which is ever legitimate in a one-line field.
+_STRICT_OVERRIDE = (
+    r"\b(?:ignore|disregard|forget|override|bypass)\b"
+    r"(?:\s+\w+){0,3}?\s+"
+    r"\b(?:previous|prior|earlier|preceding|aforementioned|above)\b"
+)
+# Long fields: credential exfil requires the word "key" after the verb.
+_STRICT_API_EXFIL_KEY = (
+    r"\b(?:send|write)\s+(?:me\s+)?(?:the\s+|your\s+|an?\s+)?api\s+key\b"
+)
+# Short fields: any "send/write API…" plus a bare "API key".
+_STRICT_API_SHORT = (
+    r"\b(?:send|write)\s+(?:me\s+)?(?:the\s+|your\s+|an?\s+)?api\b"
+    r"|\bapi\s+key\b"
+)
+
+STRICT_INJECTION_RE = re.compile(
+    "|".join(_PATTERNS + [_STRICT_OVERRIDE, _STRICT_API_EXFIL_KEY]), re.IGNORECASE
+)
+STRICT_SHORT_INJECTION_RE = re.compile(
+    "|".join(_PATTERNS + [_STRICT_OVERRIDE, _STRICT_API_SHORT]), re.IGNORECASE
+)
+
+
+def contains_injection(
+    text: str | None, *, strict: bool = False, short_field: bool = False
+) -> bool:
     """True if `text` trips the deterministic content-injection regex.
 
     Empty / None is never an injection. Cheap and side-effect-free so callers can
     gate on it before any network / LLM spend.
+
+    Gate strength is chosen by the call site:
+
+    * default (`strict=False`) — relaxed `CONTENT_INJECTION_RE`. Used ONLY for
+      interview-turn transcripts and the Ask Tutor chat, where AI-safety /
+      prompt-hardening vocabulary is legitimate.
+    * `strict=True` — `STRICT_INJECTION_RE` for the long free-text fields
+      (résumé, bio, job description): adds the target-noun-free override matcher
+      and "send/write API key" exfil.
+    * `strict=True, short_field=True` — `STRICT_SHORT_INJECTION_RE` for the short
+      structured fields (company, target role, industry): additionally blocks any
+      "send/write API…" and a bare "API key".
     """
-    return bool(text and CONTENT_INJECTION_RE.search(text))
+    if not text:
+        return False
+    if strict:
+        rx = STRICT_SHORT_INJECTION_RE if short_field else STRICT_INJECTION_RE
+    else:
+        rx = CONTENT_INJECTION_RE
+    return bool(rx.search(text))
