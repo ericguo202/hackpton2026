@@ -30,8 +30,13 @@ from app.services._openrouter import extract_json_object, get_client
 
 logger = logging.getLogger(__name__)
 
-# Same cheap free model + fail-open posture as the JD match-check.
-VALIDATE_MODEL = "openai/gpt-oss-120b:free"
+# A capable instruction-following model for the validity / appropriateness /
+# relevance judgement. Upgraded from the free `openai/gpt-oss-120b:free`, which
+# under-flagged subtly inappropriate or non-competency questions (behavioral
+# phrasing wrapping a crude or trivial subject). Same JSON-mode + fail-open
+# posture as the JD match-check; custom-question creation is rare and capped at
+# 10/user, so the spend is negligible.
+VALIDATE_MODEL = "google/gemini-2.5-flash-lite"
 VALIDATE_LLM_TIMEOUT_SECONDS = 20.0
 
 
@@ -76,9 +81,17 @@ Judge the question on two axes and return ONLY a JSON object:
       e.g. "tell me about a time you enjoyed yourself and why", "describe a time
       you had a great meal", "tell me about your favorite movie". These read as
       interview questions but evaluate nothing an employer screens for.
+    - APPROPRIATENESS — set "valid": false for anything an interviewer would
+      never ask in a professional setting, EVEN IF phrased like a behavioral
+      question. This includes crude, vulgar, sexual, or bodily-function subjects
+      (e.g. "tell me about a time you relieved yourself", bathroom / toilet
+      humor, drinking / partying / drug use, dating or romantic exploits),
+      insults, and anything offensive, discriminatory, or illegal. A polite
+      "tell me about a time..." wrapper does NOT make a crude subject
+      acceptable — judge the SUBJECT.
     - Also set "valid": false for: nonsense / gibberish; a statement that isn't a
-      question; trivia, a puzzle, or a riddle; an inappropriate, offensive, or
-      unprofessional prompt; or text that is clearly not an interview question.
+      question; trivia, a puzzle, or a riddle; or text that is clearly not an
+      interview question.
     - BE LENIENT on phrasing — informal wording, typos, and missing question
       marks are fine, AS LONG AS the subject is a genuine professional
       competency. Judge the substance, not the surface form.
@@ -111,8 +124,8 @@ async def validate_custom_question(
     target_role: str | None,
     industry: str | None,
 ) -> CustomQuestionCheck:
-    """Ask a cheap LLM whether a custom question is a valid, relevant interview
-    question.
+    """Ask the LLM whether a custom question is a valid, appropriate, relevant
+    interview question.
 
     Fails open: any SDK / parse error returns `ok=True` (logged) so an LLM
     outage never blocks a legitimate question.
@@ -135,7 +148,6 @@ async def validate_custom_question(
             temperature=0.0,
             response_format={"type": "json_object"},
             timeout=VALIDATE_LLM_TIMEOUT_SECONDS,
-            extra_body={"reasoning": {"effort": "low"}},
         )
         text = response.choices[0].message.content or ""
         payload = json.loads(extract_json_object(text))
