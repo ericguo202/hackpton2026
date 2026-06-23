@@ -6,10 +6,11 @@
  * "Add" button, and it never navigates away (the user stays on /personalize to
  * review what saved and fix what was blocked). Questions are entered one-per-line
  * (single add = one line, bulk = paste many); on Add each line is screened
- * server-side (moderation → injection → an LLM validity/relevance check) and
- * the per-question report comes back as created + rejected. Over-long lines and
- * obvious injection are also flagged client-side for instant feedback before the
- * round trip (the backend re-checks authoritatively).
+ * server-side (injection → moderation → an LLM validity/relevance check) and
+ * the per-question report comes back as created + rejected. Only the length cap
+ * is pre-checked client-side; injection is deliberately NOT filtered here so
+ * every flagged line reaches the server gate and is audited as a warning-level
+ * injection_detected Incident.
  */
 
 import { useMemo, useState } from 'react';
@@ -18,7 +19,6 @@ import { Trash2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { useCustomQuestions } from '../hooks/useCustomQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
-import { violatesContentPolicy } from '../lib/contentPolicy';
 import {
   CUSTOM_QUESTION_CAP,
   MAX_QUESTION_CHARS,
@@ -83,9 +83,11 @@ export default function CustomQuestionsManager() {
 
     if (lines.length === 0) return;
 
-    // Client-side pre-screen: over-long lines + obvious injection are rejected
-    // instantly so the user gets feedback without a round trip. Everything else
-    // goes to the server for the authoritative moderation/validity check.
+    // Client-side pre-screen is ONLY the length cap (no audit value). Injection
+    // is deliberately NOT filtered here: every injection-flagged line must reach
+    // the server gate so it logs a warning-level injection_detected Incident
+    // (the deterministic injection layer is fully audited). The server returns
+    // its own rejection reason, which we surface like any other.
     const localRejected: RejectedQuestion[] = [];
     const toSend: string[] = [];
     for (const line of lines) {
@@ -93,12 +95,6 @@ export default function CustomQuestionsManager() {
         localRejected.push({
           text: line,
           reason: `Too long — keep it under ${MAX_QUESTION_CHARS} characters.`,
-        });
-      } else if (violatesContentPolicy(line)) {
-        localRejected.push({
-          text: line,
-          reason:
-            'Looks like it contains instructions to the AI, not an interview question.',
         });
       } else {
         toSend.push(line);

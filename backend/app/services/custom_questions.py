@@ -97,7 +97,7 @@ Judge the question on two axes and return ONLY a JSON object:
       competency. Judge the substance, not the surface form.
 
 (B) RELEVANT — does it fit the candidate's target role / industry?
-    - BE VERY LENIENT. General behavioral questions ("tell me about a time you
+    - BE LENIENT. General behavioral questions ("tell me about a time you
       led a team", "describe a conflict you resolved") are relevant to EVERY
       role — mark those relevant.
     - Set "relevant": false ONLY for a CLEAR professional-domain mismatch — a
