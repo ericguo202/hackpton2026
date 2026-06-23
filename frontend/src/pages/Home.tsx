@@ -106,6 +106,33 @@ function AutoSubmitPill({
   );
 }
 
+function ShowQuestionTextPill({
+  showQuestionText,
+  onToggle,
+  disabled,
+}: {
+  showQuestionText: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      aria-pressed={showQuestionText}
+      title="Show the question on screen during your turn. You can also toggle this mid-session."
+      className={
+        showQuestionText
+          ? 'rounded-full border border-accent bg-accent px-3 py-1 text-xs font-medium text-accent-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+          : 'cursor-pointer rounded-full border border-border bg-transparent px-3 py-1 text-xs text-text-muted transition-colors hover:border-border-strong hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+      }
+    >
+      Question text: {showQuestionText ? 'On' : 'Off'}
+    </button>
+  );
+}
+
 const SURFACE_LABELS: Record<Surface, string> = {
   basic: 'Basic',
   advanced: 'Advanced',
@@ -428,6 +455,11 @@ export default function Home() {
                     onToggle={() => setAutoSubmit((v) => !v)}
                     disabled={submitting}
                   />
+                  <ShowQuestionTextPill
+                    showQuestionText={showQuestionText}
+                    onToggle={() => setShowQuestionText((v) => !v)}
+                    disabled={submitting}
+                  />
                   <button
                     type="button"
                     onClick={() =>
@@ -507,10 +539,15 @@ export default function Home() {
                         />
                       </label>
 
-                      <div className="mt-8">
+                      <div className="mt-8 flex flex-wrap items-center gap-2">
                         <AutoSubmitPill
                           autoSubmit={autoSubmit}
                           onToggle={() => setAutoSubmit((v) => !v)}
+                          disabled={submitting}
+                        />
+                        <ShowQuestionTextPill
+                          showQuestionText={showQuestionText}
+                          onToggle={() => setShowQuestionText((v) => !v)}
                           disabled={submitting}
                         />
                       </div>
@@ -526,8 +563,6 @@ export default function Home() {
                       <AdvancedPanel
                         voiceId={voiceId}
                         onVoiceSelect={setVoiceId}
-                        showQuestionText={showQuestionText}
-                        onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
                         jobDescription={jobDescription}
                         onJobDescriptionChange={setJobDescription}
                         customQuestions={customQuestions ?? []}
@@ -583,8 +618,6 @@ export default function Home() {
             onClose={() => setSurface('basic')}
             voiceId={voiceId}
             onVoiceSelect={setVoiceId}
-            showQuestionText={showQuestionText}
-            onToggleShowQuestionText={() => setShowQuestionText((v) => !v)}
             jobDescription={jobDescription}
             onJobDescriptionChange={setJobDescription}
             customQuestions={customQuestions ?? []}
