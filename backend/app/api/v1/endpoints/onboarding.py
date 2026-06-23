@@ -49,6 +49,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.user import UserOut
 from app.services._injection import contains_injection
+from app.services.incidents import log_injection_detected
 from app.services.moderation import check_moderation
 from app.services.rate_limit import rate_limited
 
@@ -226,14 +227,32 @@ async def onboarding(
     # This is the AUTHORITATIVE check for PDF-extracted résumé text, which the
     # client can't inspect to validate. bio + pasted résumé are also gated
     # client-side for instant feedback.
-    if contains_injection(short_bio) or contains_injection(final_resume_text):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                "One of your profile fields contains content that violates our "
-                "usage policy. Please revise and resubmit."
-            ),
-        )
+    # Every profile field uses the STRICT gate (none of them is an interview
+    # answer, so AI-safety / prompt-hardening vocabulary has no legitimate place
+    # here). The two long free-text fields (bio, résumé) tolerate "API key
+    # rotation"-style prose; the two short structured fields (industry, role)
+    # also block a bare "API key". First hit wins; logging the offending text
+    # (and which field) keeps the deterministic layer fully audited — every hit
+    # lands as a `warning`. Résumé text is PDF-extracted and the client can't vet
+    # it, so this is its authoritative check.
+    injection_fields = (
+        ("onboarding.short_bio", short_bio, False),
+        ("onboarding.resume_text", final_resume_text, False),
+        ("onboarding.industry", industry, True),
+        ("onboarding.target_role", target_role, True),
+    )
+    for source, value, short_field in injection_fields:
+        if contains_injection(value, strict=True, short_field=short_field):
+            await log_injection_detected(
+                source=source, text=value, user=user, db=db
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "One of your profile fields contains content that violates "
+                    "our usage policy. Please revise and resubmit."
+                ),
+            )
 
     # Moderation pre-check on every free-text field that will later feed
     # an LLM prompt (opening question / evaluator / follow-up all consume

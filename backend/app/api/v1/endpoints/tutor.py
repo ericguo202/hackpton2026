@@ -34,10 +34,12 @@ from app.db.models.interview_turn import InterviewTurn
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.tutor import TutorMessageIn
+from app.services._injection import contains_injection
 from app.services.daily_limit import (
     enforce_chat_daily_limit,
     record_chat_completion,
 )
+from app.services.incidents import log_injection_detected
 from app.services.moderation import check_moderation
 from app.services.tutor import REDIRECT_LINE, TutorContext, stream_tutor_reply
 
@@ -45,11 +47,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# What we tell the candidate when their message trips a hard moderation block.
-# Kept gentle and on-task; the frontend renders it as a tutor bubble.
+# What we tell the candidate when their message trips a hard moderation block
+# or the deterministic injection gate. Kept gentle and on-task; the frontend
+# renders it as a tutor bubble. A single shared line avoids signalling which
+# guard fired.
 _MODERATION_REFUSAL = (
     "I can't help with that message. " + REDIRECT_LINE
 )
+_INJECTION_REFUSAL = _MODERATION_REFUSAL
 
 
 def _improvement_moments(feedback_detail: dict | None) -> list[dict]:
@@ -132,7 +137,37 @@ async def ask_tutor(
     user_id = user.id
     tz_name = user.timezone
 
-    # 3. Moderate the incoming message before any LLM spend. `flagged` → 422;
+    # 3. Deterministic prompt-injection gate on the candidate-authored text
+    #    (the typed message plus any attached "Ask about this" snippet). Free /
+    #    local, so it runs BEFORE the billed moderation call: an injected tutor
+    #    message never reaches OpenAI moderation or OpenRouter, and — unlike
+    #    moderation, which only logs an info-level `moderation_request` — a hit
+    #    here records an `injection_detected` WARNING (source `tutor.message`).
+    #    The delimiters + injection clause in `stream_tutor_reply` are the recall
+    #    layer for subtler attempts this high-precision regex skips.
+    injection_text = body.message
+    if body.context_snippet and body.context_snippet.strip():
+        injection_text = f"{injection_text}\n{body.context_snippet}"
+    if contains_injection(injection_text):
+        logger.info(
+            "Tutor message rejected by injection gate session=%s turn=%s",
+            session_id,
+            turn_id,
+        )
+        await log_injection_detected(
+            source="tutor.message",
+            text=injection_text,
+            user=user,
+            session_id=session_id,
+            db=db,
+            metadata={"turn_id": str(turn_id)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_INJECTION_REFUSAL,
+        )
+
+    # 4. Moderate the incoming message before any LLM spend. `flagged` → 422;
     #    a moderation outage raises ModerationUnavailableError → 503 (handled
     #    globally in main.py). Both land before the SSE stream opens.
     moderation = await check_moderation(
@@ -154,7 +189,7 @@ async def ask_tutor(
             detail=_MODERATION_REFUSAL,
         )
 
-    # 4. Build the lean context and stream the reply.
+    # 5. Build the lean context and stream the reply.
     ctx = _build_context(session, turn, user)
 
     message = body.message

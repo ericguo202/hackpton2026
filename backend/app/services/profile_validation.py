@@ -26,8 +26,9 @@ from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.schemas.validation import SuggestionsOut
-from app.services._injection import CONTENT_INJECTION_RE
+from app.services._injection import contains_injection
 from app.services._openrouter import extract_json_object, get_client
+from app.services.incidents import log_injection_detected
 from app.services.moderation import ModerationUnavailableError, check_moderation
 
 if TYPE_CHECKING:
@@ -47,11 +48,11 @@ MAX_SUGGESTIONS = 5
 
 _MODERATION_MESSAGE = "That input can't be used here."
 
-# These short structured fields (industry / role, ≤120 chars) get the shared
-# content regex PLUS a bare `act as` — in a two-word industry field "act as" is
-# itself suspicious, even though it's legitimate in free-prose answers (which is
-# why the shared `CONTENT_INJECTION_RE` omits it). This consumer fails soft to an
-# empty suggestion list, so the extra breadth here is cheap.
+# These short structured fields (industry / role, ≤120 chars) use the
+# STRICT-SHORT injection gate PLUS a bare `act as` — in a two-word industry field
+# "act as" is itself suspicious, even though it's legitimate in free-prose
+# answers (which is why even the strict gate omits it). This consumer fails soft
+# to an empty suggestion list, so the extra breadth here is cheap.
 _STRICT_EXTRA_RE = re.compile(r"\bact as\b", re.IGNORECASE)
 _DIRECT_REQUEST_RE = re.compile(
     r"^\s*(what is|how do|how to|tell me|write me|explain|teach me|"
@@ -128,6 +129,22 @@ Rules:
 """
 
 
+def _looks_like_injection(value: str) -> bool:
+    """True if the input trips this field's injection regexes specifically.
+
+    A narrower view than `_looks_like_junk` (which also rejects keysmash,
+    overlong blobs, and bare direct requests): this is *only* the
+    injection-detection patterns. Industry / role are short structured fields, so
+    they use the STRICT-SHORT gate (target-noun-free override + any "send/write
+    API…" + a bare "API key") plus the autocomplete-strict bare `act as`. Used to
+    log injection hits to Incidents without firing on ordinary gibberish.
+    """
+    return bool(
+        contains_injection(value, strict=True, short_field=True)
+        or _STRICT_EXTRA_RE.search(value)
+    )
+
+
 def _looks_like_junk(value: str) -> bool:
     """Cheap deterministic reject for input not worth an LLM round-trip.
 
@@ -139,7 +156,7 @@ def _looks_like_junk(value: str) -> bool:
     if not text or not _HAS_LETTER_RE.search(text):
         return True
     if (
-        CONTENT_INJECTION_RE.search(text)
+        contains_injection(text, strict=True, short_field=True)
         or _STRICT_EXTRA_RE.search(text)
         or _DIRECT_REQUEST_RE.search(text)
     ):
@@ -228,6 +245,15 @@ async def _suggest(
 ) -> SuggestionsOut:
     """Shared pipeline: cheap reject → moderation → LLM, all failing soft."""
     user_input = query.strip()
+    # Log injection-specific hits before the broader junk reject swallows them,
+    # so the deterministic regex layer has full Incidents coverage even on this
+    # fail-soft type-ahead path. Junk (keysmash / overlong / bare requests) is
+    # not logged — only genuine injection attempts.
+    if user_input and _looks_like_injection(user_input):
+        await log_injection_detected(
+            source=source, text=user_input, user=user, db=db,
+        )
+        return SuggestionsOut(suggestions=[])
     if len(user_input) < 2 or _looks_like_junk(user_input):
         return SuggestionsOut(suggestions=[])
 

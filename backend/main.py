@@ -13,6 +13,7 @@ from app.services.delivery_retention_scheduler import (
     stop_retention_scheduler,
 )
 from app.services.incidents import log_error
+from app.services.policy_notifications import start_policy_notification_sweep
 from app.services.moderation import (
     ModerationUnavailableError,
     ensure_moderation_configured,
@@ -39,9 +40,14 @@ async def lifespan(app: FastAPI):
     # Enforce the delivery-analytics retention ceiling on a daily cadence so the
     # consent's "deleted within 12 months of your last session" promise is real.
     retention_task = start_retention_scheduler()
+    # One-shot: if this boot follows a deploy that bumped a policy version, email
+    # all users. Advisory-locked so only one replica sends; fire-and-forget so a
+    # slow mail batch never delays readiness.
+    policy_task = start_policy_notification_sweep()
     yield
     # Shutdown
     await stop_retention_scheduler(retention_task)
+    await stop_retention_scheduler(policy_task)
 
 
 app = FastAPI(

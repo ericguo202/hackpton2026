@@ -27,6 +27,7 @@ import re
 from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import FieldCategory
 from app.services._injection import contains_injection
+from app.services.incidents import log_injection_detected
 from app.services._openrouter import create_chat_with_fallback, get_client
 
 logger = logging.getLogger(__name__)
@@ -201,6 +202,10 @@ async def generate_followup(
             "follow-up without an LLM call (transcript_len=%d)",
             len(transcript or ""),
         )
+        # Backstop hit (submit_turn 422s + logs first in the normal flow). Still
+        # log so the regex layer has full Incidents coverage. No user/session
+        # context here; log_injection_detected opens its own session, never raises.
+        await log_injection_detected(source="followup.transcript", text=transcript)
         return _FALLBACK
 
     client = get_client()
