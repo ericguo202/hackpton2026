@@ -8,7 +8,11 @@
  */
 
 import { SCORE_DIMENSIONS, type ScoreKey } from '../../lib/scoreDimensions';
-import type { ImprovementMoment, TurnDetail } from '../../types/history';
+import type {
+  ImprovementMoment,
+  PositiveMoment,
+  TurnDetail,
+} from '../../types/history';
 
 export type { ScoreKey };
 
@@ -67,16 +71,51 @@ export function fillerRateColor(rate: number): string {
 }
 
 /**
+ * Stable-sort feedback moments by where each `transcript_snippet` first appears
+ * in the transcript, so reading a feedback list top-to-bottom follows the answer
+ * top-to-bottom (the LLM emits them in arbitrary order). Snippets that don't
+ * appear verbatim sort to the end (preserving their relative order) — the same
+ * graceful no-op the highlighter takes on non-matching snippets. The trimmed
+ * `indexOf` mirrors `transcriptHighlight.ts` / backend `_drop_unanchored_moments`.
+ */
+function byTranscriptOrder<T extends { transcript_snippet: string }>(
+  moments: T[],
+  transcript: string | null | undefined,
+): T[] {
+  if (!transcript || moments.length < 2) return moments;
+  return moments
+    .map((m, i) => {
+      const at = transcript.indexOf(m.transcript_snippet.trim());
+      return { m, i, key: at < 0 ? Number.POSITIVE_INFINITY : at };
+    })
+    .sort((a, b) => a.key - b.key || a.i - b.i) // a.i tiebreak keeps it stable
+    .map((x) => x.m);
+}
+
+/**
  * The canonical improvement-moments list for a turn, newest schema first with
- * the legacy `coaching_moments` fallback. Both the transcript highlighter and
- * the Improvement Moments card derive their array (and therefore each moment's
- * index) from here, so the transcript→moment link can never drift out of sync.
+ * the legacy `coaching_moments` fallback, then sorted by transcript order. Both
+ * the transcript highlighter and the Improvement Moments card derive their array
+ * (and therefore each moment's index) from here, so the transcript→moment link
+ * can never drift out of sync.
  */
 export function improvementMomentsOf(turn: TurnDetail): ImprovementMoment[] {
-  return (
+  return byTranscriptOrder(
     turn.feedback_detail?.improvement_moments ??
-    turn.feedback_detail?.coaching_moments ??
-    []
+      turn.feedback_detail?.coaching_moments ??
+      [],
+    turn.transcript_text,
+  );
+}
+
+/**
+ * The "What worked" positive-moments list for a turn, sorted by transcript
+ * order via the same `byTranscriptOrder` helper as `improvementMomentsOf`.
+ */
+export function positiveMomentsOf(turn: TurnDetail): PositiveMoment[] {
+  return byTranscriptOrder(
+    turn.feedback_detail?.positive_moments ?? [],
+    turn.transcript_text,
   );
 }
 

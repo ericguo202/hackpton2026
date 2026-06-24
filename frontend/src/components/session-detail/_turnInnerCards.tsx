@@ -34,6 +34,7 @@ import {
   formatIssueType,
   improvementMomentsOf,
   num,
+  positiveMomentsOf,
 } from './_helpers';
 
 /* ------------------------------------------------------------------ */
@@ -257,7 +258,7 @@ export function WhatWorkedCard({
   evaluationPending?: boolean;
   evaluationFailed?: boolean;
 }) {
-  const moments = turn.feedback_detail?.positive_moments ?? [];
+  const moments = positiveMomentsOf(turn);
   return (
     <InnerCard>
       <Eyebrow>What worked</Eyebrow>
