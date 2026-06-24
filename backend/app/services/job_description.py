@@ -32,7 +32,11 @@ import logging
 import re
 from dataclasses import dataclass
 
-from app.services._openrouter import extract_json_object, get_client
+from app.services._openrouter import (
+    create_chat_with_fallback,
+    extract_json_object,
+    get_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,10 @@ logger = logging.getLogger(__name__)
 # (`openai/gpt-oss-120b`, no `:free`); this path is gated on a non-empty JD
 # and fails open, so the free tier's rate limits are acceptable.
 MATCH_MODEL = "openai/gpt-oss-120b:free"
+# Paid fallback when the free primary is rate-limited or erroring, run without
+# reasoning. The path still fails open, so this mainly raises the odds of a real
+# judgement before the fail-open default takes over.
+MATCH_FALLBACK_MODEL = "deepseek/deepseek-v4-flash"
 MATCH_LLM_TIMEOUT_SECONDS = 20.0
 
 _HAS_LETTER_RE = re.compile(r"[A-Za-z]")
@@ -162,8 +170,9 @@ async def check_job_description_match(
         f"<job_description>\n{job_description}\n</job_description>"
     )
     try:
-        response = await client.chat.completions.create(
-            model=MATCH_MODEL,
+        response = await create_chat_with_fallback(
+            client,
+            models=(MATCH_MODEL, MATCH_FALLBACK_MODEL),
             messages=[
                 {"role": "system", "content": _MATCH_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -171,7 +180,11 @@ async def check_job_description_match(
             temperature=0.0,
             response_format={"type": "json_object"},
             timeout=MATCH_LLM_TIMEOUT_SECONDS,
-            extra_body={"reasoning": {"effort": "low"}},
+            extra_body_by_model={
+                MATCH_MODEL: {"reasoning": {"effort": "low"}},
+                MATCH_FALLBACK_MODEL: {"reasoning": {"enabled": False}},
+            },
+            label="jd_match",
         )
         text = response.choices[0].message.content or ""
         payload = json.loads(extract_json_object(text))
