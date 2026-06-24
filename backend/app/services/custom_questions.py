@@ -97,9 +97,10 @@ Judge the question on two axes and return ONLY a JSON object:
       competency. Judge the substance, not the surface form.
 
 (B) RELEVANT — does it fit the candidate's target role / industry?
-    - BE LENIENT. General behavioral questions ("tell me about a time you
+    - General behavioral questions ("tell me about a time you
       led a team", "describe a conflict you resolved") are relevant to EVERY
-      role — mark those relevant.
+      role — mark those relevant. However, niche, domain-specific questions
+      are ONLY relevant to that specific domain.
     - Set "relevant": false ONLY for a CLEAR professional-domain mismatch — a
       question that plainly belongs to a different field than the candidate's
       (e.g. a hands-on coding / algorithm prompt for a Nurse, or a question
