@@ -26,7 +26,11 @@ import json
 import logging
 from dataclasses import dataclass
 
-from app.services._openrouter import extract_json_object, get_client
+from app.services._openrouter import (
+    create_chat_with_fallback,
+    extract_json_object,
+    get_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,10 @@ logger = logging.getLogger(__name__)
 # posture as the JD match-check; custom-question creation is rare and capped at
 # 10/user, so the spend is negligible.
 VALIDATE_MODEL = "openai/gpt-oss-120b:free"
+# Paid fallback when the free primary is rate-limited or erroring, run without
+# reasoning. The path still fails open, so this mainly raises the odds of a real
+# judgement before the fail-open default takes over.
+VALIDATE_FALLBACK_MODEL = "deepseek/deepseek-v4-flash"
 VALIDATE_LLM_TIMEOUT_SECONDS = 20.0
 
 
@@ -97,9 +105,10 @@ Judge the question on two axes and return ONLY a JSON object:
       competency. Judge the substance, not the surface form.
 
 (B) RELEVANT — does it fit the candidate's target role / industry?
-    - BE LENIENT. General behavioral questions ("tell me about a time you
+    - General behavioral questions ("tell me about a time you
       led a team", "describe a conflict you resolved") are relevant to EVERY
-      role — mark those relevant.
+      role — mark those relevant. However, niche, domain-specific questions
+      are ONLY relevant to that specific domain.
     - Set "relevant": false ONLY for a CLEAR professional-domain mismatch — a
       question that plainly belongs to a different field than the candidate's
       (e.g. a hands-on coding / algorithm prompt for a Nurse, or a question
@@ -139,8 +148,9 @@ async def validate_custom_question(
         f"<question>\n{question_text}\n</question>"
     )
     try:
-        response = await client.chat.completions.create(
-            model=VALIDATE_MODEL,
+        response = await create_chat_with_fallback(
+            client,
+            models=(VALIDATE_MODEL, VALIDATE_FALLBACK_MODEL),
             messages=[
                 {"role": "system", "content": _VALIDATE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -148,7 +158,11 @@ async def validate_custom_question(
             temperature=0.0,
             response_format={"type": "json_object"},
             timeout=VALIDATE_LLM_TIMEOUT_SECONDS,
-            extra_body={"reasoning": {"effort": "low"}},
+            extra_body_by_model={
+                VALIDATE_MODEL: {"reasoning": {"effort": "low"}},
+                VALIDATE_FALLBACK_MODEL: {"reasoning": {"enabled": False}},
+            },
+            label="custom_question_validate",
         )
         text = response.choices[0].message.content or ""
         payload = json.loads(extract_json_object(text))

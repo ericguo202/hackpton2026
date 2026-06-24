@@ -11,7 +11,8 @@ Pipeline per request (moderation MUST precede the billed LLM call):
   1. Cheap local rejects (empty / injection / gibberish) → empty list, no network.
   2. OpenAI moderation pre-check (`app.services.moderation.check_moderation`).
   3. LLM completion on `google/gemini-2.5-flash-lite`, falling back to
-     `openai/gpt-oss-120b`. Role suggestions are conditioned on the industry.
+     `deepseek/deepseek-v4-flash` (no reasoning). Role suggestions are
+     conditioned on the industry.
 
 Everything fails soft: missing key, timeout, or any LLM/parse error returns an
 empty suggestion list so the field degrades gracefully instead of erroring.
@@ -27,7 +28,11 @@ from typing import TYPE_CHECKING
 from app.core.config import settings
 from app.schemas.validation import SuggestionsOut
 from app.services._injection import contains_injection
-from app.services._openrouter import extract_json_object, get_client
+from app.services._openrouter import (
+    create_chat_with_fallback,
+    extract_json_object,
+    get_client,
+)
 from app.services.incidents import log_injection_detected
 from app.services.moderation import ModerationUnavailableError, check_moderation
 
@@ -39,7 +44,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SUGGESTION_MODEL = "google/gemini-2.5-flash-lite"
-SUGGESTION_FALLBACK_MODEL = "openai/gpt-oss-120b"
+SUGGESTION_FALLBACK_MODEL = "deepseek/deepseek-v4-flash"
 # Ceiling, not a target — flash-lite typically answers in ~1s. The point of the
 # whole change is to be well under the old ~10s classifier.
 SUGGESTION_LLM_TIMEOUT_SECONDS = 6.0
@@ -194,45 +199,37 @@ def _sanitize_suggestions(raw: object) -> list[str]:
 async def _chat_suggestions(messages: list[dict[str, str]]) -> list[str]:
     """Call the suggestion model (with fallback) and return sanitized strings.
 
-    `google/gemini-2.5-flash-lite` is primary for speed; `openai/gpt-oss-120b`
-    is the backup. Any error/timeout propagates the empty-list fail-soft policy
-    to the caller via an exception, which the public functions swallow.
+    `google/gemini-2.5-flash-lite` is primary for speed; `deepseek/deepseek-v4-flash`
+    (run without reasoning) is the backup. Any error/timeout propagates the
+    empty-list fail-soft policy to the caller via an exception, which the public
+    functions swallow.
     """
     client = get_client()
-    last_exc: Exception | None = None
-    # Prompt-cache note: both models here (gemini-2.5-flash-lite primary,
-    # gpt-oss-120b fallback) only cache prefixes >= 1024 tokens. The autocomplete
-    # system prompts are ~350 tokens, so these calls do NOT cache regardless of
-    # ordering — expected given the small prompt, and not worth padding. The
-    # caller still passes the static system prompt first (messages[0]) with the
-    # typed input in the user message, so ordering is correct if prompts grow.
-    for model in (SUGGESTION_MODEL, SUGGESTION_FALLBACK_MODEL):
-        try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.2,
-                response_format={"type": "json_object"},
-                timeout=SUGGESTION_LLM_TIMEOUT_SECONDS,
-            )
-            text = response.choices[0].message.content or ""
-            payload = json.loads(extract_json_object(text))
-            if not isinstance(payload, dict):
-                return []
-            return _sanitize_suggestions(payload.get("suggestions"))
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            if model == SUGGESTION_MODEL:
-                logger.warning(
-                    "Suggestion model %s failed; falling back to %s: %s",
-                    SUGGESTION_MODEL,
-                    SUGGESTION_FALLBACK_MODEL,
-                    exc,
-                )
-                continue
-            raise
-    assert last_exc is not None
-    raise last_exc
+    # Prompt-cache note: the autocomplete system prompts are ~350 tokens, below
+    # the >= 1024-token caching threshold of both models, so these calls do NOT
+    # cache regardless of ordering — expected given the small prompt, and not
+    # worth padding. The caller still passes the static system prompt first
+    # (messages[0]) with the typed input in the user message, so ordering is
+    # correct if prompts grow.
+    response = await create_chat_with_fallback(
+        client,
+        models=(SUGGESTION_MODEL, SUGGESTION_FALLBACK_MODEL),
+        messages=messages,
+        temperature=0.2,
+        response_format={"type": "json_object"},
+        timeout=SUGGESTION_LLM_TIMEOUT_SECONDS,
+        # deepseek-v4-flash reasons by default; this is a short JSON completion
+        # that doesn't need a reasoning trace, so disable it on the fallback path.
+        extra_body_by_model={
+            SUGGESTION_FALLBACK_MODEL: {"reasoning": {"enabled": False}},
+        },
+        label="suggestions",
+    )
+    text = response.choices[0].message.content or ""
+    payload = json.loads(extract_json_object(text))
+    if not isinstance(payload, dict):
+        return []
+    return _sanitize_suggestions(payload.get("suggestions"))
 
 
 async def _suggest(

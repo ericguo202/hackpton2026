@@ -13,7 +13,8 @@
  * injection_detected Incident.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router';
 import { Trash2 } from 'lucide-react';
 
 import { Button } from './ui/button';
@@ -49,6 +50,18 @@ function splitLines(raw: string): string[] {
 
 export default function CustomQuestionsManager() {
   const { questions, create, remove, isLoading } = useCustomQuestions();
+
+  // Auto-scroll into view when linked to with #custom-questions (e.g. from the
+  // setup screen's Advanced panel). React Router's declarative router doesn't
+  // scroll to hash targets on its own, and this section mounts only after the
+  // Personalize page finishes loading `me`, so we scroll on mount here.
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash === '#custom-questions') {
+      sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [hash]);
 
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -129,7 +142,7 @@ export default function CustomQuestionsManager() {
   }
 
   return (
-    <section className={`${cardClass} mt-5`}>
+    <section ref={sectionRef} className={`${cardClass} mt-5`} id="custom-questions">
       <div className="space-y-1">
         <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm">
           Custom questions
