@@ -10,6 +10,7 @@
 
 import { Check } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 
 import { violatesContentPolicy } from '../lib/contentPolicy';
 import type { CustomQuestion } from '../types/customQuestions';
@@ -19,6 +20,9 @@ import VoicePickerGrid from './VoicePickerGrid';
 export const MAX_JOB_DESCRIPTION_CHARS = 6000;
 // Show the remaining-characters counter only once the user is close to the cap.
 const JOB_DESCRIPTION_COUNTER_THRESHOLD = 500;
+
+const linkClass =
+  'font-medium text-accent underline underline-offset-4 transition-colors hover:text-text';
 
 type Props = {
   voiceId: string | null;
@@ -96,11 +100,24 @@ export default function AdvancedPanel({
 
       <Section
         label="Custom question"
-        hint="Use one of your own questions instead of a generated one. Manage your questions on the Personalize page."
+        hint={
+          <>
+            Use one of your own questions instead of a generated one. Manage your
+            questions on the{' '}
+            <Link to="/personalize#custom-questions" className={linkClass}>
+              Personalize
+            </Link>{' '}
+            page.
+          </>
+        }
       >
         {customQuestions.length === 0 ? (
           <p className="text-sm text-text-subtle">
-            No custom questions yet. Add some on the <a href="/personalize#custom-questions">Personalize</a> page.
+            No custom questions yet. Add some on the{' '}
+            <Link to="/personalize#custom-questions" className={linkClass}>
+              Personalize
+            </Link>{' '}
+            page.
           </p>
         ) : (
           <ul className="max-h-56 space-y-2 overflow-y-auto pr-1">
@@ -156,7 +173,7 @@ export default function AdvancedPanel({
 
 type SectionProps = {
   label: string;
-  hint?: string;
+  hint?: ReactNode;
   children: ReactNode;
 };
 
