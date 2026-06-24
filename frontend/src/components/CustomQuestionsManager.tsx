@@ -129,7 +129,7 @@ export default function CustomQuestionsManager() {
   }
 
   return (
-    <section className={`${cardClass} mt-5`}>
+    <section className={`${cardClass} mt-5`} id="custom-questions">
       <div className="space-y-1">
         <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm">
           Custom questions

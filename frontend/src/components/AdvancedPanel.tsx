@@ -100,7 +100,7 @@ export default function AdvancedPanel({
       >
         {customQuestions.length === 0 ? (
           <p className="text-sm text-text-subtle">
-            No custom questions yet. Add some on the Personalize page.
+            No custom questions yet. Add some on the <a href="/personalize#custom-questions">Personalize</a> page.
           </p>
         ) : (
           <ul className="max-h-56 space-y-2 overflow-y-auto pr-1">
