@@ -150,10 +150,23 @@ export default function AskTutorChat({
     return () => document.removeEventListener('keydown', onKey);
   }, [status, tutor]);
 
-  // Keep the latest message in view.
+  // Scroll-anchor ONLY when the user sends a message — never as the tutor's
+  // reply streams in. A new user bubble (and the typing indicator under it)
+  // drops to the bottom of the view, so the reply then grows downward from the
+  // top of the panel and the user reads it from the start. Auto-scrolling on
+  // every streamed token would jump them to the END of a long reply, forcing a
+  // scroll back up to read it — the behavior this deliberately avoids.
+  const userMsgCount = messages.reduce(
+    (n, m) => (m.kind === 'text' && m.role === 'user' ? n + 1 : n),
+    0,
+  );
+  const prevUserMsgCount = useRef(userMsgCount);
   useEffect(() => {
-    listEndRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages, showTyping]);
+    if (userMsgCount > prevUserMsgCount.current) {
+      listEndRef.current?.scrollIntoView({ block: 'end' });
+    }
+    prevUserMsgCount.current = userMsgCount;
+  }, [userMsgCount]);
 
   // Submit the composer: hand the text + any attached snippet to the streaming
   // hook (which appends the user bubble), then clear the local input.
@@ -504,7 +517,7 @@ export default function AskTutorChat({
             if (m.role === 'user') {
               return (
                 <li key={m.id} className="flex justify-end">
-                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-highlight/20 px-3.5 py-2.5 text-sm leading-6 text-text">
+                  <div className="max-w-[85%] break-words rounded-2xl rounded-br-sm bg-highlight/20 px-3.5 py-2.5 text-sm leading-6 text-text">
                     {m.contextSnippet && (
                       <span className="mb-1 flex items-center gap-1 text-xs text-text-subtle">
                         <Sparkles className="h-3 w-3 shrink-0 text-amber-deep" aria-hidden />
@@ -523,7 +536,7 @@ export default function AskTutorChat({
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-sunken">
                   <PieMark className="h-4 w-4" />
                 </span>
-                <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2.5 text-sm leading-6 text-text">
+                <div className="max-w-[85%] break-words rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2.5 text-sm leading-6 text-text">
                   <TutorMarkdown text={m.text} />
                 </div>
               </li>
