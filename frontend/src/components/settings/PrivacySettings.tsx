@@ -17,6 +17,7 @@ import PrivacyPanel from '../PrivacyPanel';
 import { Button } from '../ui/button';
 import { useApi } from '../../hooks/useApi';
 import { useDeliveryConsent } from '../../hooks/useDeliveryConsent';
+import { useFaceCalibrationConsent } from '../../hooks/useFaceCalibrationConsent';
 import { useMe } from '../../hooks/useMe';
 
 function formatDate(iso: string | null | undefined): string {
@@ -36,6 +37,7 @@ export default function PrivacySettings() {
   const { me } = useMe();
   const { apiFetch } = useApi();
   const consent = useDeliveryConsent();
+  const calibrationConsent = useFaceCalibrationConsent();
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -119,7 +121,38 @@ export default function PrivacySettings() {
                 : 'Off'}
             </dd>
           </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt>Camera calibration</dt>
+            <dd className="flex items-baseline gap-3 text-text-muted">
+              {calibrationConsent.active ? (
+                <>
+                  <span>
+                    {`v${me?.face_calibration_consent_version} · ${formatDate(me?.face_calibration_consent_at)}`}
+                  </span>
+                  {/* No grant here — granting requires the /calibrate camera
+                      capture. Revoke also clears the local baseline. */}
+                  <button
+                    type="button"
+                    disabled={calibrationConsent.busy}
+                    onClick={() => {
+                      void calibrationConsent.revoke();
+                    }}
+                    className="cursor-pointer text-text underline underline-offset-4 transition-colors hover:text-text-muted disabled:cursor-default disabled:opacity-60"
+                  >
+                    Revoke
+                  </button>
+                </>
+              ) : (
+                'Off'
+              )}
+            </dd>
+          </div>
         </dl>
+        {calibrationConsent.error && (
+          <p role="alert" className="mt-2 text-xs text-text">
+            {calibrationConsent.error}
+          </p>
+        )}
       </section>
 
       <section>

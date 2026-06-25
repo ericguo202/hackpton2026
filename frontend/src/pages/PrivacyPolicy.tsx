@@ -199,9 +199,12 @@ export default function PrivacyPolicy() {
             </li>
             <li>
               <strong>On your device.</strong> We use storage on your device for
-              your sign-in session and for optional calibration data and consent
-              records that stay <strong>local to your browser</strong> and are
-              not transmitted to us.
+              your sign-in session and for optional calibration data — a small set
+              of face-geometry baseline numbers, scoped to your account — that
+              stays <strong>local to your browser</strong> and is not transmitted
+              to us. Your <strong>consent</strong> to calibration is recorded on
+              your account (its notice version and date) so it is demonstrable and
+              specific to you; that record contains no biometric data.
             </li>
             <li>
               <strong>Operational and security records.</strong> Records of your
@@ -396,8 +399,12 @@ export default function PrivacyPolicy() {
               recurring schedule, leaving only a minimal event record.
             </li>
             <li>
-              <strong>Calibration data</strong> lives only on your device and is
-              removed when you clear calibration or your browser storage.
+              <strong>Calibration data</strong> lives only on your device (scoped
+              to your account) and is removed when you clear or revoke
+              calibration, when the calibration notice is updated and you do not
+              re-consent, or when you clear your browser storage. The record of
+              your calibration consent is kept on your account and contains no
+              biometric data.
             </li>
           </ul>
           <p>

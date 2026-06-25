@@ -134,6 +134,16 @@ def test_system_prompt_carries_lean_context():
     assert "entry" in prompt
 
 
+def test_system_prompt_guards_against_persona_hijack():
+    # An on-topic question with an embedded "answer as X" directive must not
+    # flip the model's persona; the prompt must instruct it to ignore the
+    # manner-of-response part while still answering the legitimate content.
+    prompt = build_tutor_system_prompt(_ctx())
+    assert "Staying in character" in prompt
+    assert "manner-of-response" in prompt
+    assert "normal advisor voice" in prompt
+
+
 def test_system_prompt_scores_line_and_not_scored():
     prompt = build_tutor_system_prompt(_ctx())
     assert "Structure 7" in prompt

@@ -18,7 +18,7 @@
  * client-side redirect into SessionDetail's per-turn replay cards.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 
 import { PracticeFooter } from '../components/PracticeFooter';
@@ -35,6 +35,8 @@ import { useRecorder } from '../hooks/useRecorder';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { trackEvent } from '../lib/analytics';
 import { hasActiveDeliveryAnalyticsConsent } from '../lib/deliveryAnalyticsConsent';
+import { readFaceCalibration } from '../lib/faceCalibration';
+import { hasActiveFaceCalibrationConsent } from '../lib/faceCalibrationConsent';
 import { appendPracticeReplay, clearPracticeReplays } from '../lib/practiceReplayStore';
 import { cn } from '../lib/utils';
 import type { TurnResult } from '../types/session';
@@ -162,9 +164,21 @@ function PracticeSession({
   const { apiFetch } = useApi();
   const { me } = useMe();
   const recorder = useRecorder();
+  // Only apply the on-device calibration baseline when face-calibration consent
+  // is active for THIS user (current notice version, not revoked). A stale or
+  // missing consent → null, so the analyzer falls back to the uncalibrated
+  // defaults and never applies another account's baseline on a shared browser.
+  const calibration = useMemo(
+    () =>
+      me?.clerk_user_id && hasActiveFaceCalibrationConsent(me)
+        ? readFaceCalibration(me.clerk_user_id)
+        : null,
+    [me],
+  );
   const analyzer = useFaceAnalyzer(
     recorder.videoStream,
     recorder.state === 'recording',
+    calibration,
   );
 
   const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);

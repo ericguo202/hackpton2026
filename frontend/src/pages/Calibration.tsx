@@ -25,15 +25,14 @@ import { Button } from '../components/ui/button';
 import { trackEvent } from '../lib/analytics';
 import {
   clearFaceCalibration,
-  clearFaceCalibrationConsent,
-  createFaceCalibrationConsent,
+  clearLegacyFaceCalibration,
   readFaceCalibration,
-  readFaceCalibrationConsent,
   writeFaceCalibration,
-  writeFaceCalibrationConsent,
-  type FaceCalibrationConsent,
   type FaceCalibrationProfile,
 } from '../lib/faceCalibration';
+import { hasActiveFaceCalibrationConsent } from '../lib/faceCalibrationConsent';
+import { useFaceCalibrationConsent } from '../hooks/useFaceCalibrationConsent';
+import { useMe } from '../hooks/useMe';
 import {
   buildFaceCalibration,
   FACE_CALIBRATION_MIN_SAMPLES,
@@ -183,14 +182,18 @@ export default function Calibration() {
   const analyzedFramesRef = useRef(0);
   const metricTotalsRef = useRef<NumericRead>({ ...EMPTY_NUMERIC_READ });
 
+  const { me } = useMe();
+  const consent = useFaceCalibrationConsent();
+  const clerkUserId = me?.clerk_user_id ?? null;
+  // Consent now lives server-side (demonstrable + per-user). A stale notice
+  // version makes this false, which re-prompts AND clears the local baseline.
+  const consentActive = hasActiveFaceCalibrationConsent(me);
+
   const [phase, setPhase] = useState<Phase>('idle');
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [profile, setProfile] = useState<FaceCalibrationProfile | null>(
-    readFaceCalibration,
-  );
-  const [consent, setConsent] = useState<FaceCalibrationConsent | null>(
-    readFaceCalibrationConsent,
-  );
+  // Loaded per-user once `me` resolves (see effect below) — can't read at mount
+  // because the namespaced key needs the Clerk user id.
+  const [profile, setProfile] = useState<FaceCalibrationProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [liveRead, setLiveRead] = useState<LiveRead>(EMPTY_LIVE_READ);
@@ -220,15 +223,30 @@ export default function Calibration() {
     };
   }, []);
 
-  function acceptCalibrationConsent() {
-    const nextConsent = createFaceCalibrationConsent();
-    if (!writeFaceCalibrationConsent(nextConsent)) {
+  // Load the per-user baseline once `me` resolves, and enforce the version gate:
+  // when consent is not active (never granted, revoked, or a stale notice
+  // version), the local baseline is treated as cleared and removed. Also sweeps
+  // the pre-namespacing global keys so a shared browser can't inherit them.
+  useEffect(() => {
+    clearLegacyFaceCalibration();
+    if (!clerkUserId) return;
+    // Version-gate side effect: no active consent → wipe the stale baseline.
+    if (!consentActive) clearFaceCalibration(clerkUserId);
+    // Loading external state (localStorage, keyed by the resolved user) into
+    // React — the canonical data-load effect, like useMe's fetch-on-mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setProfile(consentActive ? readFaceCalibration(clerkUserId) : null);
+  }, [clerkUserId, consentActive]);
+
+  async function acceptCalibrationConsent() {
+    const ok = await consent.grant();
+    if (!ok) {
       setError(
-        'Browser storage is unavailable. Enable local storage before saving calibration consent.',
+        consent.error ??
+          'Could not record calibration consent. Please try again.',
       );
       return;
     }
-    setConsent(nextConsent);
     setError(null);
     trackEvent('calibration_consent_granted', {
       from_onboarding: fromOnboarding,
@@ -236,7 +254,7 @@ export default function Calibration() {
   }
 
   async function enableCamera() {
-    if (!consent) {
+    if (!consentActive) {
       setError(
         'Review and accept the calibration privacy disclosure before enabling the camera.',
       );
@@ -317,9 +335,14 @@ export default function Calibration() {
     }
 
     try {
+      if (!clerkUserId) {
+        throw new Error(
+          'Your account is still loading. Wait a moment and try again.',
+        );
+      }
       const nextProfile = buildFaceCalibration(samples);
       samplesRef.current = [];
-      if (!writeFaceCalibration(nextProfile)) {
+      if (!writeFaceCalibration(clerkUserId, nextProfile)) {
         throw new Error(
           'Browser storage is unavailable. Enable local storage and try again.',
         );
@@ -340,7 +363,7 @@ export default function Calibration() {
       setProgress(0);
       setPhase('ready');
     }
-  }, [fromOnboarding, releaseCamera]);
+  }, [clerkUserId, fromOnboarding, releaseCamera]);
 
   useEffect(() => {
     if ((phase !== 'ready' && phase !== 'capturing') || !stream) return;
@@ -441,17 +464,24 @@ export default function Calibration() {
     };
   }, [finishCapture, phase, stream]);
 
-  function removeCalibration() {
+  async function removeCalibration() {
     releaseCamera();
-    clearFaceCalibration();
-    clearFaceCalibrationConsent();
+    if (clerkUserId) clearFaceCalibration(clerkUserId);
     setProfile(null);
-    setConsent(null);
     setPhase('idle');
     setError(null);
     setProgress(0);
     setVisibleSamples(0);
     setCaptureAverages(EMPTY_CAPTURE_AVERAGES);
+    // Revoke the server-side consent record (also clears the local baseline for
+    // this user). The version-gate effect re-opens the consent dialog.
+    const ok = await consent.revoke();
+    if (!ok) {
+      setError(
+        consent.error ?? 'Could not revoke calibration consent. Please try again.',
+      );
+      return;
+    }
     trackEvent('calibration_cleared', {
       from_onboarding: fromOnboarding,
     });
@@ -461,7 +491,7 @@ export default function Calibration() {
   // the user can immediately recalibrate without re-passing the consent gate.
   function clearCalibrationOnly() {
     releaseCamera();
-    clearFaceCalibration();
+    if (clerkUserId) clearFaceCalibration(clerkUserId);
     setProfile(null);
     setPhase('idle');
     setError(null);
@@ -479,7 +509,13 @@ export default function Calibration() {
   const hasLiveRead = liveRead.faceVisible;
   const hasCaptureAverage = captureAverages.sampleCount > 0;
   const savedLabel = profile ? formatCalibrationDate(profile.calibratedAt) : null;
-  const consentLabel = consent ? formatConsentDate(consent.acceptedAt) : null;
+  const consentLabel =
+    consentActive && me?.face_calibration_consent_at
+      ? formatConsentDate(me.face_calibration_consent_at)
+      : null;
+  // Wait for `me` before showing the consent gate so we don't flash the dialog
+  // while the user row (and thus consent state) is still loading.
+  const showConsentGate = me !== null && !consentActive;
 
   return (
     <div className="min-h-screen bg-surface text-text">
@@ -575,7 +611,7 @@ export default function Calibration() {
                     <p className="max-w-sm text-sm leading-6 text-primary-200">
                       {phase === 'complete'
                         ? 'Baseline saved. Your next interview will use this calibration.'
-                        : !consent
+                        : !consentActive
                           ? 'Accept the calibration privacy disclosure before enabling the camera.'
                         : 'Enable the camera when you are ready. Recording starts only after you confirm.'}
                     </p>
@@ -739,10 +775,10 @@ export default function Calibration() {
                   <Button
                     type="button"
                     onClick={enableCamera}
-                    disabled={!consent}
+                    disabled={!consentActive}
                   >
                     <Eye className="mr-2 h-4 w-4" aria-hidden />
-                    {consent ? 'Enable camera' : 'Accept privacy notice first'}
+                    {consentActive ? 'Enable camera' : 'Accept privacy notice first'}
                   </Button>
                 )}
                 {phase === 'requesting' && (
@@ -831,9 +867,12 @@ export default function Calibration() {
       </main>
 
       <CalibrationConsentDialog
-        open={!consent}
-        error={error}
-        onConsent={acceptCalibrationConsent}
+        open={showConsentGate}
+        busy={consent.busy}
+        error={error ?? consent.error}
+        onConsent={() => {
+          void acceptCalibrationConsent();
+        }}
         onReject={() => navigate('/')}
       />
     </div>

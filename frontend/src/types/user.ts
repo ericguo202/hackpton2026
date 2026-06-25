@@ -41,6 +41,13 @@ export type MeResponse = {
   delivery_analytics_consent_at: string | null;
   delivery_analytics_consent_version: number | null;
   delivery_analytics_revoked_at: string | null;
+  // Server-side proof of consent for face/delivery calibration. The calibration
+  // profile stays on-device (namespaced per Clerk user); this versioned record
+  // is what's demonstrable + per-user. A stale `consent_version` re-prompts on
+  // /calibrate and the stale local baseline is cleared. See faceCalibrationConsent.ts.
+  face_calibration_consent_at: string | null;
+  face_calibration_consent_version: number | null;
+  face_calibration_revoked_at: string | null;
   // Clickwrap acceptance record (version + timestamp per policy). NULL until the
   // user accepts the current version; the forced acceptance gate re-prompts when
   // a stored version is behind the current CURRENT_*_VERSION constant.
