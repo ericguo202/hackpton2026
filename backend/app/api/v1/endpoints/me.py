@@ -35,6 +35,7 @@ from app.db.session import get_db
 from app.schemas.session import DimensionAverages, FillerWordStat, MeStatsOut
 from app.schemas.user import (
     DeliveryAnalyticsConsentIn,
+    FaceCalibrationConsentIn,
     PolicyAcceptanceIn,
     UserOut,
 )
@@ -44,6 +45,7 @@ from app.services.delivery_consent import (
     DELIVERY_ANALYTICS_NOTICE_VERSION,
     purge_delivery_analytics_for_user,
 )
+from app.services.face_calibration_consent import FACE_CALIBRATION_NOTICE_VERSION
 from app.services.policy_versions import (
     CURRENT_PRIVACY_VERSION,
     CURRENT_TERMS_VERSION,
@@ -137,6 +139,54 @@ async def revoke_delivery_analytics_consent(
     return user
 
 
+@router.put("/face-calibration-consent", response_model=UserOut)
+async def accept_face_calibration_consent(
+    body: FaceCalibrationConsentIn,
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Persist affirmative consent for face/delivery calibration.
+
+    The calibration profile stays on the device; this versioned, per-user record
+    is the demonstrable consent (GDPR Art. 7(1) / BIPA) and is what prevents the
+    consent state from leaking across accounts that share a browser.
+    """
+    if not body.accepted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Consent must be accepted to enable calibration.",
+        )
+    if body.notice_version != FACE_CALIBRATION_NOTICE_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Calibration notice version is out of date.",
+        )
+
+    user.face_calibration_consent_at = _utcnow()
+    user.face_calibration_consent_version = FACE_CALIBRATION_NOTICE_VERSION
+    user.face_calibration_revoked_at = None
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.delete("/face-calibration-consent", response_model=UserOut)
+async def revoke_face_calibration_consent(
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Revoke calibration consent.
+
+    There is no server-side calibration artifact to purge — the profile lives
+    only in the user's browser, which clears it on revoke. We just stamp the
+    revocation timestamp so the consent record reflects the withdrawal.
+    """
+    user.face_calibration_revoked_at = _utcnow()
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
 @router.put("/policy-acceptance", response_model=UserOut)
 async def accept_policies(
     body: PolicyAcceptanceIn,
@@ -189,6 +239,8 @@ _EXPORT_USER_FIELDS = (
     "experience_level", "short_bio", "timezone", "tier",
     "delivery_analytics_consent_at", "delivery_analytics_consent_version",
     "delivery_analytics_revoked_at",
+    "face_calibration_consent_at", "face_calibration_consent_version",
+    "face_calibration_revoked_at",
     "terms_accepted_version", "terms_accepted_at",
     "privacy_accepted_version", "privacy_accepted_at",
     "created_at", "updated_at",

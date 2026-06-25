@@ -117,6 +117,23 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Server-side proof of consent for face/delivery calibration. The calibration
+    # PROFILE itself never leaves the device (and is now namespaced per Clerk user
+    # in localStorage), but the consent record lives here so it is demonstrable
+    # (GDPR Art. 7(1) / BIPA) and so it cannot leak across accounts that share a
+    # browser. `consent_version` drives re-consent: bumping
+    # FACE_CALIBRATION_NOTICE_VERSION invalidates the old record, the
+    # `/calibrate` gate re-prompts, and the stale local baseline is cleared.
+    face_calibration_consent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    face_calibration_consent_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    face_calibration_revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Clickwrap acceptance record — the per-version, timestamped proof that the
     # user affirmatively agreed to the current Terms of Service and Privacy
     # Policy. NULL means "has not accepted the current version", which the forced

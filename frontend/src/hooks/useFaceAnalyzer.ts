@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { readFaceCalibration } from '../lib/faceCalibration';
+import type { FaceCalibrationProfile } from '../lib/faceCalibration';
 import { FrameSummary, type InterviewSummary, type Point } from '../lib/faceHeuristics';
 import { getFaceLandmarker } from '../lib/faceLandmarker';
 
@@ -33,7 +33,16 @@ export type AnalyzerDiagnostics = {
   lastSummary: InterviewSummary | null;
 };
 
-export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
+/**
+ * `calibration` is the resolved, consent-gated baseline (or null). The caller
+ * is responsible for passing null when face-calibration consent is not active,
+ * so an inactive-consent profile is never applied — even outside `/calibrate`.
+ */
+export function useFaceAnalyzer(
+  stream: MediaStream | null,
+  active: boolean,
+  calibration: FaceCalibrationProfile | null = null,
+) {
   const [isReady, setIsReady] = useState(false);
   const [diagnostics, setDiagnostics] = useState<AnalyzerDiagnostics>({
     isReady: false,
@@ -43,7 +52,7 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
     faceFrames: 0,
     lastSummary: null,
   });
-  const summaryRef = useRef(new FrameSummary(readFaceCalibration()));
+  const summaryRef = useRef(new FrameSummary(calibration));
   const videoRef   = useRef<HTMLVideoElement | null>(null);
   const rafRef     = useRef<number | null>(null);
   const activeRef  = useRef(active);
@@ -69,6 +78,15 @@ export function useFaceAnalyzer(stream: MediaStream | null, active: boolean) {
       lastSummary: lastSummaryRef.current,
     });
   }, [isReady]);
+
+  // Re-seed the FrameSummary baseline if the resolved calibration arrives or
+  // changes BEFORE capture starts (e.g. `me` loads a tick after mount, so the
+  // ref initializer above captured null). Once frames have been processed we
+  // keep the in-flight summary rather than discard live data.
+  useEffect(() => {
+    if (frameCountRef.current > 0) return;
+    summaryRef.current = new FrameSummary(calibration);
+  }, [calibration]);
 
   // Track `active` via ref so the rAF loop (closure-captured) always
   // sees the latest value without needing to restart on toggle.

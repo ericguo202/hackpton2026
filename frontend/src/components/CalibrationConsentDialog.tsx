@@ -2,19 +2,21 @@
  * CalibrationConsentDialog — blocking consent gate shown on `/calibrate` when
  * the browser has no active calibration consent.
  *
- * Accept → record local consent + stay on the calibration page. Reject → leave
- * (the page redirects to `/`). Unlike `DeliveryConsentDialog`, this gate is NOT
- * dismissible by backdrop click or Escape: there is no valid "stay un-gated"
- * state, since the page requires consent before the camera can be enabled.
+ * Accept → record consent server-side (PUT /me/face-calibration-consent) + stay
+ * on the calibration page. Reject → leave (the page redirects to `/`). Unlike
+ * `DeliveryConsentDialog`, this gate is NOT dismissible by backdrop click or
+ * Escape: there is no valid "stay un-gated" state, since the page requires
+ * consent before the camera can be enabled.
  *
  * Modeled on `DeliveryConsentDialog`: portal to <body>, backdrop, checkbox
- * reset on open (React-19 compare-during-render). No `busy` — the consent write
- * is synchronous localStorage.
+ * reset on open (React-19 compare-during-render). The accept button disables
+ * while `busy` (the consent write is now an async server call).
  */
 
 import { ScanFace, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router';
 
 import CalibrationConsentBullets from './CalibrationConsentBullets';
 import { Button } from './ui/button';
@@ -22,6 +24,9 @@ import { Button } from './ui/button';
 interface Props {
   open: boolean;
   error: string | null;
+  // Recording consent is now an async server write (PUT /me/face-calibration-consent),
+  // so the accept button disables while in flight to prevent a double-submit.
+  busy?: boolean;
   onConsent: () => void;
   onReject: () => void;
 }
@@ -29,6 +34,7 @@ interface Props {
 export default function CalibrationConsentDialog({
   open,
   error,
+  busy = false,
   onConsent,
   onReject,
 }: Props) {
@@ -74,6 +80,20 @@ export default function CalibrationConsentDialog({
           <CalibrationConsentBullets />
         </div>
 
+        <p className="mt-3 text-xs leading-5 text-text-subtle">
+          For the full details, read our{' '}
+          {/* New tab so the consent gate isn't dismissed mid-review. */}
+          <Link
+            to="/legal/biometric-data-retention"
+            target="_blank"
+            rel="noreferrer"
+            className="text-text underline underline-offset-4 transition-colors hover:text-text-muted"
+          >
+            Biometric Data Retention Policy
+          </Link>
+          .
+        </p>
+
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded border border-border bg-surface-sunken px-3 py-3 text-xs leading-5 text-text-subtle">
           <input
             type="checkbox"
@@ -95,12 +115,17 @@ export default function CalibrationConsentDialog({
         )}
 
         <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="outline" onClick={onReject}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onReject}
+            disabled={busy}
+          >
             Don&rsquo;t allow &mdash; leave
           </Button>
-          <Button type="button" onClick={onConsent} disabled={!checked}>
+          <Button type="button" onClick={onConsent} disabled={!checked || busy}>
             <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />
-            Accept and continue
+            {busy ? 'Saving…' : 'Accept and continue'}
           </Button>
         </div>
       </div>

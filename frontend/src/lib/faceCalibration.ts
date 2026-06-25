@@ -1,26 +1,31 @@
 /**
  * Browser-local delivery calibration profile.
  *
- * Calibration intentionally stays on the candidate's device. The profile is
- * a small set of aggregate face-geometry ratios used by `faceHeuristics.ts`;
- * no image, video frame, or raw MediaPipe landmark list is retained. Because
- * nothing leaves the device, consent for it is also stored locally (no
- * server-side record needed — there is no server-side artifact to prove
- * consent for, unlike `deliveryAnalyticsConsent.ts`).
+ * The profile is a small set of aggregate face-geometry ratios used by
+ * `faceHeuristics.ts`; no image, video frame, or raw MediaPipe landmark list is
+ * retained. It intentionally stays on the candidate's device.
+ *
+ * The storage key is NAMESPACED by Clerk user id (`face_delivery_calibration:<userId>`)
+ * so two people sharing a browser don't inherit each other's baseline. Consent
+ * for calibration is NO LONGER stored here — it lives server-side on the user
+ * row (see `faceCalibrationConsent.ts` + `useFaceCalibrationConsent.ts`), which
+ * makes it demonstrable (GDPR Art. 7(1) / BIPA) and per-user. When consent is
+ * not active (never granted, revoked, or a stale notice version), callers clear
+ * the local baseline.
  */
 
-export const FACE_CALIBRATION_STORAGE_KEY = 'face_delivery_calibration';
+export const FACE_CALIBRATION_STORAGE_PREFIX = 'face_delivery_calibration';
 export const FACE_CALIBRATION_VERSION = 1 as const;
-export const FACE_CALIBRATION_CONSENT_STORAGE_KEY =
-  'face_delivery_calibration_consent';
-// Consent NOTICE version. Load-bearing for re-consent: `isFaceCalibrationConsent`
-// requires a stored consent's `version` to equal this exact value, so BUMP THIS
-// whenever the calibration privacy notice text in Calibration.tsx changes —
-// stored consent at an older version is then treated as not-consented and the
-// user is re-prompted before the camera can be enabled again. (The server-side
-// delivery-analytics consent has the same contract via
-// DELIVERY_ANALYTICS_NOTICE_VERSION in the backend.)
-export const FACE_CALIBRATION_CONSENT_VERSION = 1 as const;
+
+// Legacy un-namespaced keys from before consent moved server-side + the profile
+// key was scoped per user. `clearLegacyFaceCalibration()` removes them so a
+// shared-browser user can't inherit the old global baseline/consent.
+const LEGACY_PROFILE_KEY = 'face_delivery_calibration';
+const LEGACY_CONSENT_KEY = 'face_delivery_calibration_consent';
+
+function storageKey(userId: string): string {
+  return `${FACE_CALIBRATION_STORAGE_PREFIX}:${userId}`;
+}
 
 export type FaceCalibrationProfile = {
   version: typeof FACE_CALIBRATION_VERSION;
@@ -35,11 +40,6 @@ export type FaceCalibrationProfile = {
   smileBaseline: number;
   opennessBaseline: number;
   browBaseline: number;
-};
-
-export type FaceCalibrationConsent = {
-  version: typeof FACE_CALIBRATION_CONSENT_VERSION;
-  acceptedAt: string;
 };
 
 const NUMBER_KEYS: ReadonlyArray<keyof FaceCalibrationProfile> = [
@@ -70,10 +70,12 @@ export function isFaceCalibrationProfile(
   );
 }
 
-export function readFaceCalibration(): FaceCalibrationProfile | null {
-  if (typeof window === 'undefined') return null;
+export function readFaceCalibration(
+  userId: string,
+): FaceCalibrationProfile | null {
+  if (typeof window === 'undefined' || !userId) return null;
   try {
-    const stored = window.localStorage.getItem(FACE_CALIBRATION_STORAGE_KEY);
+    const stored = window.localStorage.getItem(storageKey(userId));
     if (!stored) return null;
     const parsed: unknown = JSON.parse(stored);
     return isFaceCalibrationProfile(parsed) ? parsed : null;
@@ -82,61 +84,13 @@ export function readFaceCalibration(): FaceCalibrationProfile | null {
   }
 }
 
-export function isFaceCalibrationConsent(
-  value: unknown,
-): value is FaceCalibrationConsent {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as Partial<FaceCalibrationConsent>;
-  return (
-    candidate.version === FACE_CALIBRATION_CONSENT_VERSION &&
-    typeof candidate.acceptedAt === 'string' &&
-    candidate.acceptedAt.length > 0
-  );
-}
-
-export function createFaceCalibrationConsent(): FaceCalibrationConsent {
-  return {
-    version: FACE_CALIBRATION_CONSENT_VERSION,
-    acceptedAt: new Date().toISOString(),
-  };
-}
-
-export function readFaceCalibrationConsent(): FaceCalibrationConsent | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const stored = window.localStorage.getItem(
-      FACE_CALIBRATION_CONSENT_STORAGE_KEY,
-    );
-    if (!stored) return null;
-    const parsed: unknown = JSON.parse(stored);
-    return isFaceCalibrationConsent(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-export function writeFaceCalibrationConsent(
-  consent: FaceCalibrationConsent,
+export function writeFaceCalibration(
+  userId: string,
+  profile: FaceCalibrationProfile,
 ): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === 'undefined' || !userId) return false;
   try {
-    window.localStorage.setItem(
-      FACE_CALIBRATION_CONSENT_STORAGE_KEY,
-      JSON.stringify(consent),
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function writeFaceCalibration(profile: FaceCalibrationProfile): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    window.localStorage.setItem(
-      FACE_CALIBRATION_STORAGE_KEY,
-      JSON.stringify(profile),
-    );
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(profile));
     return true;
   } catch {
     // Storage may be blocked or full. The calibration page surfaces a retry
@@ -145,19 +99,21 @@ export function writeFaceCalibration(profile: FaceCalibrationProfile): boolean {
   }
 }
 
-export function clearFaceCalibration(): void {
-  if (typeof window === 'undefined') return;
+export function clearFaceCalibration(userId: string): void {
+  if (typeof window === 'undefined' || !userId) return;
   try {
-    window.localStorage.removeItem(FACE_CALIBRATION_STORAGE_KEY);
+    window.localStorage.removeItem(storageKey(userId));
   } catch {
     // Treat disabled storage as already clear.
   }
 }
 
-export function clearFaceCalibrationConsent(): void {
+/** Remove the pre-namespacing global profile + the old browser-local consent. */
+export function clearLegacyFaceCalibration(): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.removeItem(FACE_CALIBRATION_CONSENT_STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_PROFILE_KEY);
+    window.localStorage.removeItem(LEGACY_CONSENT_KEY);
   } catch {
     // Treat disabled storage as already clear.
   }

@@ -36,6 +36,12 @@ class UserOut(BaseModel):
     delivery_analytics_consent_at: datetime | None
     delivery_analytics_consent_version: int | None
     delivery_analytics_revoked_at: datetime | None
+    # Server-side proof of consent for face/delivery calibration. The calibration
+    # profile stays on-device; this versioned record is what makes consent
+    # demonstrable and per-user. A stale `consent_version` re-prompts on /calibrate.
+    face_calibration_consent_at: datetime | None
+    face_calibration_consent_version: int | None
+    face_calibration_revoked_at: datetime | None
     # Clickwrap acceptance record (version + timestamp per policy). NULL until the
     # user accepts the current version; the frontend gate re-prompts on a mismatch.
     terms_accepted_version: int | None
@@ -47,6 +53,11 @@ class UserOut(BaseModel):
 
 
 class DeliveryAnalyticsConsentIn(BaseModel):
+    notice_version: int
+    accepted: bool
+
+
+class FaceCalibrationConsentIn(BaseModel):
     notice_version: int
     accepted: bool
 

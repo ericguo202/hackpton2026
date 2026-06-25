@@ -136,8 +136,11 @@ export default function BiometricDataRetentionPolicy() {
             <strong>Calibration (optional).</strong> An optional six-second
             calibration computes a few face-geometry baseline numbers that stay{' '}
             <strong>on your device</strong> (in your browser&rsquo;s local
-            storage). Calibration data is never transmitted to or stored on our
-            servers.
+            storage, scoped to your account). Calibration data is never
+            transmitted to or stored on our servers. We do keep a record of your
+            consent to calibration (the notice version and date) on your account
+            so the consent is demonstrable and specific to you; that record
+            contains no biometric data.
           </p>
           <p className="rounded-lg border border-border bg-surface-raised p-4">
             <strong className="text-text">What we never do.</strong> We do not
@@ -171,6 +174,15 @@ export default function BiometricDataRetentionPolicy() {
             (see &ldquo;Your choices and rights&rdquo;). If we materially change
             this notice, we will ask you to consent again.
           </p>
+          <p>
+            Browser-local <strong>calibration</strong> is likewise optional and
+            opt-in. We record your consent to it — its notice version and date —
+            on your account so the consent is demonstrable and specific to you,
+            even though the calibration data itself never leaves your device. If
+            we update the calibration notice, we ask you to consent again before
+            calibration can be used, and the prior on-device baseline is cleared
+            until you do.
+          </p>
         </Section>
 
         <Section id="retention" heading="5. Retention schedule">
@@ -192,8 +204,11 @@ export default function BiometricDataRetentionPolicy() {
           <p>
             <strong>Voice recordings</strong> are not retained: the audio is
             discarded immediately after transcription.{' '}
-            <strong>Calibration data</strong> lives only on your device and is
-            removed when you clear calibration or your browser storage.
+            <strong>Calibration data</strong> lives only on your device, scoped
+            to your account, and is removed when you clear or revoke calibration,
+            when this notice is updated and you do not re-consent, or when you
+            clear your browser storage. The record of your consent to calibration
+            is kept on your account and contains no biometric data.
           </p>
         </Section>
 
