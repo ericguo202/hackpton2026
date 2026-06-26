@@ -10,7 +10,7 @@ notified" memory).
 
 from datetime import datetime
 
-from sqlalchemy import Integer, Text, text
+from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 

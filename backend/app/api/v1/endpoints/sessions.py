@@ -40,7 +40,6 @@ from app.schemas.session import (
 )
 from app.services import eval_registry
 from app.services.company_research import (
-    CompanyBrief,
     CompanyNotFoundError,
     research_company,
 )

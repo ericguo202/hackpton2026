@@ -160,15 +160,7 @@ async def get_current_user_db(
     result = await db.execute(select(User).where(User.clerk_user_id == claims.sub))
     user = result.scalar_one_or_none()
     if user is not None:
-        request.state.user_id = user.id
-        request.state.clerk_user_id = user.clerk_user_id
-        if claims.sid:
-            await log_user_signed_in(
-                db,
-                user,
-                clerk_user_id=claims.sub,
-                clerk_session_id=claims.sid,
-            )
+        await _stamp_signin(request, db, user, claims)
         return user
 
     # Not found — try to insert. ON CONFLICT makes this safe under race.
@@ -183,15 +175,19 @@ async def get_current_user_db(
     # Re-SELECT: covers both "we just inserted" and "the other request did".
     result = await db.execute(select(User).where(User.clerk_user_id == claims.sub))
     user = result.scalar_one()
-    request.state.user_id = user.id
-    request.state.clerk_user_id = user.clerk_user_id
     await log_user_created(db, user, clerk_user_id=claims.sub)
-    if claims.sid:
-        await log_user_signed_in(
-            db,
-            user,
-            clerk_user_id=claims.sub,
-            clerk_session_id=claims.sid,
-        )
+    await _stamp_signin(request, db, user, claims)
     # TODO: backfill email/name via Clerk Backend API once CLERK_SECRET_KEY is used.
     return user
+
+
+async def _stamp_signin(
+    request: Request, db: AsyncSession, user: User, claims: ClerkClaims
+) -> None:
+    """Stamp request.state for downstream handlers and log the sign-in (deduped per Clerk session)."""
+    request.state.user_id = user.id
+    request.state.clerk_user_id = user.clerk_user_id
+    if claims.sid:
+        await log_user_signed_in(
+            db, user, clerk_user_id=claims.sub, clerk_session_id=claims.sid
+        )

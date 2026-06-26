@@ -4,7 +4,8 @@ Behavioral-interview evaluator.
 Takes a question + candidate transcript (and optional prior-turn history +
 browser webcam analytics), returns the five rubric scores plus an optional
 6th `delivery` score and a short coaching note. Runs on
-`deepseek/deepseek-v3.2` via OpenRouter. Structured output is enforced via
+`deepseek/deepseek-v4-pro` (high reasoning, `deepseek/deepseek-v3.2` fallback)
+via OpenRouter. Structured output is enforced via
 `response_format={"type": "json_object"}`; the brace-counting extractor
 covers the occasional preamble that slips through.
 
@@ -803,8 +804,8 @@ async def evaluate_turn(
         return result
 
     client = get_client()
-    # Prompt-cache layout: gpt-5-mini auto-caches identical prefixes (OpenAI,
-    # 1024-token minimum). The system message is that prefix — it holds only
+    # Prompt-cache layout: deepseek-v4-pro auto-caches identical prefixes
+    # (DeepSeek context caching). The system message is that prefix — it holds only
     # static, category/level-keyed content (rubric + per-category guidance +
     # experience block + injection clause), so it's byte-identical across every
     # eval in the same field and re-bills at the cache-read rate. Keep all

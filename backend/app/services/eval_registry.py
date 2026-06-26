@@ -1,7 +1,7 @@
 """
 In-process registry of background evaluation tasks.
 
-When turn 1 of a session completes, we kick off Gemma 4 evaluation in
+When turn 1 of a session completes, we kick off the turn evaluation in
 the background (it takes ~30-40s) and immediately return the next
 question so the candidate doesn't sit watching a spinner. The task
 handle is parked here so that turn 2's handler can `await` it before

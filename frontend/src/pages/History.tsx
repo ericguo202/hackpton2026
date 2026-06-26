@@ -40,11 +40,7 @@ import { useSessions } from '../hooks/useSessions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { buildRadarData } from '../lib/radarData';
 import { SCORE_DIMENSIONS, type ScoreKey } from '../lib/scoreDimensions';
-import type {
-  DimensionAverages,
-  FillerWordStat,
-  SessionListItem,
-} from '../types/history';
+import type { FillerWordStat, SessionListItem } from '../types/history';
 import type { SavedQuestionListItem } from '../types/savedQuestions';
 import type { PracticeLocationState } from './Practice';
 
@@ -948,6 +944,3 @@ function RangeSelector({
     </div>
   );
 }
-
-// Re-export so the page module is the single import surface.
-export type { DimensionAverages };

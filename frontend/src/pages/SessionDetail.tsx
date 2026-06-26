@@ -5,7 +5,7 @@
  * a dark-beige "case file" card. The desktop layout has clickable folder
  * tabs plus circular side-arrow buttons in the gutters; mobile drops the
  * tabs/arrows in favor of a single visible panel with touch-swipe
- * navigation and a Previous/Next button row at the bottom.
+ * navigation and a top pager row (PagerArrow).
  *
  * The page state is just `activeTabIndex`: 0 = Overview, 1..N = each
  * turn. Tab content is delegated to OverviewPanel / TurnPanel.
