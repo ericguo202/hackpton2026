@@ -22,7 +22,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
   - **Source of truth:** `backend/prompts/experience_prompts.md`; `_experience_prompts.py` is **generated** via `python scripts/gen_experience_prompts.py` — don't hand-edit the `.py`. Import-time guard fails loud if any of the 90 cells is missing.
 
 - **Research-inspired, per-session-varied opening question.**
-  - `FIELD_EXAMPLES`: 5 per category, **2 randomly sampled per call** — breaks "fixed attractor" effect.
+  - `FIELD_EXAMPLES`: 8–12 per category (varies), **2 randomly sampled per call** — breaks "fixed attractor" effect.
   - Two parallel Serper queries via `asyncio.gather`: `{company}` + `{company} {level_label} {job_title} behavioral interview culture`. Generic "interview questions" phrasing dropped — that corpus is LeetCode/system-design heavy and pulled `role_signals` technical.
   - `role_signals` = cultural/soft-skill traits (NO technical proficiencies); `sample_question_themes` = behavioral theme labels (NO technical themes, NO verbatim questions). Both default `[]`.
   - **Empty-omission pattern (load-bearing):** `_company_digest` surfaces these **only when non-empty** — reused by `followup.py` and `SessionDetail.tsx` Overview.
@@ -38,7 +38,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
   - **Confused-candidate rule:** off-topic/nonsensical/single-word → gently redirect concretely; do NOT echo back or pretend it was substantive.
   - Output through `_sanitize_followup` (strips wrap-quotes, `Question:`/`Q:`/`Follow-up:` labels, asterisks). **A "drop preamble" trimmer was DELIBERATELY NOT added** (false-positives on legit framings); meta-reasoning suppression lives in the prompt.
 
-- **Two-turn interview session with auto-submit.** 1 opening + 1 follow-up (locked). Auto-Submit toggle persisted (`auto_submit_enabled`). Both lock with `disabled={submitting}`.
+- **Two-turn interview session with auto-submit.** 1 opening + 1 follow-up (locked). Auto-Submit toggle stored in browser `localStorage` (`auto_submit_enabled`) — client-side preference only, not persisted to the backend. Both lock with `disabled={submitting}`.
   - **Recording length cap (5 min).** `Practice.tsx` auto-ends at 5:00 via `handleEnd` (preserves auto-submit vs. manual-preview). `RecordingNotice` warns at 4:00, countdown from 4:30. Server-side backstop: `_read_audio_bounded` hard cap **50 MiB** → `413`.
   - **Async final feedback (intentional).** Final-turn POST persists transcript/filler counts/`cv_summary`, starts `_run_background_finalize`, returns `is_final=true`, `evaluation_pending=true`, `scores=null`. Practice polls `GET /sessions/{id}` until `status === "completed"`. While pending, null scores = "Scoring in progress"; only after completed do null scores = "Evaluation failed".
 
@@ -62,7 +62,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
 
 - **Delivery score + structured delivery feedback (server-side, never LLM).** `_compute_delivery_score(cv_summary)` deterministic from MediaPipe webcam analytics. **LLM not given webcam analytics**; `cv_summary` used only after LLM returns. Hard caps on `looked_away_pct`, `face_visible_pct`, bad posture/head-tilt. **Facial energy is deliberately one soft channel** — `low_energy_pct`/streak are coaching diagnostics only (no deductions/caps). Browser `low_energy` requires all three flat signals (`expression < 32`, `smile < 20`, mouth openness `< .028`). `_build_delivery_feedback`: `summary` + optional `eye_contact`/`alignment`/`posture`/`expression` cues (each ≤270 chars). Omitted when no `cv_summary`.
 
-- **Browser-local face calibration.** `/calibrate?from=onboarding` (optional). Six-second capture → bounded gaze/camera-angle/neutral-expression ratios in `localStorage face_delivery_calibration` (raw frames discarded). `useFaceAnalyzer` passes profile into `FrameSummary` adjusting delivery aggregates before `cv_summary` posted. No-calibration → frozen fallback constants.
+- **Browser-local face calibration.** `/calibrate?from=onboarding` (optional). Six-second capture → bounded gaze/camera-angle/neutral-expression ratios in `localStorage face_delivery_calibration` (namespaced per Clerk user ID; raw frames discarded). `useFaceAnalyzer` passes profile into `FrameSummary` adjusting delivery aggregates before `cv_summary` posted. No-calibration → frozen fallback constants. **Consent is server-persisted** (migration `0020_face_calib_consent`, `down_revision='0019_custom_questions'`) on `users.face_calibration_consent_at`/`face_calibration_consent_version`/`face_calibration_revoked_at` (GDPR/BIPA — consent must be demonstrable and revocable; localStorage alone was insufficient).
 
 - **History + per-metric improvement tracking.** Completed sessions persist turns/scores/aggregates to Postgres. `/me/stats` for per-metric trends.
 
@@ -71,6 +71,11 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
   - **Experience-level freeze (critical, repairs latent bug).** `submit_turn` previously read `experience_level` live off user row — changing level mid-session shifted rubric. Fix: stamped at create time, `submit_turn` reads `session.experience_level`.
   - **Saved questions deliberately survive profile drift** — NOT reset in `onboarding.py`. `SessionDetailOut` carries `saved_question_id`.
   - Endpoints: POST `""` save (409 at 5-cap, idempotent dedup on identical `question_text`, back-links originating session as attempt #1); GET `""` list; GET `/{id}` detail; DELETE `/{id}` (204, FK-null); POST `/{id}/practice` re-practice.
+
+- **Candidate-authored custom questions.** Up to **10** custom interview questions per user (any tier), stored as plain text in `custom_questions`. Unlike `saved_questions`, there is **no FK from `interview_sessions`** — the text is simply copied to `turn.question_text` at session create (research brief is produced live, not frozen). Table: `custom_questions` (migration `0019_custom_questions`, `down_revision='0018_policy_notif'`). Router: `app/api/v1/endpoints/custom_questions.py`, prefix `/custom-questions`.
+  - **Three-gate screening (bulk, sequential, partial-success):** (1) injection regex (strict-long, free/local) → reject + `injection_detected` incident; (2) OpenAI moderation (billed, fail-closed → 503 on outage); (3) LLM validity/relevance check (`openai/gpt-oss-120b:free`, low reasoning, `deepseek/deepseek-v4-flash` fallback, **fails open** — invalid/off-domain → reject with reason). Questions are screened sequentially to avoid rate-limiting the free-tier LLM.
+  - **Partial success:** clean questions are inserted and committed; blocked ones come back in `rejected[{text, reason}]`. The 10-slot cap is enforced up front; deleting frees a slot.
+  - Endpoints: POST `""` bulk-add → `{ created[], rejected[], remaining_slots }`; GET `""` list (newest-first); DELETE `/{id}` (204).
 
 - **Ask Tutor — turn-scoped career-advisor chat (streamed, tool-calling).** A floating, non-modal chat on each SessionDetail turn tab. `tutor.py` (`deepseek/deepseek-v4-flash`, **no reasoning**). Helps the candidate understand their feedback, prep for the question type, reword phrasing, and strengthen stories — **scoped to ONE turn only**.
   - **Lean base context** (Flash degrades on long context): question, transcript, experience level, category, target role, main takeaway, and the turn's **per-dimension scores** rendered as a compact line (`_render_scores`; null → "not scored", never a fake number). Wrapped in delimiters + `_INJECTION_CLAUSE` (transcript/feedback/tool output are untrusted DATA).
@@ -134,7 +139,9 @@ Browser (React+Vite)
 users(id, clerk_user_id UNIQUE, email, name, resume_text, industry, target_role, experience_level, short_bio, completed_registration,
 tier user_tier DEFAULT 'free', daily_session_count INT DEFAULT 0, count_reset_date DATE NULL, timezone TEXT NULL,
 daily_chat_count INT DEFAULT 0, chat_count_reset_date DATE NULL,  -- Ask Tutor daily cap (10/day free); same tz reset as sessions (migration 0017)
-recent_opening_questions JSONB DEFAULT '[]', created_at, updated_at)
+recent_opening_questions JSONB DEFAULT '[]',
+face_calibration_consent_at TIMESTAMPTZ NULL, face_calibration_consent_version INT NULL, face_calibration_revoked_at TIMESTAMPTZ NULL,  -- server-side calibration consent (migration 0020_face_calib_consent)
+created_at, updated_at)
 
 interview_sessions(id, user_id FK, config_id FK, status, company, job_title, company_summary, overall_score, notes,
 experience_level experience_level NULL, saved_question_id UUID FK saved_questions.id ON DELETE SET NULL NULL,
@@ -143,6 +150,8 @@ started_at, ended_at, created_at, updated_at)
 saved_questions(id, user_id FK users.id ON DELETE CASCADE, question_text, company, job_title, category TEXT NULL,
 company_summary TEXT NULL, role_signals JSONB DEFAULT '[]', sample_question_themes JSONB DEFAULT '[]',
 experience_level experience_level NULL, created_at)  -- frozen snapshot; experience_level reuses the PG enum (create_type=False)
+
+custom_questions(id, user_id FK users.id ON DELETE CASCADE, question_text TEXT NOT NULL, created_at)  -- candidate-authored questions (cap 10/user, any tier); no FK from sessions — text copied to turn.question_text; migration 0019_custom_questions (down_revision='0018_policy_notif')
 
 interview_configs(id, user_id FK, company, job_title, job_description, company_context, interview_type, num_turns, ai_plan, created_at)
 
@@ -180,6 +189,10 @@ GET    /saved-questions             caller's saved questions + per-question aggr
 GET    /saved-questions/{id}        frozen question + summary + attempts[] (per-attempt opening-turn scores, evaluation_failed)
 DELETE /saved-questions/{id}        → 204 (linked sessions survive — FK ON DELETE SET NULL)
 POST   /saved-questions/{id}/practice  { voice_id?, timezone? } → SessionCreateOut (re-practice; skips research/question LLM calls) | 429 (daily limit)
+
+GET    /custom-questions                   caller's custom questions (newest-first)
+POST   /custom-questions                   bulk add; 3-gate screen (injection→moderation→LLM validity, fails open); partial-success → { created[], rejected[{text,reason}], remaining_slots } | 503 (moderation down)
+DELETE /custom-questions/{id}              → 204 (frees a slot)
 
 POST /sessions/{id}/turns/{turn_id}/tutor  { message (≤300 chars), history[], context_snippet? } → text/event-stream (SSE: tool|token|done|error; `done` carries `remaining` for free tier) | 404 | 422 (moderation block / message too long) | 429 (daily chat cap) | 503 (moderation down). Ephemeral — nothing persisted; 429 pre-check + the success-only increment are the daily-limit gate.
 ```
@@ -261,6 +274,7 @@ DATABASE_URL
 CLERK_SECRET_KEY
 CLERK_JWT_ISSUER
 OPENROUTER_API_KEY      # single key for all LLM calls
+OPENAI_API_KEY          # required for OpenAI moderation; ensure_moderation_configured() aborts boot if unset
 ELEVENLABS_API_KEY
 ELEVENLABS_VOICE_ID     # default voice; per-session override via VoicePicker
 SERPER_API_KEY
