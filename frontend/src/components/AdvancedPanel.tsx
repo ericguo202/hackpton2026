@@ -12,7 +12,7 @@ import { Check } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 
-import { violatesContentPolicy } from '../lib/contentPolicy';
+import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPolicy';
 import type { CustomQuestion } from '../types/customQuestions';
 import VoicePickerGrid from './VoicePickerGrid';
 
@@ -79,7 +79,7 @@ export default function AdvancedPanel({
         <div className="flex items-center justify-between gap-3">
           {policyError ? (
             <p role="alert" className="text-sm text-critique">
-              This content violates our usage policies. Please revise it.
+              {CONTENT_POLICY_MESSAGE}
             </p>
           ) : (
             <span />

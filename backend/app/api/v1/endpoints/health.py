@@ -16,11 +16,6 @@ async def health_check():
     return {"status": "ok"}
 
 
-@router.get("/2")
-async def health_check2():
-    return {"status": "also ok"}
-
-
 @router.get("/db")
 async def db_health_check(db: AsyncSession = Depends(get_db)):
     try:

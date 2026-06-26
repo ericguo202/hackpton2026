@@ -4,8 +4,6 @@ Company research — two parallel Serper /search calls, one
 
 Returns a compact `CompanyBrief` (description, 2-3 headlines, up to 2
 values, category, role-specific signals, sample-question themes).
-Research + opening question both run on `google/gemini-2.5-flash`; the
-per-turn evaluator is on `deepseek/deepseek-v3.2`.
 
 Two Serper calls fire in parallel so total latency stays ~one Serper
 round-trip:

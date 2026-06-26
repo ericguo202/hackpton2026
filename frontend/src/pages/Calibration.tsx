@@ -30,7 +30,6 @@ import {
   writeFaceCalibration,
   type FaceCalibrationProfile,
 } from '../lib/faceCalibration';
-import { hasActiveFaceCalibrationConsent } from '../lib/faceCalibrationConsent';
 import { useFaceCalibrationConsent } from '../hooks/useFaceCalibrationConsent';
 import { useMe } from '../hooks/useMe';
 import {
@@ -185,9 +184,10 @@ export default function Calibration() {
   const { me } = useMe();
   const consent = useFaceCalibrationConsent();
   const clerkUserId = me?.clerk_user_id ?? null;
-  // Consent now lives server-side (demonstrable + per-user). A stale notice
-  // version makes this false, which re-prompts AND clears the local baseline.
-  const consentActive = hasActiveFaceCalibrationConsent(me);
+  // Consent lives server-side (demonstrable + per-user); single source is the
+  // hook. A stale notice version makes this false, re-prompting AND clearing
+  // the local baseline.
+  const consentActive = consent.active;
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [stream, setStream] = useState<MediaStream | null>(null);
