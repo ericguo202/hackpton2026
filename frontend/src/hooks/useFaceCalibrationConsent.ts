@@ -80,5 +80,5 @@ export function useFaceCalibrationConsent() {
     }
   }
 
-  return { active, busy, error, setError, grant, revoke };
+  return { active, busy, error, grant, revoke };
 }

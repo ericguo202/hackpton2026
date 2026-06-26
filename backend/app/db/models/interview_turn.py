@@ -33,17 +33,21 @@ class InterviewTurn(Base):
     __table_args__ = (
         UniqueConstraint("session_id", "turn_number", name="uq_turns_session_turn"),
         CheckConstraint("turn_number >= 1", name="ck_turns_turn_number"),
+        # Mirror the live schema after migration 0005 renamed the rubric
+        # dimensions. Names/expressions must match the constraints in
+        # alembic 0005_rubric_rename + 0002 (delivery).
         CheckConstraint(
-            "directness_score BETWEEN 0 AND 10", name="ck_turns_directness"
+            "structure_score BETWEEN 0 AND 10", name="ck_turns_structure"
         ),
-        CheckConstraint("star_score BETWEEN 0 AND 10", name="ck_turns_star"),
         CheckConstraint(
-            "specificity_score BETWEEN 0 AND 10", name="ck_turns_specificity"
+            "problem_solving_score BETWEEN 0 AND 10",
+            name="ck_turns_problem_solving",
         ),
         CheckConstraint("impact_score BETWEEN 0 AND 10", name="ck_turns_impact"),
         CheckConstraint(
-            "conciseness_score BETWEEN 0 AND 10", name="ck_turns_conciseness"
+            "initiative_score BETWEEN 0 AND 10", name="ck_turns_initiative"
         ),
+        CheckConstraint("depth_score BETWEEN 0 AND 10", name="ck_turns_depth"),
         CheckConstraint(
             "delivery_score BETWEEN 0 AND 10", name="ck_turns_delivery"
         ),

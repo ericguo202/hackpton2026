@@ -52,9 +52,6 @@ MATCH_FALLBACK_MODEL = "deepseek/deepseek-v4-flash"
 MATCH_LLM_TIMEOUT_SECONDS = 20.0
 
 _HAS_LETTER_RE = re.compile(r"[A-Za-z]")
-# "Word-ish" run: letters/digits/apostrophes/hyphens — used to gauge whether
-# the text reads like prose rather than symbol soup.
-_WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
 
 
 def looks_like_gibberish(text: str) -> bool:

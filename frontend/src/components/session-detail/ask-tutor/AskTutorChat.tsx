@@ -11,10 +11,8 @@
  * chat-shaped affordances in different corners stops them reading as the same
  * control. Below 900px it becomes a full-width bottom sheet.
  *
- * BACKEND: there is none yet. `send()` echoes the user's message and, after a
- * short beat, appends one honest placeholder reply. When the tutor API lands,
- * replace the `setTimeout` block with the real call; everything else (state,
- * composer, context chip, typing indicator, a11y) stays.
+ * Presentational shell only — the conversation + streamed backend call live in
+ * `useTutorChat`. This owns layout, drag/resize, the composer, and a11y.
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';

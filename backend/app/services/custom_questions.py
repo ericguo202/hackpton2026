@@ -34,10 +34,7 @@ from app.services._openrouter import (
 
 logger = logging.getLogger(__name__)
 
-# A capable instruction-following model for the validity / appropriateness /
-# relevance judgement. Upgraded from the free `openai/gpt-oss-120b:free`, which
-# under-flagged subtly inappropriate or non-competency questions (behavioral
-# phrasing wrapping a crude or trivial subject). Same JSON-mode + fail-open
+# Validity / appropriateness / relevance judgement. Same JSON-mode + fail-open
 # posture as the JD match-check; custom-question creation is rare and capped at
 # 10/user, so the spend is negligible.
 VALIDATE_MODEL = "openai/gpt-oss-120b:free"

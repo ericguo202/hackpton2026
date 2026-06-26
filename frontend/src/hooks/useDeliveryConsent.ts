@@ -23,7 +23,7 @@ import {
 import type { MeResponse } from '../types/user';
 
 /** "Consented <date>" label for the active-consent badge. */
-export function formatConsentDate(iso: string): string {
+function formatConsentDate(iso: string): string {
   try {
     return `Consented ${new Date(iso).toLocaleDateString(undefined, {
       year: 'numeric',

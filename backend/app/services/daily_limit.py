@@ -20,15 +20,12 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timezone
+from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
 from sqlalchemy import case, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
-
-# Note: `or_` is still used by `increment`; `case` stays for that path too.
-# `check_and_reset` uses `is_distinct_from` so the UPDATE never fires on a
-# row whose `count_reset_date` is already today — see its docstring.
 
 from app.db.models.enums import UserTier
 from app.db.models.user import User
@@ -231,7 +228,7 @@ async def enforce_chat_daily_limit(db: AsyncSession, user: User) -> None:
         )
 
 
-async def record_chat_completion(user_id, tz_name: str | None) -> int:
+async def record_chat_completion(user_id: UUID, tz_name: str | None) -> int:
     """Count one successful chat completion; return the caller's remaining quota.
 
     Called from inside the Ask Tutor SSE generator AFTER a reply streams

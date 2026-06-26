@@ -93,39 +93,3 @@ export function tokenizeTranscript(
 
   return tokens;
 }
-
-/**
- * Convenience: total filler count for a transcript. Mirrors the first
- * element of the Python `count_filler_words()` tuple. Useful as a
- * sanity-check against the persisted count when debugging drift.
- */
-export function countFillerWords(transcript: string | null | undefined): number {
-  if (!transcript) return 0;
-  // `matchAll` clones the regex internally, so the shared global FILLER_RE's
-  // lastIndex is untouched — no manual reset needed.
-  return [...transcript.matchAll(FILLER_RE)].length;
-}
-
-export type FillerBreakdownEntry = { word: string; count: number };
-
-/**
- * Compute { word: count } sorted descending by frequency.
- *
- * Shape is tuned for a recharts vertical `<BarChart>` — each entry maps
- * to one bar with `word` on the category axis and `count` on the value
- * axis. Returns an empty array for transcripts with zero filler hits so
- * the caller can render an empty-state message instead of a blank chart.
- */
-export function fillerBreakdown(
-  transcript: string | null | undefined,
-): FillerBreakdownEntry[] {
-  if (!transcript) return [];
-  const counts = new Map<string, number>();
-  for (const tok of tokenizeTranscript(transcript)) {
-    if (tok.kind !== 'filler') continue;
-    counts.set(tok.canonical, (counts.get(tok.canonical) ?? 0) + 1);
-  }
-  return Array.from(counts.entries())
-    .map(([word, count]) => ({ word, count }))
-    .sort((a, b) => b.count - a.count || a.word.localeCompare(b.word));
-}
