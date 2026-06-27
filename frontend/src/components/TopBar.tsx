@@ -149,9 +149,14 @@ type NavLinkProps = {
   to: string;
   matchPatterns?: string[];
   children: ReactNode;
+  /**
+   * Optional `data-tour` hook so the Home first-run tutorial can locate this
+   * link by selector without threading a ref through the `nav` slot.
+   */
+  tourId?: string;
 };
 
-export function TopBarNavLink({ to, matchPatterns, children }: NavLinkProps) {
+export function TopBarNavLink({ to, matchPatterns, children, tourId }: NavLinkProps) {
   const { pathname } = useLocation();
   const patterns = [to, ...(matchPatterns ?? [])];
   const active = patterns.some((p) => matchPath(p, pathname) !== null);
@@ -159,6 +164,7 @@ export function TopBarNavLink({ to, matchPatterns, children }: NavLinkProps) {
   return (
     <Link
       to={to}
+      data-tour={tourId}
       aria-current={active ? 'page' : undefined}
       className={
         'cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 ' +
