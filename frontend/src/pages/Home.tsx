@@ -30,6 +30,7 @@ import AdvancedPanel from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
 import DeliveryConsentDialog from '../components/DeliveryConsentDialog';
 import FlashBanner from '../components/FlashBanner';
+import HomeTutorial from '../components/home-tutorial/HomeTutorial';
 import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
@@ -41,9 +42,11 @@ import { useCustomQuestions } from '../hooks/useCustomQuestions';
 import { useDeliveryConsent } from '../hooks/useDeliveryConsent';
 import { useLocalStoragePref } from '../hooks/useLocalStoragePref';
 import { useMe } from '../hooks/useMe';
+import { useSessions } from '../hooks/useSessions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { trackEvent } from '../lib/analytics';
 import { violatesContentPolicy } from '../lib/contentPolicy';
+import { dismissHomeTutorial, isHomeTutorialDismissed } from '../lib/homeTutorial';
 import type { PracticeLocationState } from './Practice';
 
 /**
@@ -188,6 +191,20 @@ export default function Home() {
   const { me } = useMe();
   const { apiFetch } = useApi();
   const navigate = useNavigate();
+
+  // First-run tutorial: shown once a brand-new user (no sessions yet) lands on
+  // Home, unless they've finished it or chosen "Do not show again". `closed`
+  // tracks an in-session Skip/Esc (no persistence) so it re-offers next visit.
+  const { sessions, isReady: sessionsReady } = useSessions();
+  const tutorialUserId = me?.clerk_user_id ?? null;
+  const [tutorialClosed, setTutorialClosed] = useState(false);
+  const showTutorial =
+    sessionsReady &&
+    sessions !== null &&
+    sessions.length === 0 &&
+    tutorialUserId !== null &&
+    !isHomeTutorialDismissed(tutorialUserId) &&
+    !tutorialClosed;
 
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
@@ -377,13 +394,13 @@ export default function Home() {
       <TopBar
         nav={
           <>
-            <TopBarNavLink to="/" matchPatterns={['/practice']}>
+            <TopBarNavLink to="/" matchPatterns={['/practice']} tourId="nav-practice">
               Practice
             </TopBarNavLink>
-            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
+            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']} tourId="nav-history">
               History
             </TopBarNavLink>
-            <TopBarNavLink to="/personalize">
+            <TopBarNavLink to="/personalize" tourId="nav-personalize">
               Personalize
             </TopBarNavLink>
             <TopBarNavLink to="/calibrate">
@@ -442,6 +459,7 @@ export default function Home() {
                     autoFocus
                     maxLength={60}
                     disabled={submitting}
+                    data-tour="company-input"
                     className={companyInputClass}
                   />
                 </label>
@@ -450,16 +468,18 @@ export default function Home() {
                   className="anim-reveal mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 max-w-[42rem]"
                   style={{ animationDelay: '200ms' }}
                 >
-                  <AutoSubmitPill
-                    autoSubmit={autoSubmit}
-                    onToggle={() => setAutoSubmit((v) => !v)}
-                    disabled={submitting}
-                  />
-                  <ShowQuestionTextPill
-                    showQuestionText={showQuestionText}
-                    onToggle={() => setShowQuestionText((v) => !v)}
-                    disabled={submitting}
-                  />
+                  <span data-tour="pill-toggles" className="flex items-center gap-x-4 gap-y-2">
+                    <AutoSubmitPill
+                      autoSubmit={autoSubmit}
+                      onToggle={() => setAutoSubmit((v) => !v)}
+                      disabled={submitting}
+                    />
+                    <ShowQuestionTextPill
+                      showQuestionText={showQuestionText}
+                      onToggle={() => setShowQuestionText((v) => !v)}
+                      disabled={submitting}
+                    />
+                  </span>
                   <button
                     type="button"
                     onClick={() =>
@@ -468,6 +488,7 @@ export default function Home() {
                     disabled={submitting}
                     aria-expanded={surface === 'advanced'}
                     aria-haspopup="dialog"
+                    data-tour="advanced-trigger"
                     className="inline-flex items-center gap-1 text-sm text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <span>Advanced</span>
@@ -484,6 +505,7 @@ export default function Home() {
                     disabled={submitting}
                     aria-expanded={surface === 'privacy'}
                     aria-haspopup="dialog"
+                    data-tour="privacy-trigger"
                     className="inline-flex items-center gap-1 text-sm text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <span>Privacy</span>
@@ -660,6 +682,20 @@ export default function Home() {
         onCancel={() => setMismatch(null)}
         onConfirm={() => { void createAndGoToSession(deliveryConsentActive, true); }}
       />
+
+      {showTutorial && (
+        <HomeTutorial
+          onSkip={() => setTutorialClosed(true)}
+          onComplete={() => {
+            if (tutorialUserId) dismissHomeTutorial(tutorialUserId);
+            setTutorialClosed(true);
+          }}
+          onDismiss={() => {
+            if (tutorialUserId) dismissHomeTutorial(tutorialUserId);
+            setTutorialClosed(true);
+          }}
+        />
+      )}
     </div>
   );
 }
