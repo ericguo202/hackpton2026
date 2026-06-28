@@ -27,5 +27,6 @@ export const VOICE_PROFILES: readonly VoiceProfile[] = [
   { id: 'RBUtdrDRjER5aScqHwAS', name: 'Ding',     accent: 'Chinese' },
   { id: 'QZRlT5NqTgs34Uz6r1me', name: 'Ruy',      accent: 'Spanish'},
   { id: 'IpCcRCVYm2nsZJjBFn4H', name: 'Rafael',   accent: 'Portuguese'},
-  { id: 'n5UxjYFlD5aLGVRI2HXk', name: 'Daniela',  accent: 'Australian'}
+  { id: 'n5UxjYFlD5aLGVRI2HXk', name: 'Daniela',  accent: 'Australian'},
+  { id: 'Zjb2Dbq5IbWDKpVOllIo', name: 'Hanna',    accent: 'Korean'}
 ] as const;

@@ -58,7 +58,8 @@ _VOICE_POOL: tuple[VoiceProfile, ...] = (
     VoiceProfile("RBUtdrDRjER5aScqHwAS", "Ding",     "Chinese"),
     VoiceProfile("QZRlT5NqTgs34Uz6r1me", "Ruy",      "Spanish"),
     VoiceProfile("IpCcRCVYm2nsZJjBFn4H", "Rafael",   "Portuguese"),
-    VoiceProfile("n5UxjYFlD5aLGVRI2HXk", "Daniela",  "Australian")
+    VoiceProfile("n5UxjYFlD5aLGVRI2HXk", "Daniela",  "Australian"),
+    VoiceProfile("Zjb2Dbq5IbWDKpVOllIo", "Hanna",    "Korean")
 )
 
 # id-keyed lookup for O(1) validation. Built once at import time so
