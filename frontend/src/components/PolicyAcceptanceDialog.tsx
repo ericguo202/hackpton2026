@@ -169,7 +169,7 @@ export default function PolicyAcceptanceDialog({
     >
       <div
         ref={formRef}
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-border bg-surface-raised"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-border bg-surface-raised"
       >
         <div className="border-b border-border px-6 py-5">
           <p className="text-sm font-medium text-text-muted">
