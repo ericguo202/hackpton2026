@@ -50,11 +50,11 @@ function FooterButton({ icon, label, className, ...rest }: FooterButtonProps) {
       type="button"
       aria-label={label}
       className={cn(
-        'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-surface px-3 text-sm text-text transition',
+        'inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-surface px-2 text-sm text-text transition',
         'hover:border-border-strong hover:bg-surface-raised',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
         'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface disabled:hover:border-border',
-        'min-[600px]:h-11 min-[600px]:px-3.5 min-[900px]:h-12 min-[900px]:px-4',
+        'min-[650px]:h-11 min-[650px]:px-3.5 min-[900px]:h-12 min-[900px]:px-4',
         className,
       )}
       {...rest}
@@ -78,10 +78,10 @@ function QuitButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       aria-label="Quit session"
       className={cn(
-        'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-full border border-accent bg-accent px-3 text-sm font-medium text-accent-fg transition',
+        'inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-full border border-accent bg-accent px-2 text-sm font-medium text-accent-fg transition',
         'hover:border-accent-hover hover:bg-accent-hover',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
-        'min-[600px]:h-11 min-[600px]:px-3.5 min-[900px]:h-12 min-[900px]:px-5',
+        'min-[650px]:h-11 min-[650px]:px-3.5 min-[900px]:h-12 min-[900px]:px-5',
       )}
     >
       <LogOut className="h-4 w-4" />
@@ -135,7 +135,7 @@ export function PracticeFooter({
           <p className="hidden text-sm min-[900px]:block">{spinnerMessage}</p>
         </div>
       ) : (
-        <div className="flex items-center gap-1.5 min-[600px]:gap-2 min-[900px]:gap-3">
+        <div className="flex items-center gap-1 min-[650px]:gap-2 min-[900px]:gap-3">
           <FooterButton
             icon={<Square />}
             label="End recording"

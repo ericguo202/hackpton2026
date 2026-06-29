@@ -61,11 +61,12 @@ export default function RePracticeVoiceDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="repractice-voice-title"
-      className="anim-crossfade fixed inset-0 z-50 flex items-center justify-center bg-text/40 backdrop-blur-sm p-4"
+      className="anim-crossfade fixed inset-0 z-50 overflow-y-auto bg-text/40 backdrop-blur-sm"
       onClick={() => {
         if (!busy) onCancel();
       }}
     >
+      <div className="flex min-h-full items-center justify-center p-4">
       <div
         className="w-full max-w-lg rounded-2xl border border-border bg-surface-raised p-8 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -103,6 +104,7 @@ export default function RePracticeVoiceDialog({
             {busy ? 'Starting…' : 'Start session'}
           </Button>
         </div>
+      </div>
       </div>
     </div>,
     document.body,

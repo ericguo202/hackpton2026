@@ -54,8 +54,9 @@ export default function CalibrationConsentDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="calibration-consent-title"
-      className="anim-crossfade fixed inset-0 z-50 flex items-center justify-center bg-text/40 backdrop-blur-sm p-4"
+      className="anim-crossfade fixed inset-0 z-50 overflow-y-auto bg-text/40 backdrop-blur-sm"
     >
+      <div className="flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-lg rounded-2xl border border-border bg-surface-raised p-8 shadow-2xl">
         <div className="flex items-start gap-3">
           <ScanFace
@@ -128,6 +129,7 @@ export default function CalibrationConsentDialog({
             {busy ? 'Saving…' : 'Accept and continue'}
           </Button>
         </div>
+      </div>
       </div>
     </div>,
     document.body,
