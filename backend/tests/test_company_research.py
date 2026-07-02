@@ -396,3 +396,24 @@ def test_jd_system_prompt_contains_jd_summary_contract():
     assert "Rules for `jd_summary`" in prompt
     # The solo-vs-collaborative distinction is the bug this field fixes.
     assert "SOLO" in prompt and "COLLABORATIVE" in prompt
+
+
+def test_jd_system_prompt_hardened_against_hallucination():
+    """The JD prompt must carry a prominent, global grounding rule so the model
+    never fabricates information the posting doesn't state."""
+    prompt = company_research._JD_SYSTEM_INSTRUCTION
+
+    # A single prominent, top-priority grounding block.
+    assert "ABSOLUTE GROUNDING RULE" in prompt
+    assert "HIGHEST PRIORITY" in prompt
+    # Omit-rather-than-guess posture + "plausible != stated".
+    assert "LEAVE IT OUT" in prompt
+    assert "Plausible is NOT the same as stated" in prompt
+    # No outside knowledge / reputation.
+    assert "NEVER draw on outside knowledge" in prompt
+    # Explicitly forbids guessing solo-vs-collaborative / team structure.
+    assert "do NOT guess" in prompt
+    assert "solo vs. collaborative" in prompt
+    # The narrow carve-out keeps description/category usable for obscure JDs.
+    assert "NARROW CARVE-OUT" in prompt
+    assert "`description`" in prompt and "`category`" in prompt
