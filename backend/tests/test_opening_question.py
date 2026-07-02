@@ -17,6 +17,7 @@ from app.services._field_prompts import (
 from app.services.company_research import CompanyBrief
 from app.services.opening_question import (
     _company_digest,
+    _jd_summary_block,
     _recent_questions_block,
     _strip_wrapping_quotes,
     generate_opening_question,
@@ -210,6 +211,43 @@ async def test_generate_opening_question_no_avoid_list_when_empty(monkeypatch):
     assert "AVOID REPETITION" not in _user_prompt(sink)
 
 
+async def test_generate_opening_question_injects_jd_summary(monkeypatch):
+    """A brief carrying pasted-JD role facts must surface them in the user
+    prompt so the question fits how the role actually operates."""
+    sink: dict = {}
+    monkeypatch.setattr(
+        "app.services.opening_question.get_client",
+        lambda: _make_capturing_client("A solo-focused question?", sink),
+    )
+
+    await generate_opening_question(
+        _fake_user(),
+        _fake_brief(jd_summary=["Solo individual-contributor role — no team"]),
+        "Backend Engineer",
+        recent_questions=[],
+    )
+
+    prompt = _user_prompt(sink)
+    assert "Concrete facts about THIS role" in prompt
+    assert "Solo individual-contributor role — no team" in prompt
+
+
+async def test_generate_opening_question_no_jd_summary_when_empty(monkeypatch):
+    """No pasted JD (default brief, jd_summary == []) → the JD block is
+    omitted entirely, keeping the no-JD prompt unchanged."""
+    sink: dict = {}
+    monkeypatch.setattr(
+        "app.services.opening_question.get_client",
+        lambda: _make_capturing_client("A question?", sink),
+    )
+
+    await generate_opening_question(
+        _fake_user(), _fake_brief(), "Backend Engineer", recent_questions=[],
+    )
+
+    assert "Concrete facts about THIS role" not in _user_prompt(sink)
+
+
 # ── _field_prompts.build_field_system_prompt ──────────────────────────────────
 
 
@@ -327,3 +365,24 @@ def test_company_digest_empty_when_standard_style_and_no_signals():
     """Standard style with no role signals / themes renders nothing — the
     caller omits the block entirely rather than emitting an empty section."""
     assert _company_digest(_fake_brief(), include_company_facts=False) == ""
+
+
+# ── _jd_summary_block ─────────────────────────────────────────────────────────
+
+
+def test_jd_summary_block_empty_omitted():
+    """Empty / None jd_summary renders "" (empty-omission) so no-JD sessions
+    keep their prompt unchanged."""
+    assert _jd_summary_block([]) == ""
+    assert _jd_summary_block(None) == ""
+
+
+def test_jd_summary_block_lists_facts():
+    block = _jd_summary_block(
+        ["Solo individual-contributor role", "Owns design end to end"]
+    )
+    assert "Concrete facts about THIS role" in block
+    assert "Solo individual-contributor role" in block
+    assert "Owns design end to end" in block
+    # The solo-role guardrail is co-located with the facts.
+    assert "solo role" in block

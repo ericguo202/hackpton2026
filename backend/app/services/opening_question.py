@@ -155,6 +155,26 @@ def _company_digest(brief: CompanyBrief, include_company_facts: bool = True) -> 
     return "\n".join(sections)
 
 
+def _jd_summary_block(jd_summary: list[str] | None) -> str:
+    """Render the pasted-JD role facts, or "" when there are none.
+
+    Same empty-omission discipline as `_company_digest`: this is populated
+    ONLY for sessions created with a pasted job description, so for every other
+    session it returns "" and the caller omits the block — keeping the no-JD
+    prompt unchanged. These are concrete operating facts (solo vs.
+    collaborative, scope, duties) the question must honor so it matches the
+    actual role.
+    """
+    if not jd_summary:
+        return ""
+    facts = "\n".join(f"  - {f}" for f in jd_summary)
+    return (
+        "Concrete facts about THIS role from the pasted job description "
+        "(honor these — the question must fit how the role actually operates, "
+        f"e.g. do NOT ask about group collaboration for a solo role):\n{facts}"
+    )
+
+
 def _recent_questions_block(recent_questions: list[str] | None) -> str:
     """Render an avoid-list of the candidate's recent opening questions.
 
@@ -266,11 +286,14 @@ async def generate_opening_question(
         brief, include_company_facts=(style is _STYLE_COMPANY)
     )
     company_section = f"{company_block}\n\n" if company_block else ""
+    jd_block = _jd_summary_block(brief.jd_summary)
+    jd_section = f"{jd_block}\n\n" if jd_block else ""
     avoid_block = _recent_questions_block(recent_questions)
     avoid_section = f"{avoid_block}\n\n" if avoid_block else ""
     prompt = (
         f"{_profile_digest(user, job_title)}\n\n"
         f"{company_section}"
+        f"{jd_section}"
         f"{_RESEARCH_USAGE_INSTRUCTIONS}\n\n"
         f"{avoid_section}"
         f"{style}\n\n"
