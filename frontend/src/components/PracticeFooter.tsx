@@ -50,16 +50,19 @@ function FooterButton({ icon, label, className, ...rest }: FooterButtonProps) {
       type="button"
       aria-label={label}
       className={cn(
-        'inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-surface px-2 text-sm text-text transition',
+        // Mobile: a 48px circular icon-only target (≥ Apple HIG 44pt) so the
+        // buttons are easy to hit and not clumped. Desktop (≥900px): a labeled
+        // pill.
+        'inline-flex h-12 w-12 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-surface p-0 text-sm text-text transition',
         'hover:border-border-strong hover:bg-surface-raised',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
         'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface disabled:hover:border-border',
-        'min-[650px]:h-11 min-[650px]:px-3.5 min-[900px]:h-12 min-[900px]:px-4',
+        'min-[900px]:h-12 min-[900px]:w-auto min-[900px]:px-4',
         className,
       )}
       {...rest}
     >
-      <span className="flex h-4 w-4 items-center justify-center [&_svg]:h-4 [&_svg]:w-4">
+      <span className="flex h-5 w-5 items-center justify-center [&_svg]:h-5 [&_svg]:w-5">
         {icon}
       </span>
       <span className="hidden min-[900px]:inline">{label}</span>
@@ -78,13 +81,13 @@ function QuitButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       aria-label="Quit session"
       className={cn(
-        'inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-full border border-accent bg-accent px-2 text-sm font-medium text-accent-fg transition',
+        'inline-flex h-12 w-12 cursor-pointer items-center justify-center gap-2 rounded-full border border-accent bg-accent p-0 text-sm font-medium text-accent-fg transition',
         'hover:border-accent-hover hover:bg-accent-hover',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised',
-        'min-[650px]:h-11 min-[650px]:px-3.5 min-[900px]:h-12 min-[900px]:px-5',
+        'min-[900px]:h-12 min-[900px]:w-auto min-[900px]:px-5',
       )}
     >
-      <LogOut className="h-4 w-4" />
+      <LogOut className="h-5 w-5" />
       <span className="hidden min-[900px]:inline">Quit session</span>
     </button>
   );
@@ -106,9 +109,11 @@ export function PracticeFooter({
   onQuit,
 }: Props) {
   return (
-    <footer className="flex h-20 shrink-0 items-center justify-between gap-4 border-t border-border bg-surface-raised px-3 min-[600px]:px-4 min-[900px]:px-10">
+    <footer className="flex shrink-0 flex-col items-stretch gap-2 border-t border-border bg-surface-raised px-3 py-3 min-[600px]:px-4 min-[900px]:h-20 min-[900px]:flex-row min-[900px]:items-center min-[900px]:justify-between min-[900px]:gap-4 min-[900px]:px-10 min-[900px]:py-0">
       <div className="flex items-center gap-4 min-[900px]:gap-6">
-        <span className="whitespace-nowrap text-eyebrow uppercase tracking-eyebrow text-text-muted">
+        {/* Turn number dropped on mobile to free horizontal space for the
+            larger, evenly-spaced button row below. */}
+        <span className="hidden whitespace-nowrap text-eyebrow uppercase tracking-eyebrow text-text-muted min-[900px]:inline">
           Turn {turnNum}
         </span>
         <span className="flex items-center gap-2 text-sm">
@@ -135,7 +140,7 @@ export function PracticeFooter({
           <p className="hidden text-sm min-[900px]:block">{spinnerMessage}</p>
         </div>
       ) : (
-        <div className="flex items-center gap-1 min-[650px]:gap-2 min-[900px]:gap-3">
+        <div className="flex w-full items-center justify-between min-[900px]:w-auto min-[900px]:justify-end min-[900px]:gap-3">
           <FooterButton
             icon={<Square />}
             label="End recording"
