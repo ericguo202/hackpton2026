@@ -155,7 +155,9 @@ def _company_digest(brief: CompanyBrief, include_company_facts: bool = True) -> 
     return "\n".join(sections)
 
 
-def _jd_summary_block(jd_summary: list[str] | None) -> str:
+def _jd_summary_block(
+    jd_summary: list[str] | None, *, company_style: bool = False
+) -> str:
     """Render the pasted-JD role facts, or "" when there are none.
 
     Same empty-omission discipline as `_company_digest`: this is populated
@@ -164,15 +166,30 @@ def _jd_summary_block(jd_summary: list[str] | None) -> str:
     prompt unchanged. These are concrete operating facts (solo vs.
     collaborative, scope, duties) the question must honor so it matches the
     actual role.
+
+    `company_style` appends a co-equal inspiration nudge for the
+    company-flavored branch: since that style may already name-drop the
+    company, we also invite it to seed the question's topic from these JD
+    facts (alongside the company facts / research signals, not above them).
+    The standard branch (default) keeps the grounding-only framing.
     """
     if not jd_summary:
         return ""
     facts = "\n".join(f"  - {f}" for f in jd_summary)
-    return (
+    block = (
         "Concrete facts about THIS role from the pasted job description "
         "(honor these — the question must fit how the role actually operates, "
         f"e.g. do NOT ask about group collaboration for a solo role):\n{facts}"
     )
+    if company_style:
+        block += (
+            "\nA job description was provided — you MAY also draw INSPIRATION "
+            "for the question's topic from these role facts (a concrete duty, "
+            "responsibility, or expectation above), alongside the company "
+            "details and research signals, not above them. Keep the question "
+            "grounded in what the posting actually states."
+        )
+    return block
 
 
 def _recent_questions_block(recent_questions: list[str] | None) -> str:
@@ -286,7 +303,9 @@ async def generate_opening_question(
         brief, include_company_facts=(style is _STYLE_COMPANY)
     )
     company_section = f"{company_block}\n\n" if company_block else ""
-    jd_block = _jd_summary_block(brief.jd_summary)
+    jd_block = _jd_summary_block(
+        brief.jd_summary, company_style=(style is _STYLE_COMPANY)
+    )
     jd_section = f"{jd_block}\n\n" if jd_block else ""
     avoid_block = _recent_questions_block(recent_questions)
     avoid_section = f"{avoid_block}\n\n" if avoid_block else ""

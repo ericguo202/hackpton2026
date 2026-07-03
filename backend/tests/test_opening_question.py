@@ -16,6 +16,8 @@ from app.services._field_prompts import (
 )
 from app.services.company_research import CompanyBrief
 from app.services.opening_question import (
+    _STYLE_COMPANY,
+    _STYLE_STANDARD,
     _company_digest,
     _jd_summary_block,
     _recent_questions_block,
@@ -248,6 +250,56 @@ async def test_generate_opening_question_no_jd_summary_when_empty(monkeypatch):
     assert "Concrete facts about THIS role" not in _user_prompt(sink)
 
 
+async def test_company_style_jd_summary_gets_inspiration_nudge(monkeypatch):
+    """When the company-flavored style is chosen and a JD is present, the user
+    prompt carries the co-equal inspiration nudge on top of the grounding."""
+    sink: dict = {}
+    monkeypatch.setattr(
+        "app.services.opening_question.get_client",
+        lambda: _make_capturing_client("A role-tailored question?", sink),
+    )
+    # Pin the branch to company-flavored.
+    monkeypatch.setattr(
+        "app.services.opening_question.random.choice", lambda _seq: _STYLE_COMPANY
+    )
+
+    await generate_opening_question(
+        _fake_user(),
+        _fake_brief(jd_summary=["Owns the roadmap for one product area"]),
+        "Backend Engineer",
+        recent_questions=[],
+    )
+
+    prompt = _user_prompt(sink)
+    assert "Concrete facts about THIS role" in prompt  # grounding still there
+    assert "draw INSPIRATION" in prompt
+
+
+async def test_standard_style_jd_summary_has_no_inspiration_nudge(monkeypatch):
+    """The standard branch still gets the JD grounding block but NOT the
+    company-branch inspiration nudge."""
+    sink: dict = {}
+    monkeypatch.setattr(
+        "app.services.opening_question.get_client",
+        lambda: _make_capturing_client("A classic behavioral question?", sink),
+    )
+    # Pin the branch to standard.
+    monkeypatch.setattr(
+        "app.services.opening_question.random.choice", lambda _seq: _STYLE_STANDARD
+    )
+
+    await generate_opening_question(
+        _fake_user(),
+        _fake_brief(jd_summary=["Owns the roadmap for one product area"]),
+        "Backend Engineer",
+        recent_questions=[],
+    )
+
+    prompt = _user_prompt(sink)
+    assert "Concrete facts about THIS role" in prompt  # grounding injected for both
+    assert "draw INSPIRATION" not in prompt
+
+
 # ── _field_prompts.build_field_system_prompt ──────────────────────────────────
 
 
@@ -386,3 +438,27 @@ def test_jd_summary_block_lists_facts():
     assert "Owns design end to end" in block
     # The solo-role guardrail is co-located with the facts.
     assert "solo role" in block
+
+
+def test_jd_summary_block_company_style_adds_inspiration_nudge():
+    """The company-flavored branch appends a co-equal inspiration nudge on top
+    of the base grounding block; the standard branch (default) does not."""
+    facts = ["Owns the roadmap for one product area"]
+
+    company = _jd_summary_block(facts, company_style=True)
+    assert "Concrete facts about THIS role" in company  # base grounding kept
+    assert "draw INSPIRATION" in company
+    assert "not above them" in company  # co-equal, not an override
+
+    standard = _jd_summary_block(facts, company_style=False)
+    assert "Concrete facts about THIS role" in standard  # base grounding kept
+    assert "draw INSPIRATION" not in standard
+    # Default matches the standard branch.
+    assert _jd_summary_block(facts) == standard
+
+
+def test_jd_summary_block_company_style_still_empty_when_no_facts():
+    """company_style has no effect when there are no JD facts — empty-omission
+    wins so no-JD sessions stay unchanged regardless of style."""
+    assert _jd_summary_block([], company_style=True) == ""
+    assert _jd_summary_block(None, company_style=True) == ""
