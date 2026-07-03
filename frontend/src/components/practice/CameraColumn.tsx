@@ -30,6 +30,10 @@ interface Props {
       (turn 1, pre-recording) so the candidate knows the 5-minute cap before
       they start. Hidden once recording begins. */
   firstTurnHint: boolean;
+  /** The camera was expected (delivery analytics on) but couldn't be acquired,
+      so this answer is audio-only. Distinguishes the in-box placeholder from
+      the intentional "webcam off" case. */
+  cameraUnavailable: boolean;
   onSubmitPreview: () => void;
   onReRecordPreview: () => void;
   className?: string;
@@ -45,6 +49,7 @@ export function CameraColumn({
   isFinalTurn,
   recordingNotice,
   firstTurnHint,
+  cameraUnavailable,
   onSubmitPreview,
   onReRecordPreview,
   className,
@@ -91,7 +96,9 @@ export function CameraColumn({
                     : 'Audio/video recording will restart when the follow-up question finishes playing.'
                   : recorderState === 'idle'
                     ? 'Recording will start once the question audio ends.'
-                    : 'Webcam not enabled — audio recorded only.'}
+                    : cameraUnavailable
+                      ? 'Camera didn’t start — recording audio only.'
+                      : 'Webcam not enabled — audio recorded only.'}
               </p>
             </div>
           )}

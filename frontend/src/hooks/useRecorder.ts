@@ -27,6 +27,12 @@ function pickSupportedMimeType(candidates: string[]): string | undefined {
  * still construct the audio-only recorder and leave `videoStream: null`
  * so the analyzer noops and the delivery score drops off. Audio denial
  * IS fatal; we re-throw so the page can surface a mic-permission error.
+ *
+ * When video WAS requested but couldn't be acquired, we raise
+ * `cameraUnavailable` so the page can tell the user the answer went
+ * audio-only (no delivery score) instead of degrading silently — this is
+ * the common iOS-Safari case where `getUserMedia({video:true})` is refused
+ * without a fresh user gesture.
  */
 export function useRecorder() {
   const [state, setState]           = useState<RecorderState>('idle');
@@ -35,6 +41,9 @@ export function useRecorder() {
   const [replayBlob, setReplayBlob] = useState<Blob | null>(null);
   const [replayUrl, setReplayUrl]   = useState<string | null>(null);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  // True when a start() asked for video but ended up audio-only (camera
+  // refused/unavailable). Reset on each start() outcome and on reset().
+  const [cameraUnavailable, setCameraUnavailable] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const replayRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef   = useRef<Blob[]>([]);
@@ -81,6 +90,9 @@ export function useRecorder() {
 
     const audioTracks = stream.getAudioTracks();
     const videoTracks = stream.getVideoTracks();
+    // Video was wanted but none came back → the camera fell through to the
+    // audio-only path. Surface it so the UI can say so (see hook doc).
+    setCameraUnavailable(wantsVideo && videoTracks.length === 0);
     tracksRef.current = [...audioTracks, ...videoTracks];
 
     const audioOnly = new MediaStream(audioTracks);
@@ -176,7 +188,8 @@ export function useRecorder() {
     tracksRef.current.forEach((t) => t.stop());
     tracksRef.current = [];
     setVideoStream(null);
+    setCameraUnavailable(false);
   }, [audioUrl, replayUrl]);
 
-  return { state, start, stop, audioBlob, audioUrl, replayBlob, replayUrl, videoStream, reset };
+  return { state, start, stop, audioBlob, audioUrl, replayBlob, replayUrl, videoStream, cameraUnavailable, reset };
 }
