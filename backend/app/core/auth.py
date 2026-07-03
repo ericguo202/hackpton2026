@@ -39,6 +39,19 @@ logger = logging.getLogger(__name__)
 # or add a TTL + refetch-on-miss fallback.
 _jwks_cache: Optional[dict] = None
 
+# Clock-skew tolerance (seconds) applied to the `exp`/`iat`/`nbf` claim checks.
+# Clerk session tokens are very short-lived (~60s) and the frontend's
+# `getToken()` only refreshes a token once it's within ~10s of expiry *by the
+# browser's clock*. A device whose clock trails the server by more than that
+# window (common on phones without accurate time sync) hands us a token it
+# still considers valid while the server, with zero leeway, would see it as
+# already expired — surfacing to the user as a spurious "Invalid token" 401
+# the moment they trigger a delayed request (e.g. starting an interview after
+# the mic-permission prompt). A small leeway absorbs that skew without
+# meaningfully widening the acceptance window (Clerk's own backend SDKs apply a
+# default clock-skew allowance for the same reason).
+_CLOCK_SKEW_LEEWAY_SECONDS = 60
+
 
 async def _get_jwks() -> dict:
     """Fetch (and memoize) Clerk's public JWKS document."""
@@ -119,12 +132,15 @@ async def current_user(authorization: str = Header(None)) -> ClerkClaims:
         #    - issuer= makes python-jose enforce the `iss` claim equals ours.
         #    - verify_aud=False: Clerk session tokens don't set `aud` by default
         #      unless you configure a custom JWT template with an audience.
+        #    - leeway: absorb client/server clock skew on the exp/iat/nbf checks
+        #      so a slightly-drifted device clock doesn't get a spurious 401
+        #      (see _CLOCK_SKEW_LEEWAY_SECONDS above).
         payload = jwt.decode(
             token,
             key,
             algorithms=["RS256"],
             issuer=settings.CLERK_JWT_ISSUER.rstrip("/"),
-            options={"verify_aud": False},
+            options={"verify_aud": False, "leeway": _CLOCK_SKEW_LEEWAY_SECONDS},
         )
     except JWTError as e:
         # Covers: bad signature, expired, wrong issuer, malformed token, etc.
