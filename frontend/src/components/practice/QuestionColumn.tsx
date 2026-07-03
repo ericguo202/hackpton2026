@@ -26,12 +26,18 @@ export function QuestionColumn({
   onAudioEnded,
   className,
 }: Props) {
-  // iOS Safari blocks audible autoplay that isn't tied to a fresh user
-  // gesture, so playback is programmatic (not the `autoPlay` attribute):
-  // we call `.play()` and, only when it rejects with NotAllowedError, surface
-  // a tap-to-play fallback. `blocked` is set exclusively inside the async
-  // promise callbacks to stay clear of `react-hooks/set-state-in-effect`
-  // (mirrors the `.play().catch()` precedent in useFaceAnalyzer).
+  // Playback is programmatic (not the `autoPlay` attribute) so we can react to
+  // the browser's autoplay decision. Where audible autoplay is permitted
+  // (desktop, Android Chrome) `.play()` resolves and the question just plays.
+  // iOS Safari blocks any audible autoplay not tied to a *fresh* user gesture,
+  // and our `.play()` runs in an effect seconds after the Setup tap (across an
+  // async session-create + a route change), so on iOS it reliably rejects with
+  // NotAllowedError. That's not an error state — it's the expected iOS path, so
+  // `blocked` drives an intentional "Tap to hear your question" start
+  // affordance (the tap is the gesture; playback runs, then `onEnded` starts
+  // recording as usual). Set exclusively inside the async promise callbacks to
+  // stay clear of `react-hooks/set-state-in-effect` (mirrors the
+  // `.play().catch()` precedent in useFaceAnalyzer).
   const [blocked, setBlocked] = useState(false);
   // Drives the "Playing question…" cue while the hidden audio plays. Set from
   // native media events so both the effect-driven autoplay and the tap-to-play
@@ -56,7 +62,7 @@ export function QuestionColumn({
     // `audioUrl` covers the src swap directly.
   }, [audioUrl, replayKey, audioRef]);
 
-  function handleTapToPlay() {
+  function handleStartQuestion() {
     // Runs inside a real user gesture, so iOS permits playback. When it ends,
     // `onEnded` fires normally → recording starts (no special wiring).
     audioRef.current?.play().catch(() => undefined);
@@ -121,15 +127,19 @@ export function QuestionColumn({
           <span className="text-sm">Playing question…</span>
         </div>
       )}
+      {/* Intended start step where the browser blocks audible autoplay (iOS
+          Safari): the tap is the user gesture that lets the question play. Not
+          shown where autoplay is permitted — there the question plays on load. */}
       {blocked && (
         <Button
           type="button"
           variant="amber"
-          onClick={handleTapToPlay}
-          className="mt-4 gap-2"
+          size="lg"
+          onClick={handleStartQuestion}
+          className="mt-6 gap-2 self-start"
         >
-          <Play className="h-4 w-4" aria-hidden="true" />
-          Tap to play the question
+          <Play className="h-5 w-5" aria-hidden="true" />
+          Tap to hear your question
         </Button>
       )}
     </div>
