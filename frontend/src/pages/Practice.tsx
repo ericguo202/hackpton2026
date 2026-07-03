@@ -208,6 +208,11 @@ function PracticeSession({
   // reset to 0 in `handleAudioEnded` (the sole recording-start path) so it
   // never carries a stale value into a new turn.
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // Shared with QuestionColumn's <audio>. Practice uses it to synchronously
+  // pause + detach the question audio in `handleAudioEnded`, before the
+  // recorder's getUserMedia flips the iOS audio session — otherwise WebKit
+  // replays the loaded buffer over the first seconds of the recording.
+  const questionAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -345,6 +350,10 @@ function PracticeSession({
           audioUrl: result.next_question_audio_url!,
           num: currentQ.num + 1,
         });
+        // Remount the <audio> (like Re-record / Restart) so the new question
+        // routes through the same programmatic-play path instead of relying on
+        // an unreliable src-diff autoplay.
+        setReplayKey((k) => k + 1);
         recorder.reset();
         analyzer.reset();
       }
@@ -411,6 +420,19 @@ function PracticeSession({
 
   function handleAudioEnded() {
     if (recorder.state !== 'idle') return;
+    // Tear the question audio down synchronously, BEFORE recorder.start()'s
+    // getUserMedia flips the iOS AVAudioSession to record mode. Detaching the
+    // source (not just pausing) is what stops WebKit replaying the buffer on
+    // the session-category switch. React diffs `src` against its own last
+    // committed value, so the next audioUrl/replayKey change re-applies a
+    // source and the play effect refires — the element is never stranded.
+    const el = questionAudioRef.current;
+    if (el) {
+      el.pause();
+      el.currentTime = 0;
+      el.removeAttribute('src');
+      el.load();
+    }
     // Zero the clock here (the only place recording begins) so the timer
     // effect starts from 0 with no synchronous setState inside the effect.
     setElapsedSeconds(0);
@@ -501,6 +523,7 @@ function PracticeSession({
           audioUrl={currentQ.audioUrl}
           showQuestionText={showQuestionDuringSession}
           replayKey={replayKey}
+          audioRef={questionAudioRef}
           onAudioEnded={handleAudioEnded}
         />
         <CameraColumn
