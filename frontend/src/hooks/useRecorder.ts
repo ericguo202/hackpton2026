@@ -2,6 +2,10 @@ import { useCallback, useRef, useState } from 'react';
 
 type RecorderState = 'idle' | 'recording' | 'stopped';
 type StartOptions = { video?: boolean };
+/** Why a video-wanting start() ended up audio-only. 'denied' = the user
+ *  blocked the camera permission (a legitimate "no webcam" choice); 'failed' =
+ *  any other technical reason (camera busy, hardware, iOS no-gesture refusal). */
+export type CameraError = 'denied' | 'failed';
 
 function pickSupportedMimeType(candidates: string[]): string | undefined {
   for (const candidate of candidates) {
@@ -28,11 +32,12 @@ function pickSupportedMimeType(candidates: string[]): string | undefined {
  * so the analyzer noops and the delivery score drops off. Audio denial
  * IS fatal; we re-throw so the page can surface a mic-permission error.
  *
- * When video WAS requested but couldn't be acquired, we raise
- * `cameraUnavailable` so the page can tell the user the answer went
- * audio-only (no delivery score) instead of degrading silently — this is
- * the common iOS-Safari case where `getUserMedia({video:true})` is refused
- * without a fresh user gesture.
+ * When video WAS requested but couldn't be acquired, we raise `cameraError`
+ * so the page can tell the user the answer went audio-only (no delivery score)
+ * instead of degrading silently. It distinguishes 'denied' (the user blocked
+ * the camera — a legitimate "no webcam" choice, worded gently) from 'failed'
+ * (a technical miss such as the common iOS-Safari no-gesture refusal, where we
+ * nudge a Restart).
  */
 export function useRecorder() {
   const [state, setState]           = useState<RecorderState>('idle');
@@ -41,9 +46,9 @@ export function useRecorder() {
   const [replayBlob, setReplayBlob] = useState<Blob | null>(null);
   const [replayUrl, setReplayUrl]   = useState<string | null>(null);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
-  // True when a start() asked for video but ended up audio-only (camera
-  // refused/unavailable). Reset on each start() outcome and on reset().
-  const [cameraUnavailable, setCameraUnavailable] = useState(false);
+  // Non-null when a start() asked for video but ended up audio-only, tagged
+  // with why ('denied' vs 'failed'). Reset on each start() outcome and reset().
+  const [cameraError, setCameraError] = useState<CameraError | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const replayRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef   = useRef<Blob[]>([]);
@@ -72,14 +77,22 @@ export function useRecorder() {
     const wantsVideo = options.video !== false;
     // Try for both tracks only after the user has opted into delivery
     // analytics. If camera setup fails, fall back to audio-only so the answer
-    // still goes through.
+    // still goes through — recording WHY so the page can distinguish a
+    // deliberate permission block from a technical failure.
     let stream: MediaStream;
+    let videoDenied = false;
     if (!wantsVideo) {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } else {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      } catch {
+      } catch (err) {
+        // NotAllowedError = the user (or a policy) blocked the camera — a
+        // legitimate "no webcam" choice, not a malfunction. The audio-only
+        // retry below still gates the mic (re-throws if THAT is denied too).
+        if (err instanceof DOMException && err.name === 'NotAllowedError') {
+          videoDenied = true;
+        }
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
     }
@@ -91,8 +104,10 @@ export function useRecorder() {
     const audioTracks = stream.getAudioTracks();
     const videoTracks = stream.getVideoTracks();
     // Video was wanted but none came back → the camera fell through to the
-    // audio-only path. Surface it so the UI can say so (see hook doc).
-    setCameraUnavailable(wantsVideo && videoTracks.length === 0);
+    // audio-only path. Tag why: 'denied' (user blocked it) vs 'failed' (see doc).
+    setCameraError(
+      wantsVideo && videoTracks.length === 0 ? (videoDenied ? 'denied' : 'failed') : null,
+    );
     tracksRef.current = [...audioTracks, ...videoTracks];
 
     const audioOnly = new MediaStream(audioTracks);
@@ -188,8 +203,8 @@ export function useRecorder() {
     tracksRef.current.forEach((t) => t.stop());
     tracksRef.current = [];
     setVideoStream(null);
-    setCameraUnavailable(false);
+    setCameraError(null);
   }, [audioUrl, replayUrl]);
 
-  return { state, start, stop, audioBlob, audioUrl, replayBlob, replayUrl, videoStream, cameraUnavailable, reset };
+  return { state, start, stop, audioBlob, audioUrl, replayBlob, replayUrl, videoStream, cameraError, reset };
 }

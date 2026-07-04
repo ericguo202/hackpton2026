@@ -1,5 +1,6 @@
 import { CameraPreview } from '../CameraPreview';
 import { Button } from '../ui/button';
+import type { CameraError } from '../../hooks/useRecorder';
 import { cn } from '../../lib/utils';
 
 /** A timed recording-length notice shown UNDER the camera box. `warning` is the
@@ -30,10 +31,11 @@ interface Props {
       (turn 1, pre-recording) so the candidate knows the 5-minute cap before
       they start. Hidden once recording begins. */
   firstTurnHint: boolean;
-  /** The camera was expected (delivery analytics on) but couldn't be acquired,
-      so this answer is audio-only. Distinguishes the in-box placeholder from
-      the intentional "webcam off" case. */
-  cameraUnavailable: boolean;
+  /** Non-null when the camera was expected (delivery analytics on) but the
+      answer went audio-only: 'failed' (technical) vs 'denied' (permission
+      blocked). Distinguishes the in-box placeholder from the intentional
+      "webcam off" case (null). */
+  cameraError: CameraError | null;
   onSubmitPreview: () => void;
   onReRecordPreview: () => void;
   className?: string;
@@ -49,7 +51,7 @@ export function CameraColumn({
   isFinalTurn,
   recordingNotice,
   firstTurnHint,
-  cameraUnavailable,
+  cameraError,
   onSubmitPreview,
   onReRecordPreview,
   className,
@@ -96,9 +98,11 @@ export function CameraColumn({
                     : 'Audio/video recording will restart when the follow-up question finishes playing.'
                   : recorderState === 'idle'
                     ? 'Recording will start once the question audio ends.'
-                    : cameraUnavailable
+                    : cameraError === 'failed'
                       ? 'Camera didn’t start — recording audio only.'
-                      : 'Webcam not enabled — audio recorded only.'}
+                      : cameraError === 'denied'
+                        ? 'Camera blocked — recording audio only.'
+                        : 'Webcam not enabled — audio recorded only.'}
               </p>
             </div>
           )}

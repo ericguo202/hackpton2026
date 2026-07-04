@@ -290,12 +290,14 @@ function PracticeSession({
   // Without it, `recorder.start({ video: false })` means the camera is never
   // enabled and no cv_summary is computed or sent.
   const deliveryAnalyticsEnabled = hasActiveDeliveryAnalyticsConsent(me);
-  // The user opted into delivery analytics (so a webcam recording was expected)
-  // but the camera couldn't be acquired and useRecorder fell back to audio-only.
-  // Surfaced below so the silent drop to audio-only (no delivery score) is
-  // visible and the user can Restart the turn to retry with a fresh gesture —
-  // this is the common iOS-Safari no-gesture case.
-  const cameraFailed = deliveryAnalyticsEnabled && recorder.cameraUnavailable;
+  // Non-null only when the user opted into delivery analytics (a webcam
+  // recording was expected) but the camera fell back to audio-only. 'failed' is
+  // a technical miss (busy/hardware/iOS no-gesture) → we nudge a Restart;
+  // 'denied' is a deliberate permission block → a legitimate "no webcam" choice,
+  // so we state the fact without pushing a retry. Either way it's purely
+  // informational and never blocks completing the session. (Declining delivery
+  // analytics keeps this null — that path never sees a notice.)
+  const cameraError = deliveryAnalyticsEnabled ? recorder.cameraError : null;
 
   async function handleSubmitTurn() {
     if (!recorder.audioBlob || !sessionId || !currentQ) return;
@@ -542,7 +544,7 @@ function PracticeSession({
           isFinalTurn={currentQ.num >= 2}
           recordingNotice={recordingNotice}
           firstTurnHint={showFirstTurnHint}
-          cameraUnavailable={cameraFailed}
+          cameraError={cameraError}
           onSubmitPreview={handleSubmitTurn}
           onReRecordPreview={handleReRecord}
         />
@@ -579,7 +581,7 @@ function PracticeSession({
         </div>
       )}
 
-      {cameraFailed && (
+      {cameraError && (
         <div className="border-t border-border bg-surface-raised px-6 py-3 min-[900px]:px-10">
           <p role="status" className="flex items-start gap-2 text-sm text-text-muted">
             {/* Amber dot = warning garnish (amber never as type in light mode). */}
@@ -589,8 +591,9 @@ function PracticeSession({
             />
             <span>
               <span className="mr-2 text-eyebrow uppercase tracking-eyebrow text-text">Camera</span>
-              Your camera didn’t start, so this answer is audio-only and won’t receive a
-              delivery score. Use “Restart turn” to try again.
+              {cameraError === 'failed'
+                ? 'Your camera didn’t start, so this answer is audio-only and won’t receive a delivery score. Use “Restart turn” to try again.'
+                : 'Camera access is blocked, so this answer is audio-only and won’t receive a delivery score.'}
             </span>
           </p>
         </div>
