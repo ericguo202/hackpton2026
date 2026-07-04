@@ -18,7 +18,6 @@ import { useNavigate } from 'react-router';
 
 import AccountButton from './AccountButton';
 import { useApi } from '../hooks/useApi';
-import { useMe } from '../hooks/useMe';
 import { ApiError } from '../lib/api';
 import { trackEvent } from '../lib/analytics';
 import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPolicy';
@@ -68,7 +67,6 @@ const inputClass =
 export default function OnboardingForm() {
   const { user } = useUser();
   const { apiFetch } = useApi();
-  const { refetch } = useMe();
   const navigate = useNavigate();
 
   const email = user?.primaryEmailAddress?.emailAddress ?? '';
@@ -201,15 +199,18 @@ export default function OnboardingForm() {
         resume_source: skipResume ? 'skipped' : resumeMode,
         experience_level: experienceLevel,
       });
-      // Navigate to calibration BEFORE refetching `me`. `refetch()` broadcasts
-      // the now-onboarded row to every live `useMe` (see useMe.ts), including
-      // the one in the `RedirectIfOnboarded` guard still wrapping this route —
-      // which would immediately fire `<Navigate to="/">` and beat us to the
-      // punch, dropping the user on Home instead of calibration. Leaving
-      // /onboarding first unmounts that guard; /calibrate only needs RequireAuth
-      // and doesn't read `me`, so the gate can flip safely afterward.
+      // Go straight to calibration WITHOUT refetching `me` here. A `refetch()`
+      // would broadcast the now-onboarded row to every live `useMe` (see
+      // useMe.ts) — including the `RedirectIfOnboarded` guard still wrapping
+      // /onboarding. That guard does NOT unmount synchronously: React Router
+      // wraps this navigation in `startTransition`, and while the lazy
+      // /calibrate chunk is still loading React keeps the old tree (guard
+      // included) mounted. On a slow/uncached chunk load (iOS Safari) the
+      // broadcast lands first, the still-mounted guard sees `completed_registration`
+      // and fires `<Navigate to="/">`, dropping the user on Home. So we don't
+      // refetch: /calibrate mounts its own `useMe`, whose fetch-on-mount
+      // re-broadcasts the fresh row to every sibling once the guard is gone.
       navigate('/calibrate?from=onboarding');
-      await refetch();
     } catch (err) {
       if (err instanceof ApiError) {
         setError(`${err.status}: ${err.body}`);
