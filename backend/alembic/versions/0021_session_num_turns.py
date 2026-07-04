@@ -30,7 +30,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_sessions_num_turns",
         "interview_sessions",
-        "num_turns BETWEEN 2 AND 10",
+        "num_turns BETWEEN 2 AND 8",
     )
 
 
