@@ -1,8 +1,8 @@
 /**
- * Practice — runs an active 2-turn interview session (recording only).
+ * Practice — runs an active interview session (recording only).
  *
  * Question audio plays → recorder auto-starts on `ended` → user stops →
- * submit → repeat for turn 2. When the final turn is submitted, redirects
+ * submit → repeat until the configured final turn. When the final turn is submitted, redirects
  * to `/sessions/:id?from=practice`, where the results/feedback now live
  * (SessionDetail renders the same folder-tab shell and polls for the async
  * scores). This page is deliberately chrome-free / full-viewport.
@@ -45,6 +45,9 @@ export type PracticeLocationState = {
   sessionId: string;
   firstQuestion: string;
   firstQuestionAudioUrl: string;
+  /** Total questions in this session. Older entry points omit it and default
+   *  to the original two-turn flow. */
+  numTurns?: number;
   /** Echoed from the Setup form so the results screen can identify the
    *  session without waiting for the SessionDetail refetch. */
   company: string;
@@ -188,6 +191,7 @@ function PracticeSession({
   const [autoSubmit] = useLocalStoragePref('auto_submit_enabled', false);
 
   const [sessionId] = useState<string>(initial.sessionId);
+  const [totalTurns] = useState<number>(initial.numTurns ?? 2);
   const [currentQ, setCurrentQ] = useState<CurrentQ | null>({
     text: initial.firstQuestion,
     audioUrl: initial.firstQuestionAudioUrl,
@@ -296,7 +300,8 @@ function PracticeSession({
     const submittingTurnNumber = currentQ.num;
     trackEvent('turn_submitted', {
       turn_number: submittingTurnNumber,
-      final_turn: submittingTurnNumber >= 2,
+      final_turn: submittingTurnNumber >= totalTurns,
+      total_turns: totalTurns,
       auto_submit_enabled: autoSubmit,
       delivery_analytics_enabled: deliveryAnalyticsEnabled,
     });
@@ -322,6 +327,7 @@ function PracticeSession({
       trackEvent('turn_submit_succeeded', {
         turn_number: submittingTurnNumber,
         final_turn: result.is_final,
+        total_turns: totalTurns,
         evaluation_pending: Boolean(result.evaluation_pending),
       });
 
@@ -464,7 +470,7 @@ function PracticeSession({
   const submitting = submittingTurn || endingTurn || retryingTurn;
   const spinnerMessage = retryingTurn
     ? 'Retrying…'
-    : currentQ && currentQ.num >= 2
+    : currentQ && currentQ.num >= totalTurns
       ? 'Feedback will appear shortly.'
       : 'Analyzing — 5–10 seconds';
   const showPreview =
@@ -494,7 +500,7 @@ function PracticeSession({
   // (the in-recording RecordingNotice covers later turns); hidden once recording
   // starts (state leaves 'idle').
   const showFirstTurnHint = recorder.state === 'idle' && currentQ?.num === 1;
-  const previousTurn = turnResults.length > 0 ? turnResults[0] : null;
+  const previousTurn = turnResults.length > 0 ? turnResults[turnResults.length - 1] : null;
   const showTranscriptPanel = showTranscript && previousTurn;
   const showQuestionDuringSession = showQuestionText;
 
@@ -533,7 +539,7 @@ function PracticeSession({
           audioUrl={recorder.audioUrl}
           showPreview={showPreview}
           submitting={submitting}
-          isFinalTurn={currentQ.num >= 2}
+          isFinalTurn={currentQ.num >= totalTurns}
           recordingNotice={recordingNotice}
           firstTurnHint={showFirstTurnHint}
           onSubmitPreview={handleSubmitTurn}
@@ -574,6 +580,7 @@ function PracticeSession({
 
       <PracticeFooter
         turnNum={currentQ.num}
+        totalTurns={totalTurns}
         recorderState={recorder.state}
         showQuestionText={showQuestionDuringSession}
         showTranscript={Boolean(showTranscriptPanel)}

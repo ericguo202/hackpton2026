@@ -131,6 +131,7 @@ async def _persist_session_and_turn(
     session_id: UUID,
     voice_id: str,
     experience_level: ExperienceLevel | None,
+    num_turns: int = 2,
     roll_recent: bool = True,
     saved_question_id: UUID | None = None,
 ) -> UUID:
@@ -163,6 +164,7 @@ async def _persist_session_and_turn(
         started_at=func.now(),
         voice_id=voice_id,
         experience_level=experience_level,
+        num_turns=num_turns,
         saved_question_id=saved_question_id,
     )
     db.add(session)
@@ -381,7 +383,7 @@ async def create_session(
     session_id = uuid.uuid4()
     # Honor the candidate's picker choice when valid, else a deterministic
     # per-session voice (see `resolve_voice`). The resolved voice is persisted
-    # on the session row below so turn 2's TTS reads the same value.
+    # on the session row below so every follow-up TTS reads the same value.
     voice_id = resolve_voice(body.voice_id, session_id)
 
     audio_url, _ = await asyncio.gather(
@@ -396,6 +398,7 @@ async def create_session(
             session_id=session_id,
             voice_id=voice_id,
             experience_level=user.experience_level,
+            num_turns=body.num_turns,
             # A custom question is a deliberate, reusable pick — don't push it
             # into the generation avoid-list (it isn't a generated question).
             roll_recent=custom_question is None,
@@ -408,6 +411,7 @@ async def create_session(
         metadata={
             "company": body.company,
             "job_title": body.job_title,
+            "num_turns": body.num_turns,
             "custom_question": custom_question is not None,
         },
     )
@@ -416,6 +420,7 @@ async def create_session(
         session_id=session_id,
         summary=CompanyBriefOut(**brief.model_dump()),
         first_question=opening_q,
+        num_turns=body.num_turns,
         first_question_audio_url=audio_url,
     )
 
@@ -455,12 +460,13 @@ async def _insert_followup_turn(
     db: AsyncSession,
     session_id: UUID,
     parent_turn_id: UUID,
+    turn_number: int,
     question: str,
 ) -> None:
-    """Insert turn 2 and flush (caller commits)."""
+    """Insert the next follow-up turn and flush (caller commits)."""
     db.add(InterviewTurn(
         session_id=session_id,
-        turn_number=2,
+        turn_number=turn_number,
         question_text=question,
         is_followup=True,
         parent_turn_id=parent_turn_id,
@@ -636,11 +642,11 @@ async def _run_background_eval(
             },
         )
     finally:
-        eval_registry.discard(session_id)
+        eval_registry.discard(session_id, turn_id)
 
 
-async def _await_background_eval(session_id: UUID) -> None:
-    """If turn 1's eval is still running, wait for it before finalizing.
+async def _await_background_evals(session_id: UUID) -> None:
+    """If known turn evals are still running, wait before finalizing.
 
     Idempotent: returns immediately when no task is registered (e.g. the
     background task already finished and called `discard`, or the demo
@@ -648,17 +654,16 @@ async def _await_background_eval(session_id: UUID) -> None:
     lost the in-memory registry — the inline fallback in `submit_turn`
     handles the latter case).
     """
-    task = eval_registry.pop(session_id)
-    if task is None:
-        return
-    if task.done():
+    tasks = eval_registry.pop_session(session_id)
+    pending = [task for task in tasks if not task.done()]
+    if not pending:
         return
     logger.info(
-        "Finalize: waiting for background eval to finish for session=%s",
-        session_id,
+        "Finalize: waiting for %s background eval(s) to finish for session=%s",
+        len(pending), session_id,
     )
-    # The task itself swallows exceptions, so this await never raises.
-    await task
+    # The tasks themselves swallow exceptions, so this gather never raises.
+    await asyncio.gather(*pending)
 
 
 # ── session-completion aggregation ────────────────────────────────────────────
@@ -716,7 +721,7 @@ async def _upsert_session_metrics(
     """Write (or replace) the cached aggregate row for a completed session.
 
     `session_metrics.session_id` has a UNIQUE constraint, so a re-finalize
-    of the same session (shouldn't happen in the 2-turn flow but cheap
+    of the same session (shouldn't happen in the normal flow but cheap
     insurance) deletes the existing row first rather than tripping IntegrityError.
     """
     existing = await db.execute(
@@ -874,10 +879,10 @@ async def _run_background_finalize(
                 )
                 return
 
-            # Let turn 1's detached eval finish if this worker still knows
-            # about it. Missing/stale registry entries are handled by the
-            # inline fallback below.
-            await _await_background_eval(session_id)
+            # Let detached evals finish if this worker still knows about them.
+            # Missing/stale registry entries are handled by the inline fallback
+            # below.
+            await _await_background_evals(session_id)
 
             turns_result = await db.execute(
                 select(InterviewTurn)
@@ -1149,8 +1154,10 @@ async def submit_turn(
         except json.JSONDecodeError as exc:
             logger.warning("cv_summary JSON parse failed: %s", exc)
 
-    # 7. Hardcoded 2-turn rule (CLAUDE.md): turn 2 is always final.
-    is_final = current_turn.turn_number >= 2
+    # 7. Session-specific turn rule: the persisted target count determines the
+    # final turn. Legacy rows created before the column existed read the DB
+    # default of 2.
+    is_final = current_turn.turn_number >= session.num_turns
 
     # 8a. Persist transcript + filler counts BEFORE doing evaluator work.
     #     Background tasks mutate this same row; persisting now means they
@@ -1168,7 +1175,7 @@ async def submit_turn(
         # Only wait for follow-up + TTS. Evaluation is spawned as a detached
         # task that writes scores to the DB later.
         # Voice was resolved at session-create time and persisted on
-        # `session.voice_id`, so turn 2's audio always sounds like the
+        # `session.voice_id`, so follow-up audio always sounds like the
         # same interviewer who asked turn 1 even after a refresh.
         # Legacy rows (created before the column existed) fall back to
         # the old deterministic-random derivation from session.id —
@@ -1186,7 +1193,13 @@ async def submit_turn(
             ),
             experience_level=experience_level,
         )
-        await _insert_followup_turn(db, session_id, current_turn.id, next_q)
+        await _insert_followup_turn(
+            db,
+            session_id,
+            current_turn.id,
+            current_turn.turn_number + 1,
+            next_q,
+        )
         # Commit BEFORE registering the background task so the bg task's
         # fresh AsyncSession sees the persisted transcript on its first
         # query. Without this, there's a tiny race where the task could
@@ -1206,7 +1219,7 @@ async def submit_turn(
             ),
             name=f"eval-session-{session_id}-turn-{current_turn.turn_number}",
         )
-        eval_registry.register(session_id, bg_task)
+        eval_registry.register(session_id, current_turn.id, bg_task)
 
         return TurnSubmitOut(
             transcript=transcript,
@@ -1359,11 +1372,11 @@ def _maybe_reap_stuck_session(
     """
     if session.status != SessionStatus.in_progress:
         return
-    # Final answer committed? (2-turn rule: turn 2 carries the last answer.)
+    # Final answer committed? The persisted turn target carries the last answer.
     final_turn = max(turns, key=lambda t: t.turn_number, default=None)
     if (
         final_turn is None
-        or final_turn.turn_number < 2
+        or final_turn.turn_number < session.num_turns
         or final_turn.transcript_text is None
     ):
         return
@@ -1461,6 +1474,7 @@ async def get_session(
         id=session.id,
         company=session.company,
         job_title=session.job_title,
+        num_turns=session.num_turns,
         status=session.status.value,
         overall_score=session.overall_score,
         started_at=session.started_at,

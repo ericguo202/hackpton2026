@@ -52,6 +52,9 @@ class SessionCreateIn(BaseModel):
     # text becomes turn 1 verbatim (it was screened at creation time). 404 if it
     # isn't the caller's.
     custom_question_id: UUID | None = Field(default=None)
+    # Total interview turns, including the opening question. Default preserves
+    # the original 1 opening + 1 follow-up flow for older clients.
+    num_turns: int = Field(default=2, ge=2, le=8)
 
 
 class CompanyBriefOut(BaseModel):
@@ -81,6 +84,7 @@ class SessionCreateOut(BaseModel):
     session_id: UUID
     summary: CompanyBriefOut
     first_question: str
+    num_turns: int
     # `data:audio/mpeg;base64,...` — ready to drop into `<audio src>`.
     # Not persisted; regenerated on demand per CLAUDE.md (audio inline in
     # JSON, no S3).
@@ -249,6 +253,7 @@ class SessionDetailOut(BaseModel):
     id: UUID
     company: str
     job_title: str
+    num_turns: int
     status: str
     overall_score: Decimal | None
     started_at: datetime | None

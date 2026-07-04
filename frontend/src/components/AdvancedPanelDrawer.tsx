@@ -30,6 +30,8 @@ type Props = {
   customQuestions: CustomQuestion[];
   selectedCustomQuestionId: string | null;
   onSelectCustomQuestion: (id: string | null) => void;
+  numTurns: number;
+  onNumTurnsChange: (value: number) => void;
   disabled: boolean;
 };
 
@@ -43,6 +45,8 @@ export default function AdvancedPanelDrawer({
   customQuestions,
   selectedCustomQuestionId,
   onSelectCustomQuestion,
+  numTurns,
+  onNumTurnsChange,
   disabled,
 }: Props) {
   useEffect(() => {
@@ -97,6 +101,8 @@ export default function AdvancedPanelDrawer({
           customQuestions={customQuestions}
           selectedCustomQuestionId={selectedCustomQuestionId}
           onSelectCustomQuestion={onSelectCustomQuestion}
+          numTurns={numTurns}
+          onNumTurnsChange={onNumTurnsChange}
           disabled={disabled}
         />
       </div>

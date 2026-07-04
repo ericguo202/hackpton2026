@@ -26,7 +26,7 @@ import { ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
 import AccountButton from '../components/AccountButton';
-import AdvancedPanel from '../components/AdvancedPanel';
+import AdvancedPanel, { MIN_SESSION_TURNS } from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
 import DeliveryConsentDialog from '../components/DeliveryConsentDialog';
 import FlashBanner from '../components/FlashBanner';
@@ -71,6 +71,7 @@ type SessionStart = {
   summary: { description: string; headlines: string[]; values: string[] };
   first_question: string;
   first_question_audio_url: string;
+  num_turns: number;
 };
 
 function timeOfDay(): 'morning' | 'afternoon' | 'evening' {
@@ -208,6 +209,7 @@ export default function Home() {
 
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [numTurns, setNumTurns] = useState(MIN_SESSION_TURNS);
   const [jobDescription, setJobDescription] = useState('');
   // The caller's custom questions + which one (if any) is selected for this
   // session. When selected, the backend skips the opening-question LLM call and
@@ -287,6 +289,7 @@ export default function Home() {
           // on the server side (UTC fallback on parse failure).
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(voiceId ? { voice_id: voiceId } : {}),
+          num_turns: numTurns,
           ...(jd ? { job_description: jd } : {}),
           ...(acknowledgeMismatch ? { acknowledge_mismatch: true } : {}),
           ...(selectedCustomQuestionId
@@ -296,6 +299,7 @@ export default function Home() {
       });
       trackEvent('practice_session_started', {
         has_custom_voice: Boolean(voiceId),
+        num_turns: data.num_turns,
         auto_submit_enabled: autoSubmit,
         delivery_analytics_enabled: deliveryAnalyticsWillBeEnabled,
         user_tier: me?.tier ?? 'unknown',
@@ -305,6 +309,7 @@ export default function Home() {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        numTurns: data.num_turns,
         company: trimmed,
         jobTitle: me?.target_role ?? 'Software Engineer',
       };
@@ -590,6 +595,8 @@ export default function Home() {
                         customQuestions={customQuestions ?? []}
                         selectedCustomQuestionId={selectedCustomQuestionId}
                         onSelectCustomQuestion={setSelectedCustomQuestionId}
+                        numTurns={numTurns}
+                        onNumTurnsChange={setNumTurns}
                         disabled={submitting}
                       />
                     </>
@@ -645,6 +652,8 @@ export default function Home() {
             customQuestions={customQuestions ?? []}
             selectedCustomQuestionId={selectedCustomQuestionId}
             onSelectCustomQuestion={setSelectedCustomQuestionId}
+            numTurns={numTurns}
+            onNumTurnsChange={setNumTurns}
             disabled={submitting}
           />
 

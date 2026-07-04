@@ -403,5 +403,6 @@ async def practice_saved_question(
         session_id=session_id,
         summary=summary,
         first_question=opening_q,
+        num_turns=2,
         first_question_audio_url=audio_url,
     )
