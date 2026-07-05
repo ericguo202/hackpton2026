@@ -21,12 +21,19 @@ export const MAX_JOB_DESCRIPTION_CHARS = 6000;
 // Show the remaining-characters counter only once the user is close to the cap.
 const JOB_DESCRIPTION_COUNTER_THRESHOLD = 500;
 
+// Interview-voice pace, sent to the backend as `speech_speed` (→ ElevenLabs
+// `voice_settings.speed`). Mirrors `tts.NORMAL_SPEED`/`SLOWER_SPEED`.
+export const SPEECH_SPEED_NORMAL = 1.1;
+export const SPEECH_SPEED_SLOWER = 0.9;
+
 const linkClass =
   'font-medium text-accent underline underline-offset-4 transition-colors hover:text-text';
 
 type Props = {
   voiceId: string | null;
   onVoiceSelect: (id: string | null) => void;
+  speechSpeed: number;
+  onSpeechSpeedChange: (speed: number) => void;
   jobDescription: string;
   onJobDescriptionChange: (value: string) => void;
   customQuestions: CustomQuestion[];
@@ -38,6 +45,8 @@ type Props = {
 export default function AdvancedPanel({
   voiceId,
   onVoiceSelect,
+  speechSpeed,
+  onSpeechSpeedChange,
   jobDescription,
   onJobDescriptionChange,
   customQuestions,
@@ -58,6 +67,11 @@ export default function AdvancedPanel({
         <VoicePickerGrid
           voiceId={voiceId}
           onSelect={onVoiceSelect}
+          disabled={disabled}
+        />
+        <SpeedToggle
+          speechSpeed={speechSpeed}
+          onChange={onSpeechSpeedChange}
           disabled={disabled}
         />
       </Section>
@@ -167,6 +181,62 @@ export default function AdvancedPanel({
           </p>
         )}
       </Section>
+    </div>
+  );
+}
+
+type SpeedToggleProps = {
+  speechSpeed: number;
+  onChange: (speed: number) => void;
+  disabled: boolean;
+};
+
+/**
+ * Two-option interview-pace toggle sitting under the voice grid. "Normal" is
+ * the brisk 1.1 default; "Slower" (0.9) is aimed at non-native English
+ * speakers who want the interviewer to talk more deliberately.
+ */
+function SpeedToggle({ speechSpeed, onChange, disabled }: SpeedToggleProps) {
+  const options: { label: string; value: number }[] = [
+    { label: 'Normal', value: SPEECH_SPEED_NORMAL },
+    { label: 'Slower', value: SPEECH_SPEED_SLOWER },
+  ];
+  return (
+    <div className="space-y-2">
+      <div
+        role="group"
+        aria-label="Voice pace"
+        className="inline-flex rounded-full border border-border bg-surface-raised p-0.5"
+      >
+        {options.map(({ label, value }) => {
+          const active = speechSpeed === value;
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => onChange(value)}
+              disabled={disabled}
+              aria-pressed={active}
+              className={
+                'rounded-full px-4 py-1.5 text-sm transition-colors ' +
+                'focus-visible:outline-none focus-visible:ring-2 ' +
+                'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
+                'focus-visible:ring-offset-surface ' +
+                'disabled:cursor-not-allowed disabled:opacity-50 ' +
+                (active
+                  ? 'bg-accent font-medium text-accent-fg'
+                  : 'cursor-pointer text-text-muted hover:text-text')
+              }
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-text-subtle text-sm">
+        How fast the interviewer speaks. Slower can help if English isn't your
+        first language.
+      </p>
     </div>
   );
 }
