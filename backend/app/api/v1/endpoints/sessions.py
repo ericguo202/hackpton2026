@@ -478,6 +478,7 @@ async def _followup_and_tts(
     role_signals: list[str] | None = None,
     sample_question_themes: list[str] | None = None,
     experience_level: ExperienceLevel | None = None,
+    jd_summary: list[str] | None = None,
 ) -> tuple[str, str]:
     """Generate follow-up via Flash then TTS — runs before background eval.
 
@@ -488,7 +489,10 @@ async def _followup_and_tts(
     `category`, `role_signals`, `sample_question_themes`, and
     `experience_level` are passed through to `generate_followup` so the
     follow-up prompt sees the same field / research / seniority context the
-    opening question and evaluator already do.
+    opening question and evaluator already do. `jd_summary` (pasted-JD role
+    facts, empty/None otherwise) is threaded the same way so the follow-up
+    doesn't mischaracterize how the role operates — e.g. probing group
+    collaboration for a solo role.
     """
     next_q = await generate_followup(
         question,
@@ -497,6 +501,7 @@ async def _followup_and_tts(
         role_signals=role_signals,
         sample_question_themes=sample_question_themes,
         experience_level=experience_level,
+        jd_summary=jd_summary,
     )
     audio_url = await synthesize_speech(next_q, voice_id=voice_id)
     return next_q, audio_url
