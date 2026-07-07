@@ -92,6 +92,7 @@ def _spawn_finalize(
     final_turn_id: UUID,
     category: FieldCategory | None,
     experience_level: ExperienceLevel | None,
+    jd_summary: list[str] | None = None,
 ) -> None:
     """Spawn background finalization, deduped per session within this process.
 
@@ -109,6 +110,7 @@ def _spawn_finalize(
             final_turn_id=final_turn_id,
             category=category,
             experience_level=experience_level,
+            jd_summary=jd_summary,
         ),
         name=f"finalize-session-{session_id}",
     )
@@ -513,6 +515,7 @@ async def _followup_and_tts(
     role_signals: list[str] | None = None,
     sample_question_themes: list[str] | None = None,
     experience_level: ExperienceLevel | None = None,
+    jd_summary: list[str] | None = None,
 ) -> tuple[str, str]:
     """Generate follow-up via Flash then TTS — runs before background eval.
 
@@ -523,7 +526,10 @@ async def _followup_and_tts(
     `category`, `role_signals`, `sample_question_themes`, and
     `experience_level` are passed through to `generate_followup` so the
     follow-up prompt sees the same field / research / seniority context the
-    opening question and evaluator already do.
+    opening question and evaluator already do. `jd_summary` (pasted-JD role
+    facts, empty/None otherwise) is threaded the same way so the follow-up
+    doesn't mischaracterize how the role operates — e.g. probing group
+    collaboration for a solo role.
     """
     next_q = await generate_followup(
         question,
@@ -532,6 +538,7 @@ async def _followup_and_tts(
         role_signals=role_signals,
         sample_question_themes=sample_question_themes,
         experience_level=experience_level,
+        jd_summary=jd_summary,
     )
     audio_url = await synthesize_speech(next_q, voice_id=voice_id)
     return next_q, audio_url
@@ -776,6 +783,7 @@ async def _run_background_eval(
     cv_summary: dict | None,
     category: FieldCategory | None,
     experience_level: ExperienceLevel | None = None,
+    jd_summary: list[str] | None = None,
 ) -> None:
     """Evaluate a turn after the request has already returned, then persist.
 
@@ -790,7 +798,9 @@ async def _run_background_eval(
     the field-tailored rubric appendix inside `evaluate_turn`. `experience_level`
     is the candidate's seniority and selects the experience-tailored rubric
     appendix; both are passed explicitly because this task runs in a detached
-    AsyncSession with no access to the request-scoped `user` row.
+    AsyncSession with no access to the request-scoped `user` row. `jd_summary`
+    (pasted-JD role facts, `None`/empty otherwise) rides through the same way as
+    calibration-only context for the evaluator.
     """
     try:
         async with AsyncSessionLocal() as db:
@@ -799,6 +809,7 @@ async def _run_background_eval(
                     question, transcript, history,
                     cv_summary=cv_summary, category=category,
                     experience_level=experience_level,
+                    jd_summary=jd_summary,
                 )
                 _log_eval_scores(session_id, turn_id, category, eval_out)
                 await _attach_next_take(
@@ -1048,6 +1059,7 @@ async def _run_background_finalize(
     final_turn_id: UUID,
     category: FieldCategory | None,
     experience_level: ExperienceLevel | None = None,
+    jd_summary: list[str] | None = None,
 ) -> None:
     """Evaluate the final turn and complete the session after the request returns."""
     try:
@@ -1120,6 +1132,7 @@ async def _run_background_finalize(
                         cv_summary=inline_cv,
                         category=category,
                         experience_level=experience_level,
+                        jd_summary=jd_summary,
                     )
                     _log_eval_scores(session_id, turn.id, category, eval_out)
                     await _attach_next_take(
@@ -1213,6 +1226,11 @@ async def submit_turn(
     # evaluator handles by falling back to the default-category prompt.
     brief_out = _parse_company_summary(session.company_summary)
     category: FieldCategory | None = brief_out.category if brief_out else None
+    # Role facts distilled from a pasted JD (empty for Serper / no-JD sessions).
+    # Threaded into the follow-up and evaluator as calibration-only context so
+    # they don't mischaracterize how the role operates (e.g. probing group
+    # collaboration for a solo role).
+    jd_summary: list[str] | None = brief_out.jd_summary if brief_out else None
     # The candidate's seniority tailors the evaluator rubric alongside the
     # field category. Read from the SESSION (frozen at create time), NOT the
     # live user row: this keeps turn 1 and turn 2 on the same rubric even if
@@ -1435,6 +1453,7 @@ async def submit_turn(
                     brief_out.sample_question_themes if brief_out else None
                 ),
                 experience_level=experience_level,
+                jd_summary=jd_summary,
             )
             await _insert_next_turn(
                 db,
@@ -1460,6 +1479,7 @@ async def submit_turn(
                 cv_summary=parsed_cv_summary,
                 category=category,
                 experience_level=experience_level,
+                jd_summary=jd_summary,
             ),
             name=f"eval-session-{session_id}-turn-{current_turn.turn_number}",
         )
@@ -1493,6 +1513,7 @@ async def submit_turn(
         final_turn_id=current_turn.id,
         category=category,
         experience_level=experience_level,
+        jd_summary=jd_summary,
     )
 
     return TurnSubmitOut(
@@ -1647,6 +1668,7 @@ def _maybe_reap_stuck_session(
         final_turn_id=final_turn.id,
         category=brief.category if brief else None,
         experience_level=session.experience_level,
+        jd_summary=brief.jd_summary if brief else None,
     )
 
 

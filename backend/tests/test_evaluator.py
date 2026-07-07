@@ -178,6 +178,39 @@ def test_history_included_in_prompt():
     assert "Well..." in prompt
 
 
+def test_jd_summary_included_in_prompt_as_calibration_context():
+    """Pasted-JD role facts render before the question as calibration-only
+    context (explicitly NOT a scoring rubric)."""
+    from app.services.evaluator import _build_prompt
+
+    prompt = _build_prompt(
+        question="Tell me about a hard call.",
+        transcript="I decided alone.",
+        history=None,
+        jd_summary=["Solo individual-contributor role — no team"],
+    )
+    assert "Role context from the job posting" in prompt
+    assert "for calibration only" in prompt
+    assert "Solo individual-contributor role — no team" in prompt
+    # The role context precedes the question so it reads as framing.
+    assert prompt.index("Role context") < prompt.index("Current question:")
+
+
+def test_jd_summary_omitted_when_empty():
+    """No pasted JD → no role-context section (prompt unchanged for the
+    no-JD path)."""
+    from app.services.evaluator import _build_prompt
+
+    for empty in ([], None):
+        prompt = _build_prompt(
+            question="Tell me about a hard call.",
+            transcript="I decided alone.",
+            history=None,
+            jd_summary=empty,
+        )
+        assert "Role context from the job posting" not in prompt
+
+
 async def test_delivery_absent_when_no_cv_summary(monkeypatch):
     """When the caller passes no cv_summary, the model's 5-key response
     should round-trip with delivery=None — the camera-declined path."""
