@@ -668,6 +668,7 @@ def _build_prompt(
     question: str,
     transcript: str,
     history: list[dict] | None,
+    jd_summary: list[str] | None = None,
 ) -> str:
     parts: list[str] = []
     if history:
@@ -682,6 +683,18 @@ def _build_prompt(
                 f"  Turn {i} answer: "
                 f"<candidate_answer>{turn.get('transcript', '')}</candidate_answer>"
             )
+        parts.append("")
+    # Pasted-JD role facts, when present: calibration context ONLY. Placed
+    # before the question so the evaluator reads it as framing, not as a rubric.
+    # Empty-omission — no-JD sessions get the exact prompt as before.
+    if jd_summary:
+        facts = "; ".join(jd_summary)
+        parts.append(
+            "Role context from the job posting (for calibration only — NOT a "
+            "scoring rubric; do not reward or penalize coverage of these, just "
+            "avoid mischaracterizing how the role operates, e.g. don't fault a "
+            f"solo role for lacking collaboration): {facts}"
+        )
         parts.append("")
     parts.append(f"Current question: {question}")
     parts.append("Candidate answer:")
@@ -764,6 +777,7 @@ async def evaluate_turn(
     cv_summary: dict | None = None,
     category: FieldCategory | None = None,
     experience_level: ExperienceLevel | None = None,
+    jd_summary: list[str] | None = None,
 ) -> EvaluatorOutput:
     """Score one interview turn and return structured JSON.
 
@@ -778,6 +792,11 @@ async def evaluate_turn(
     `experience_level` appends the matching seniority-tailored rubric
     paragraph so scoring expectations scale with level; None (legacy
     sessions / unknown) omits it, leaving the category-only rubric.
+
+    `jd_summary` (pasted-JD role facts, empty/None otherwise) is injected into
+    the user prompt as calibration-only context so the evaluator doesn't
+    mischaracterize the role (e.g. faulting a solo-role answer for lacking
+    collaboration). It does NOT change the scoring rubric or add a dimension.
     """
     # Deterministic prompt-injection gate (initial gate, before any LLM spend).
     # A transcript that tries to hijack the evaluator is not a genuine answer —
@@ -822,7 +841,7 @@ async def evaluate_turn(
             },
             {
                 "role": "user",
-                "content": _build_prompt(question, transcript, history),
+                "content": _build_prompt(question, transcript, history, jd_summary),
             },
         ],
         temperature=0.2,

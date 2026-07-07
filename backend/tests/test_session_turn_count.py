@@ -152,5 +152,8 @@ def test_lazy_reaper_spawns_after_configured_final_turn(monkeypatch):
             "final_turn_id": final_turn.id,
             "category": None,
             "experience_level": None,
+            # Threaded from the reaped session's brief (None here — no company
+            # summary → no brief → no pasted-JD role facts).
+            "jd_summary": None,
         }
     ]

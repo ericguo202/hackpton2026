@@ -1,5 +1,5 @@
 import { Show } from '@clerk/react';
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
 
 import AnalyticsConsentBanner from './components/AnalyticsConsentBanner';
@@ -8,33 +8,63 @@ import BetaFeedbackGate from './components/BetaFeedbackGate';
 import BetaFeedbackLauncher from './components/BetaFeedbackLauncher';
 import EmailConflictNotice from './components/EmailConflictNotice';
 import PolicyAcceptanceGate from './components/PolicyAcceptanceGate';
+import RouteErrorBoundary from './components/RouteErrorBoundary';
 import {
   RedirectIfOnboarded,
   RequireAuth,
   RequireOnboarded,
 } from './components/route-guards';
 import { useMe } from './hooks/useMe';
+import { lazyWithRetry } from './lib/lazyWithRetry';
 
 // Route pages are lazy-loaded so route-specific heavy deps (recharts, MediaPipe,
-// the dither shader) split into per-route async chunks instead of the main bundle.
-const OnboardingForm = lazy(() => import('./components/OnboardingForm'));
-const BiometricDataRetentionPolicy = lazy(
-  () => import('./pages/BiometricDataRetentionPolicy'),
+// the dither shader) split into per-route async chunks instead of the main
+// bundle. `lazyWithRetry` hardens each import against a failed chunk download
+// (transient blip → silent retry; stale filename after a deploy → one reload)
+// so a code-split page can never blank-screen the app.
+const OnboardingForm = lazyWithRetry(
+  () => import('./components/OnboardingForm'),
+  'OnboardingForm',
 );
-const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
-const TermsOfService = lazy(() => import('./pages/TermsOfService'));
-const Hero = lazy(() => import('./pages/Hero'));
-const History = lazy(() => import('./pages/History'));
-const Home = lazy(() => import('./pages/Home'));
-const Calibration = lazy(() => import('./pages/Calibration'));
-const Personalize = lazy(() => import('./pages/Personalize'));
-const Practice = lazy(() => import('./pages/Practice'));
-const SavedQuestionDetail = lazy(() => import('./pages/SavedQuestionDetail'));
-const Settings = lazy(() => import('./pages/Settings'));
-const SessionDetail = lazy(() => import('./pages/SessionDetail'));
-const SignIn = lazy(() => import('./pages/SignIn'));
-const SignUp = lazy(() => import('./pages/SignUp'));
-const SsoCallback = lazy(() => import('./pages/SsoCallback'));
+const BiometricDataRetentionPolicy = lazyWithRetry(
+  () => import('./pages/BiometricDataRetentionPolicy'),
+  'BiometricDataRetentionPolicy',
+);
+const PrivacyPolicy = lazyWithRetry(
+  () => import('./pages/PrivacyPolicy'),
+  'PrivacyPolicy',
+);
+const TermsOfService = lazyWithRetry(
+  () => import('./pages/TermsOfService'),
+  'TermsOfService',
+);
+const Hero = lazyWithRetry(() => import('./pages/Hero'), 'Hero');
+const History = lazyWithRetry(() => import('./pages/History'), 'History');
+const Home = lazyWithRetry(() => import('./pages/Home'), 'Home');
+const Calibration = lazyWithRetry(
+  () => import('./pages/Calibration'),
+  'Calibration',
+);
+const Personalize = lazyWithRetry(
+  () => import('./pages/Personalize'),
+  'Personalize',
+);
+const Practice = lazyWithRetry(() => import('./pages/Practice'), 'Practice');
+const SavedQuestionDetail = lazyWithRetry(
+  () => import('./pages/SavedQuestionDetail'),
+  'SavedQuestionDetail',
+);
+const Settings = lazyWithRetry(() => import('./pages/Settings'), 'Settings');
+const SessionDetail = lazyWithRetry(
+  () => import('./pages/SessionDetail'),
+  'SessionDetail',
+);
+const SignIn = lazyWithRetry(() => import('./pages/SignIn'), 'SignIn');
+const SignUp = lazyWithRetry(() => import('./pages/SignUp'), 'SignUp');
+const SsoCallback = lazyWithRetry(
+  () => import('./pages/SsoCallback'),
+  'SsoCallback',
+);
 
 /** Centered loading screen shared by the route Suspense boundary and SignedInHome. */
 function RouteFallback() {
@@ -82,6 +112,7 @@ function App() {
   return (
     <>
       <AnalyticsProvider />
+      <RouteErrorBoundary>
       <Suspense fallback={<RouteFallback />}>
       <Routes>
       <Route path="/" element={<HomeRoute />} />
@@ -118,6 +149,7 @@ function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </Suspense>
+      </RouteErrorBoundary>
       <PolicyAcceptanceGate />
       <BetaFeedbackGate />
       <BetaFeedbackLauncher />

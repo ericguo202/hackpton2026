@@ -297,3 +297,123 @@ async def test_research_company_without_serper_key_raises(monkeypatch):
 
     with pytest.raises(RuntimeError, match="SERPER_API_KEY"):
         await research_company("Acme", "Engineer")
+
+
+# ── jd_summary (pasted-JD role facts) ─────────────────────────────────────────
+
+
+async def test_research_company_serper_path_leaves_jd_summary_empty(monkeypatch):
+    """The Serper (no-JD) path never emits `jd_summary` — the model response
+    lacks the key and it defaults to []. Guards the downstream empty-omission
+    contract for every session without a pasted job description."""
+    monkeypatch.setattr(company_research.settings, "SERPER_API_KEY", "test-key")
+    _mock_serper(monkeypatch, _fake_serp_payload())
+    monkeypatch.setattr(
+        "app.services.company_research.get_client",
+        lambda: _make_fake_client(_WELL_FORMED_JSON),
+    )
+
+    brief = await research_company("Acme Robotics", "Robotics Engineer")
+
+    assert brief.jd_summary == []
+
+
+async def test_research_company_jd_path_populates_jd_summary(monkeypatch):
+    """A pasted JD skips Serper and the JD summarizer's `jd_summary` bullets
+    land on the brief. Also asserts the Serper path was NOT taken."""
+    def _boom_post(self, *args, **kwargs):
+        raise AssertionError("Serper must not be called on the JD path")
+
+    monkeypatch.setattr("httpx.AsyncClient.post", _boom_post)
+    jd_json = json.dumps(
+        {
+            "description": "A boutique studio; this is a solo design role.",
+            "headlines": ["Owns product design end to end"],
+            "values": [],
+            "category": "Technology, Product, and Design",
+            "role_signals": ["comfort with ambiguity"],
+            "sample_question_themes": ["navigating ambiguous priorities"],
+            "jd_summary": [
+                "Solo / individual-contributor role — no design team",
+                "Owns the full design process end to end",
+                "Reports directly to the founder",
+            ],
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.company_research.get_client",
+        lambda: _make_fake_client(jd_json),
+    )
+
+    brief = await research_company(
+        "Tiny Studio", "Product Designer",
+        job_description="We're hiring a solo designer to own everything.",
+    )
+
+    assert brief.jd_summary == [
+        "Solo / individual-contributor role — no design team",
+        "Owns the full design process end to end",
+        "Reports directly to the founder",
+    ]
+
+
+async def test_research_company_jd_summary_capped_at_five(monkeypatch):
+    """`_normalize_brief_payload` caps jd_summary at 5 bullets even if the
+    model over-produces (belt-and-suspenders over the prompt cap)."""
+    def _fake_post(self, *args, **kwargs):
+        raise AssertionError("Serper must not be called on the JD path")
+
+    monkeypatch.setattr("httpx.AsyncClient.post", _fake_post)
+    jd_json = json.dumps(
+        {
+            "description": "desc",
+            "headlines": ["h"],
+            "values": [],
+            "category": "Technology, Product, and Design",
+            "role_signals": [],
+            "sample_question_themes": [],
+            "jd_summary": [f"fact {i}" for i in range(8)],
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.company_research.get_client",
+        lambda: _make_fake_client(jd_json),
+    )
+
+    brief = await research_company(
+        "Co", "Engineer", job_description="A real posting with enough text.",
+    )
+
+    assert brief.jd_summary == [f"fact {i}" for i in range(5)]
+
+
+def test_jd_system_prompt_contains_jd_summary_contract():
+    prompt = company_research._JD_SYSTEM_INSTRUCTION
+
+    assert "seven keys" in prompt
+    assert '"jd_summary"' in prompt
+    assert "each `jd_summary` item <= 90 chars" in prompt
+    assert "Rules for `jd_summary`" in prompt
+    # The solo-vs-collaborative distinction is the bug this field fixes.
+    assert "SOLO" in prompt and "COLLABORATIVE" in prompt
+
+
+def test_jd_system_prompt_hardened_against_hallucination():
+    """The JD prompt must carry a prominent, global grounding rule so the model
+    never fabricates information the posting doesn't state."""
+    prompt = company_research._JD_SYSTEM_INSTRUCTION
+
+    # A single prominent, top-priority grounding block.
+    assert "ABSOLUTE GROUNDING RULE" in prompt
+    assert "HIGHEST PRIORITY" in prompt
+    # Omit-rather-than-guess posture + "plausible != stated".
+    assert "LEAVE IT OUT" in prompt
+    assert "Plausible is NOT the same as stated" in prompt
+    # No outside knowledge / reputation.
+    assert "NEVER draw on outside knowledge" in prompt
+    # Explicitly forbids guessing solo-vs-collaborative / team structure.
+    assert "do NOT guess" in prompt
+    assert "solo vs. collaborative" in prompt
+    # The narrow carve-out keeps description/category usable for obscure JDs.
+    assert "NARROW CARVE-OUT" in prompt
+    assert "`description`" in prompt and "`category`" in prompt
