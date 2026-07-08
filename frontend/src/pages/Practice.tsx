@@ -208,6 +208,10 @@ function PracticeSession({
   const [replayKey, setReplayKey] = useState(0);
   const [showTranscript, setShowTranscript] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  // Set while the graded early-end request (POST /sessions/{id}/end) is in
+  // flight, so the Quit dialog disables its buttons + shows "Saving…".
+  const [endingSession, setEndingSession] = useState(false);
+  const [endSessionError, setEndSessionError] = useState<string | null>(null);
   // Seconds of the current recording. Driven by the interval effect below;
   // reset to 0 in `handleAudioEnded` (the sole recording-start path) so it
   // never carries a stale value into a new turn.
@@ -466,12 +470,38 @@ function PracticeSession({
       });
   }
 
-  function handleQuit() {
+  async function handleQuit() {
     if (recorder.state !== 'idle') recorder.stop();
     recorder.reset();
-    // Abandoning the session — drop any replays captured so far.
-    clearPracticeReplays(sessionId);
-    navigate('/');
+
+    // Zero completed turns → nothing to grade: a plain client-side abandon
+    // (no backend record, no daily-limit charge), the legacy behavior.
+    if (turnResults.length === 0) {
+      clearPracticeReplays(sessionId);
+      navigate('/');
+      return;
+    }
+
+    // ≥ 1 completed turn → keep the session and grade it on those turns. Fire
+    // the early-end finalize, then land on SessionDetail and poll for scores,
+    // exactly like the normal final-turn path.
+    setEndingSession(true);
+    setEndSessionError(null);
+    try {
+      await apiFetch(`/api/v1/sessions/${sessionId}/end`, { method: 'POST' });
+      trackEvent('session_ended_early', {
+        completed_turns: turnResults.length,
+        total_turns: totalTurns,
+      });
+      clearPracticeReplays(sessionId);
+      navigate(`/sessions/${sessionId}?from=practice`, { replace: true });
+    } catch (err) {
+      console.error('[Practice] end session early failed', err);
+      setEndSessionError(
+        'Could not save your session. Check your connection and try again.',
+      );
+      setEndingSession(false);
+    }
   }
 
   // Interview phase deliberately hides TopBar for a focused recording mode.
@@ -619,12 +649,21 @@ function PracticeSession({
         onRestart={handleRestart}
         onToggleQuestion={() => setShowQuestionText((v) => !v)}
         onToggleTranscript={() => setShowTranscript((v) => !v)}
-        onQuit={() => setShowQuitConfirm(true)}
+        onQuit={() => {
+          setEndSessionError(null);
+          setShowQuitConfirm(true);
+        }}
       />
 
       <QuitConfirmDialog
         open={showQuitConfirm}
-        onCancel={() => setShowQuitConfirm(false)}
+        completedTurns={turnResults.length}
+        busy={endingSession}
+        error={endSessionError}
+        onCancel={() => {
+          if (endingSession) return;
+          setShowQuitConfirm(false);
+        }}
         onConfirm={handleQuit}
       />
     </div>

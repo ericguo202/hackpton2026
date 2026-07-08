@@ -284,6 +284,21 @@ class SessionDetailOut(BaseModel):
     saved_question_id: UUID | None = None
 
 
+class SessionEndOut(BaseModel):
+    """Response for `POST /sessions/{id}/end` (early finalize).
+
+    The status is still `in_progress` here: the endpoint spawns the same
+    detached finalizer the final-turn path uses and returns immediately, so
+    the client navigates to the detail screen and polls until the background
+    task flips the session to `completed`. `graded_turns` is the number of
+    completed (transcript-bearing) turns the session will be scored on.
+    """
+
+    session_id: UUID
+    status: str
+    graded_turns: int
+
+
 class FillerWordStat(BaseModel):
     """One row of the top-N filler-word leaderboard. Counts are exact ints."""
 
