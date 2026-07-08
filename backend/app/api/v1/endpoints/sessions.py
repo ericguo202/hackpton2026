@@ -516,6 +516,8 @@ async def _followup_and_tts(
     sample_question_themes: list[str] | None = None,
     experience_level: ExperienceLevel | None = None,
     jd_summary: list[str] | None = None,
+    already_asked: list[str] | None = None,
+    block_history: list[dict[str, str]] | None = None,
 ) -> tuple[str, str]:
     """Generate follow-up via Flash then TTS — runs before background eval.
 
@@ -530,6 +532,11 @@ async def _followup_and_tts(
     facts, empty/None otherwise) is threaded the same way so the follow-up
     doesn't mischaracterize how the role operates — e.g. probing group
     collaboration for a solo role.
+
+    `already_asked` (questions already posed this interview) and `block_history`
+    (the current story block's prior Q/A pairs) keep a follow-up from repeating
+    or re-treading earlier questions — the anti-repetition half of the
+    variety fix.
     """
     next_q = await generate_followup(
         question,
@@ -539,6 +546,8 @@ async def _followup_and_tts(
         sample_question_themes=sample_question_themes,
         experience_level=experience_level,
         jd_summary=jd_summary,
+        already_asked=already_asked,
+        block_history=block_history,
     )
     audio_url = await synthesize_speech(next_q, voice_id=voice_id)
     return next_q, audio_url
@@ -675,6 +684,26 @@ def _session_opening_avoid_list(
     )
     seen: list[str] = []
     for q in candidates:
+        if q and q not in seen:
+            seen.append(q)
+    return seen
+
+
+def _session_asked_questions(
+    prior_turns: list[InterviewTurn],
+    current_turn: InterviewTurn,
+) -> list[str]:
+    """Every question asked so far this session (openings AND follow-ups),
+    de-duplicated with order preserved. Fed to the follow-up generator's
+    avoid-list so a follow-up doesn't echo any earlier question — in
+    particular so a 2nd follow-up in a block doesn't re-tread the 1st.
+
+    Within-session only: unlike `_session_opening_avoid_list` it omits the
+    user's cross-session recents, since follow-ups are answer-contextual and
+    cross-session repetition is already handled for openings.
+    """
+    seen: list[str] = []
+    for q in [t.question_text for t in prior_turns] + [current_turn.question_text]:
         if q and q not in seen:
             seen.append(q)
     return seen
@@ -1443,6 +1472,9 @@ async def submit_turn(
                 parent_turn_id=None,
             )
         else:
+            # Anti-repetition context: the block's prior Q/As (everything before
+            # the turn we're following up on) plus the within-session avoid-list,
+            # so a 2nd follow-up probes a new facet instead of echoing the 1st.
             next_q, next_audio_url = await _followup_and_tts(
                 current_turn.question_text,
                 transcript,
@@ -1454,6 +1486,10 @@ async def submit_turn(
                 ),
                 experience_level=experience_level,
                 jd_summary=jd_summary,
+                already_asked=_session_asked_questions(prior_turns, current_turn),
+                block_history=_current_block_history(
+                    prior_turns, current_turn, transcript
+                )[:-1],
             )
             await _insert_next_turn(
                 db,
