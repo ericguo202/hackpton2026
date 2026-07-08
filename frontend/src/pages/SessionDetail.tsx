@@ -118,6 +118,9 @@ export default function SessionDetail() {
             <TopBarNavLink to="/personalize">
               Personalize
             </TopBarNavLink>
+            <TopBarNavLink to="/delivery-playground">
+              Delivery
+            </TopBarNavLink>
             <TopBarNavLink to="/calibrate">
               Calibration
             </TopBarNavLink>

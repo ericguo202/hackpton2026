@@ -10,7 +10,7 @@
  * it reveals a stacked dropdown of the same nav nodes so mobile users
  * can still reach History without starting a session. The 900px cutoff
  * (vs. Tailwind's stock `md` at 768px) keeps the user-profile icon from
- * being pushed off-screen once the inline nav has three entries.
+ * being pushed off-screen once the inline nav has several entries.
  */
 
 import { useState, type ReactNode } from 'react';

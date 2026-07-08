@@ -403,6 +403,9 @@ export default function Home() {
             <TopBarNavLink to="/personalize" tourId="nav-personalize">
               Personalize
             </TopBarNavLink>
+            <TopBarNavLink to="/delivery-playground">
+              Delivery
+            </TopBarNavLink>
             <TopBarNavLink to="/calibrate">
               Calibration
             </TopBarNavLink>
