@@ -1,5 +1,10 @@
 import type { InterviewSummary } from './faceHeuristics';
 
+// SYNC: these bands and every constant below are copied verbatim from
+// `backend/app/services/evaluator.py` (the CALIBRATED_* block +
+// `_compute_delivery_score`). The backend is the source of truth — see the
+// ledger on `computeDeliveryScoreDetail` for the full list of what must move
+// together when either side changes.
 const CALIBRATED_EYE_BAD = 47.4;
 const CALIBRATED_EYE_GOOD = 71.0;
 const CALIBRATED_EXPRESSION_BAD = 54.7;
@@ -49,9 +54,22 @@ function roundHalfEven(value: number): number {
 }
 
 /**
- * Frontend mirror of `backend/app/services/evaluator.py:_compute_delivery_score`.
- * Keep this in sync with backend changes so the playground explains the score
- * users later see on a submitted interview turn.
+ * Frontend mirror of `backend/app/services/evaluator.py:_compute_delivery_score`,
+ * so the Delivery playground shows the same number a real turn will score. The
+ * backend is the source of truth; this must be a line-for-line port of it.
+ *
+ * SYNC — when the backend function changes, port the identical change here in the
+ * same commit (no test enforces it yet). Watch these parallel points:
+ *   - the CALIBRATED_* bands + `normalizeBand` mapping;
+ *   - the component weights (calibrated 0.38/0.20/0.22/0.20, raw 0.50/0.30/0.20,
+ *     `visualStability` 0.40/0.35/0.25, and the 0.65/0.35 base blend);
+ *   - the coverage penalties (0.18/0.12/0.07), streak penalties + min() caps
+ *     (14/10/8), and the face-visibility penalty (<96, ×0.55, cap 12);
+ *   - `roundHalfEven(baseScore / 10)` mirrors Python's banker's-rounding
+ *     `round()` — do NOT swap in Math.round;
+ *   - the hard caps (looked-away 85/70/55/40, low-eye+looked-away, face-visible
+ *     50/70/85, posture/tilt 70/50);
+ *   - which InterviewSummary fields are read vs. the backend's cv_summary keys.
  */
 export function computeDeliveryScoreDetail(
   summary: InterviewSummary | null,
