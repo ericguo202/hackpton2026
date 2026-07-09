@@ -53,6 +53,12 @@ EVAL_FALLBACK_MODEL = "deepseek/deepseek-v3.2"
 # Personal calibration from `backend/recordings/calibration_20260418_230315`.
 # These are the bands that separated the user's normal / engaged delivery
 # from clearly egregious drift during calibration capture.
+#
+# SYNC: mirrored verbatim in `frontend/src/lib/deliveryScoring.ts` (the Delivery
+# playground re-derives this score client-side to explain it). If you touch any
+# of these constants, the weights/penalties/caps in `_compute_delivery_score`
+# below, or its field reads, update the mirror in the same commit — see the
+# ledger on `_compute_delivery_score`.
 CALIBRATED_EYE_BAD = 47.4
 CALIBRATED_EYE_GOOD = 71.0
 CALIBRATED_EXPRESSION_BAD = 54.7
@@ -396,6 +402,23 @@ def _compute_delivery_score(cv_summary: dict) -> int:
     visibility, and posture use sustained-issue deductions. Expression stays
     a single soft quality input: calm facial energy must not compound through
     raw-score, coverage, streak, and cap channels.
+
+    SYNC — `frontend/src/lib/deliveryScoring.ts:computeDeliveryScoreDetail` is a
+    line-for-line mirror of this function, so the Delivery playground shows the
+    same number a real turn will score. This function is the source of truth; if
+    you change ANY of the following, port the identical change to the mirror in
+    the same commit (there is no test enforcing it yet):
+      - the CALIBRATED_* bands above and the `_normalize_band` mapping;
+      - the component weights (calibrated 0.38/0.20/0.22/0.20, raw 0.50/0.30/0.20,
+        `visual_stability` 0.40/0.35/0.25, and the 0.65/0.35 base blend);
+      - the coverage penalties (0.18/0.12/0.07) and streak penalties + their
+        min() caps (14/10/8), and the face-visibility penalty (<96, ×0.55, cap 12);
+      - `round(base_score / 10)` — Python round() is banker's rounding, matched
+        by the mirror's `roundHalfEven`, NOT Math.round;
+      - the hard caps (looked-away 85/70/55/40, low-eye+looked-away, face-visible
+        50/70/85, posture/tilt 70/50);
+      - which `cv_summary` keys are read (and the fallback chains, e.g.
+        bad_posture_pct -> posture_drift_pct) vs. the mirror's InterviewSummary.
     """
     overall = _summary_float(cv_summary, "overall_interview_score", 0.0)
     eye = _summary_float(cv_summary, "eye_contact_score", overall)
