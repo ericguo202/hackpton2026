@@ -8,7 +8,6 @@ import {
   Camera,
   CameraOff,
   Gauge,
-  ListChecks,
   PanelRightClose,
   PanelRightOpen,
   ScanFace,
@@ -17,10 +16,8 @@ import { useEffect, useMemo, useState } from 'react';
 
 import AccountButton from '../components/AccountButton';
 import { CameraPreview } from '../components/CameraPreview';
-import PrivacyPanel from '../components/PrivacyPanel';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
-import { useDeliveryConsent } from '../hooks/useDeliveryConsent';
 import { useFaceAnalyzer } from '../hooks/useFaceAnalyzer';
 import { useMe } from '../hooks/useMe';
 import { computeDeliveryScoreDetail } from '../lib/deliveryScoring';
@@ -415,7 +412,6 @@ function AdvancedMetrics({
 
 export default function DeliveryPlayground() {
   const { me } = useMe();
-  const deliveryConsent = useDeliveryConsent();
   const [selectedQuestion, setSelectedQuestion] = useState<string>(SAMPLE_QUESTIONS[0]);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraStarting, setCameraStarting] = useState(false);
@@ -458,7 +454,6 @@ export default function DeliveryPlayground() {
   }, [stream]);
 
   async function startCamera() {
-    if (!deliveryConsent.active) return;
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Camera access is not available in this browser.');
       return;
@@ -555,7 +550,7 @@ export default function DeliveryPlayground() {
                     <Button
                       type="button"
                       onClick={() => { void startCamera(); }}
-                      disabled={cameraStarting || !deliveryConsent.active}
+                      disabled={cameraStarting}
                     >
                       <Camera className="mr-2 h-4 w-4" aria-hidden />
                       {cameraStarting ? 'Starting...' : 'Start camera'}
@@ -614,26 +609,6 @@ export default function DeliveryPlayground() {
           </div>
 
           <aside className="space-y-5">
-            {!deliveryConsent.active && (
-              <section className="space-y-4">
-                <div className="mb-4 flex items-center gap-2">
-                  <ListChecks className="h-4 w-4 text-text-muted" aria-hidden />
-                  <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
-                    Enable delivery analytics
-                  </p>
-                </div>
-                <PrivacyPanel
-                  active={deliveryConsent.active}
-                  busy={deliveryConsent.busy}
-                  error={deliveryConsent.error}
-                  consentLabel={deliveryConsent.label}
-                  onGrant={() => { void deliveryConsent.grant(); }}
-                  onRevoke={() => { void deliveryConsent.revoke(); }}
-                  showAnalytics={false}
-                />
-              </section>
-            )}
-
             <section className="space-y-5">
               <div className="mb-5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
