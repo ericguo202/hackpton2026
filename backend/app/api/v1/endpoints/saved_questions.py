@@ -74,7 +74,7 @@ async def _get_owned_saved_question(
 async def _opening_turn(
     db: AsyncSession, session_id: UUID
 ) -> InterviewTurn | None:
-    """Return the opening (turn 1, non-followup) turn for a session."""
+    """Return the first opening (lowest turn_number, non-followup) turn."""
     result = await db.execute(
         select(InterviewTurn)
         .where(
@@ -85,6 +85,50 @@ async def _opening_turn(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def _resolve_savable_turn(
+    db: AsyncSession, session: InterviewSession, turn_id: UUID | None
+) -> InterviewTurn | None:
+    """Pick the turn to save: a specific opening (`turn_id`) or turn 1.
+
+    Only OPENING turns are savable — a follow-up is answer-contextual and
+    meaningless to re-practice cold, so a follow-up `turn_id` is a 422. A
+    `turn_id` that isn't in this session is a 404. `turn_id is None` keeps the
+    legacy behavior (the session's first opening).
+    """
+    if turn_id is None:
+        return await _opening_turn(db, session.id)
+    turn = await db.get(InterviewTurn, turn_id)
+    if turn is None or turn.session_id != session.id:
+        raise HTTPException(
+            status_code=404, detail="Turn not found in this session"
+        )
+    if turn.is_followup:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only opening questions can be saved, not follow-ups.",
+        )
+    return turn
+
+
+def _pick_attempt_turn(
+    nonfollowup_turns: list[InterviewTurn], question_text: str
+) -> InterviewTurn | None:
+    """Choose which of a session's opening turns represents this saved question.
+
+    A story-block session can contain several openings, so a linked session's
+    baseline attempt must be the opening whose text actually MATCHES the saved
+    question — not just turn 1. Re-practice attempts (turn 1 == the question)
+    match the same way. Falls back to the lowest-numbered opening when no exact
+    match exists (legacy rows / defensive), and None when there's no opening.
+    """
+    for t in nonfollowup_turns:
+        if t.question_text == question_text:
+            return t
+    if not nonfollowup_turns:
+        return None
+    return min(nonfollowup_turns, key=lambda t: t.turn_number)
 
 
 # ── save ────────────────────────────────────────────────────────────────────
@@ -107,18 +151,18 @@ async def save_question(
             detail="Only completed sessions can be saved.",
         )
 
-    # 3. The OPENING turn specifically must be evaluated — `structure_score`
-    #    non-null is the codebase's canonical "evaluated" check. A session
-    #    whose turn 1 eval failed but turn 2 succeeded has a non-null
-    #    overall_score yet no real attempt at the saved question, so gate on
-    #    the opening turn, not the session aggregate.
-    turn1 = await _opening_turn(db, session.id)
-    if turn1 is None or turn1.structure_score is None:
+    # 3. Resolve the target opening turn (a specific one via `turn_id`, or
+    #    turn 1). It must be evaluated — `structure_score` non-null is the
+    #    codebase's canonical "evaluated" check. Gate on the SAVED turn, not the
+    #    session aggregate: a session whose overall_score is non-null (a later
+    #    turn scored) is no proof this particular opening got a real attempt.
+    target = await _resolve_savable_turn(db, session, body.turn_id)
+    if target is None or target.structure_score is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                "This question can't be saved — its opening answer wasn't "
-                "scored. Finish a session where the first answer evaluates."
+                "This question can't be saved — its answer wasn't scored. "
+                "Finish a session where this opening answer evaluates."
             ),
         )
 
@@ -128,7 +172,7 @@ async def save_question(
     existing = await db.execute(
         select(SavedQuestion).where(
             SavedQuestion.user_id == user.id,
-            SavedQuestion.question_text == turn1.question_text,
+            SavedQuestion.question_text == target.question_text,
         )
     )
     dup = existing.scalar_one_or_none()
@@ -166,7 +210,7 @@ async def save_question(
     brief = _parse_company_summary(session.company_summary)
     sq = SavedQuestion(
         user_id=user.id,
-        question_text=turn1.question_text,
+        question_text=target.question_text,
         company=session.company,
         job_title=session.job_title,
         category=brief.category if brief else None,
@@ -179,7 +223,13 @@ async def save_question(
     await db.flush()
 
     # 7. Back-link the originating session as attempt #1 (the baseline).
-    session.saved_question_id = sq.id
+    #    Write-once: a story-block session can have several savable openings,
+    #    but the session→saved_question FK is 1:1, so only the FIRST opening
+    #    saved from a session claims it as a baseline. A later opening saved
+    #    from the same session simply starts with no baseline attempt (its
+    #    re-practices still accrue) rather than stealing the first's link.
+    if session.saved_question_id is None:
+        session.saved_question_id = sq.id
     await db.commit()
     await db.refresh(sq)
 
@@ -274,8 +324,11 @@ async def get_saved_question(
     )
     sessions = sess_result.scalars().all()
 
-    # Opening turn per session in one query, keyed by session_id.
-    turn1_by_session: dict[UUID, InterviewTurn] = {}
+    # All opening turns per session in one query, grouped by session_id, so we
+    # can pick the one whose text matches this saved question (a story-block
+    # session has several openings; the baseline attempt must be the matching
+    # opening, not blindly turn 1).
+    openings_by_session: dict[UUID, list[InterviewTurn]] = {}
     if sessions:
         turn_result = await db.execute(
             select(InterviewTurn).where(
@@ -284,14 +337,11 @@ async def get_saved_question(
             )
         )
         for t in turn_result.scalars().all():
-            # Keep the lowest turn_number per session (the opening turn).
-            existing = turn1_by_session.get(t.session_id)
-            if existing is None or t.turn_number < existing.turn_number:
-                turn1_by_session[t.session_id] = t
+            openings_by_session.setdefault(t.session_id, []).append(t)
 
     attempts: list[SavedQuestionAttempt] = []
     for s in sessions:
-        t1 = turn1_by_session.get(s.id)
+        t1 = _pick_attempt_turn(openings_by_session.get(s.id, []), sq.question_text)
         evaluated = t1 is not None and t1.structure_score is not None
         turn1_scores = (
             ScoresOut(
@@ -403,6 +453,11 @@ async def practice_saved_question(
         session_id=session_id,
         summary=summary,
         first_question=opening_q,
+        # Re-practice is deliberately LOCKED to the legacy 2-turn shape (1
+        # opening + 1 follow-up): a saved question freezes only its own opening,
+        # so a longer re-practice would generate fresh, un-frozen mid-session
+        # openings and defeat the cheap frozen-replay contract. This mirrors the
+        # `_persist_session_and_turn(..., num_turns default 2)` call above.
         num_turns=2,
         first_question_audio_url=audio_url,
     )

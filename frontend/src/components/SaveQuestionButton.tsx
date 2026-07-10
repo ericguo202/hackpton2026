@@ -1,19 +1,25 @@
 /**
- * SaveQuestionButton — save a session's opening question for re-practice.
+ * SaveQuestionButton — save an opening question for re-practice.
  *
- * Reused at two mount points (SessionDetail Turn 1, Practice Results Turn 1).
+ * Mounted on EVERY opening turn (turn 1 and every mid-session story-block
+ * opening; never a follow-up), on both SessionDetail and Practice Results.
  * Three states:
- *   - Save   — clickable; saves this session as the baseline attempt.
+ *   - Save   — clickable; freezes THIS opening as a re-practiceable question.
  *   - Saved  — disabled; already saved (or just saved this click).
  *   - Full   — disabled; the user is at the 5/5 cap.
- * Also disables (with a quiet reason) when the opening turn wasn't scored OR
+ * Also disables (with a quiet reason) when this opening turn wasn't scored OR
  * the session hasn't finished finalizing — the server requires a *completed*
  * session to save, so this mirrors that gate client-side and avoids a pointless
  * 422 (whose error copy would otherwise render under a still-clickable button).
  *
+ * "Already saved" is derived by matching this turn's `questionText` against the
+ * saved-questions list (the server's dedup key), NOT the session-level
+ * saved_question_id — a session can now have several savable openings, so a
+ * single session flag can't say WHICH opening is saved.
+ *
  * Self-contained: pulls the saved-questions list via `useSavedQuestions` to
- * know the current count (cap) and to fire the save + refetch. Semantic
- * tokens only, so it flips in dark mode for free.
+ * know the current count (cap) + the already-saved set, and to fire the save +
+ * refetch. Semantic tokens only, so it flips in dark mode for free.
  */
 
 import { useState } from 'react';
@@ -27,19 +33,22 @@ const SAVED_QUESTION_CAP = 5;
 
 type Props = {
   sessionId: string;
-  /** From `session.saved_question_id != null` — already saved server-side. */
-  alreadySaved: boolean;
-  /** Opening turn was evaluated (turn 1 has non-null scores). */
+  /** The specific opening turn to save. */
+  turnId: string;
+  /** This opening turn's question text — matched against the saved list. */
+  questionText: string;
+  /** This opening turn was evaluated (non-null scores). */
   evaluated: boolean;
   /** Session has finished finalizing (status === 'completed'). The save
    *  endpoint rejects non-completed sessions, so the button stays disabled
-   *  while turn 2 is still scoring even though turn 1 already has scores. */
+   *  while a later turn is still scoring even though this one has scores. */
   sessionCompleted: boolean;
 };
 
 export default function SaveQuestionButton({
   sessionId,
-  alreadySaved,
+  turnId,
+  questionText,
   evaluated,
   sessionCompleted,
 }: Props) {
@@ -48,6 +57,7 @@ export default function SaveQuestionButton({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const alreadySaved = saved?.some((q) => q.question_text === questionText) ?? false;
   const isSaved = alreadySaved || justSaved;
   const atCap = !isSaved && (saved?.length ?? 0) >= SAVED_QUESTION_CAP;
   const disabled = isSaved || atCap || !evaluated || !sessionCompleted || busy;
@@ -56,7 +66,7 @@ export default function SaveQuestionButton({
     setError(null);
     setBusy(true);
     try {
-      await save(sessionId);
+      await save(sessionId, turnId);
       setJustSaved(true);
       trackEvent('saved_question_created');
     } catch (err) {
