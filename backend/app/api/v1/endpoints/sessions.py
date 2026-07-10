@@ -1531,6 +1531,7 @@ async def submit_turn(
             filler_word_breakdown=filler_breakdown,
             next_question=next_q,
             next_question_audio_url=next_audio_url,
+            next_question_is_followup=(route == "followup"),
             is_final=False,
             evaluation_pending=True,
         )

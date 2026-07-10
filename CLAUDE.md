@@ -185,7 +185,7 @@ All routes except `/health` require Clerk JWT via a FastAPI dependency.
 ```
 POST /onboarding              { resume_file, industry, target_role, short_bio }
 POST /sessions                { company, job_title, voice_id?, timezone?, job_description? (≤6000), acknowledge_mismatch? } → 201 { session_id, summary, first_question, first_question_audio_url } | 422 (JD gibberish) | 409 { code:"job_description_mismatch", message } (JD↔profile mismatch; re-submit with acknowledge_mismatch=true) | 429 (daily limit)
-POST /sessions/{id}/turns     { audio_blob, cv_summary? } → { transcript, scores|null, feedback|null, feedback_detail|null, next_question, next_question_audio_url, is_final, evaluation_pending }
+POST /sessions/{id}/turns     { audio_blob, cv_summary? } → { transcript, scores|null, feedback|null, feedback_detail|null, next_question, next_question_audio_url, next_question_is_followup, is_final, evaluation_pending }
 POST /sessions/{id}/end        (quit early) → 200 SessionEndOut { session_id, status, graded_turns } | 400 (not in progress) | 404 | 422 (no completed turns). Keeps + grades the session on its completed turns; spawns the same detached finalizer; counts toward the daily limit.
 GET  /sessions/{id}           full session + turns (incl. saved_question_id)
 GET  /sessions                user's session history

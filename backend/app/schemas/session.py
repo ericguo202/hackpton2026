@@ -179,6 +179,11 @@ class TurnSubmitOut(BaseModel):
     filler_word_breakdown: dict[str, int]
     next_question: str | None
     next_question_audio_url: str | None
+    # True when the next question drills into the current story (a follow-up)
+    # rather than opening a fresh story block. Lets Practice label the upcoming
+    # question as a follow-up during recording. False on the final turn (no
+    # next question) and whenever the next turn is a fresh opening.
+    next_question_is_followup: bool = False
     is_final: bool
     # True when the evaluator is still running in the background. The
     # frontend uses this to (a) avoid showing 0/10 placeholder bars on

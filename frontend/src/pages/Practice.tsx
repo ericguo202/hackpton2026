@@ -54,7 +54,7 @@ export type PracticeLocationState = {
   jobTitle: string;
 };
 
-type CurrentQ = { text: string; audioUrl: string; num: number };
+type CurrentQ = { text: string; audioUrl: string; num: number; isFollowup: boolean };
 
 /** Minimal record of a completed turn — just what the in-session transcript
  *  toggle needs to show the prior answer during the next turn. */
@@ -196,6 +196,8 @@ function PracticeSession({
     text: initial.firstQuestion,
     audioUrl: initial.firstQuestionAudioUrl,
     num: 1,
+    // Turn 1 opens a story block — never a follow-up.
+    isFollowup: false,
   });
   const [turnResults, setTurnResults] = useState<PriorTurn[]>([]);
   const [submittingTurn, setSubmittingTurn] = useState(false);
@@ -367,6 +369,7 @@ function PracticeSession({
           text: result.next_question!,
           audioUrl: result.next_question_audio_url!,
           num: currentQ.num + 1,
+          isFollowup: result.next_question_is_followup,
         });
         // Remount the <audio> (like Re-record / Restart) so the new question
         // routes through the same programmatic-play path instead of relying on
@@ -564,6 +567,7 @@ function PracticeSession({
       >
         <QuestionColumn
           questionText={currentQ.text}
+          isFollowup={currentQ.isFollowup}
           audioUrl={currentQ.audioUrl}
           showQuestionText={showQuestionDuringSession}
           replayKey={replayKey}
