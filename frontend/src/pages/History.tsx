@@ -718,7 +718,11 @@ function SavedQuestionsSection() {
   // one saved question — an empty section would be visual noise.
   if (isLoading || !saved || saved.length === 0) return null;
 
-  async function handleRePractice(sq: SavedQuestionListItem, voiceId: string | null) {
+  async function handleRePractice(
+    sq: SavedQuestionListItem,
+    voiceId: string | null,
+    speechSpeed: number,
+  ) {
     setBusyId(sq.id);
     try {
       // Same mic preflight as Home's Begin-session, so the user lands in
@@ -733,7 +737,7 @@ function SavedQuestionsSection() {
         });
         return;
       }
-      const data = await rePractice(sq.id, voiceId);
+      const data = await rePractice(sq.id, voiceId, speechSpeed);
       const state: PracticeLocationState = {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
@@ -793,8 +797,8 @@ function SavedQuestionsSection() {
         busy={busyId !== null}
         questionText={pendingSq?.question_text}
         onCancel={() => setPendingSq(null)}
-        onStart={(voiceId) => {
-          if (pendingSq) void handleRePractice(pendingSq, voiceId);
+        onStart={(voiceId, speechSpeed) => {
+          if (pendingSq) void handleRePractice(pendingSq, voiceId, speechSpeed);
         }}
       />
     </section>
