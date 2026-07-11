@@ -246,15 +246,13 @@ single-shot scoring). A few directions worth exploring beyond this build:
 
 - **Variable-length sessions** — drop the hardcoded 2-turn rule, let the
   evaluator decide when the answer warrants a deeper follow-up vs. moving on.
-  Requires a smarter end-condition than `turn_number >= 2`.
+  Requires a smarter end-condition than `turn_number >= 2`. **coming soon!**
 - **More interview formats** — the architecture is generic; technical-screen
   framing, case-interview prompts, and consulting fit-style questions are all
   swap-the-prompt features.
 - **Streaming TTS / LiveAvatar** — ElevenLabs supports streaming; pairing it
   with a HeyGen LiveAvatar would give the interviewer a face. Lite-mode
   integration was scoped but cut for time.
-- **Recruiter mode** — let the candidate paste a job description and have
-  the question generator target it, instead of inferring from company + role.
 - **Spoken-feedback mode** — pipe the structured feedback back through TTS at the
   end of the session so the review feels like a debrief, not a report card.
 - **Comparative analytics** — anonymized cohort percentiles ("your
