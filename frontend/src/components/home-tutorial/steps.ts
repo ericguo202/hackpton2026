@@ -29,7 +29,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     selector: '[data-tour="nav-calibration"]',
-    body: 'Calibrate your webcam so we can score delivery. Calibration is saved to this browser only, so switching devices or browsers means you will need to calibrate again.',
+    body: 'Calibrate your webcam to tailor delivery scoring to your face and camera angle. Delivery is still scored without it, using default settings. Calibration is saved to this browser only, so switching devices or browsers means calibrating again.',
   },
   {
     selector: '[data-tour="company-input"]',
