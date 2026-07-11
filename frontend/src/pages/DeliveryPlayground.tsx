@@ -20,7 +20,10 @@ import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useFaceAnalyzer } from '../hooks/useFaceAnalyzer';
 import { useMe } from '../hooks/useMe';
-import { computeDeliveryScoreDetail } from '../lib/deliveryScoring';
+import {
+  computeDeliveryScoreDetail,
+  type DeliveryScoreDetail,
+} from '../lib/deliveryScoring';
 import { readFaceCalibration } from '../lib/faceCalibration';
 import { hasActiveFaceCalibrationConsent } from '../lib/faceCalibrationConsent';
 import { cn } from '../lib/utils';
@@ -307,14 +310,15 @@ function AdvancedMetrics({
   faceFrames,
   analyzerStatus,
   initError,
+  scoreDetail,
 }: {
   summary: InterviewSummary | null;
   framesProcessed: number;
   faceFrames: number;
   analyzerStatus: string;
   initError: string | null;
+  scoreDetail: DeliveryScoreDetail | null;
 }) {
-  const scoreDetail = computeDeliveryScoreDetail(summary);
   const rows = [
     ['Analyzer', analyzerStatus],
     ['Frames', framesProcessed.toLocaleString()],
@@ -428,7 +432,10 @@ export default function DeliveryPlayground() {
   );
   const analyzer = useFaceAnalyzer(stream, stream !== null, calibration);
   const summary = analyzer.diagnostics.lastSummary;
-  const scoreDetail = computeDeliveryScoreDetail(summary);
+  const scoreDetail = useMemo(
+    () => computeDeliveryScoreDetail(summary),
+    [summary],
+  );
   const cameraState: CameraState = cameraStarting ? 'starting' : stream ? 'on' : 'off';
   const feedbackCues = buildFeedbackCues(
     summary,
@@ -652,6 +659,7 @@ export default function DeliveryPlayground() {
                 faceFrames={analyzer.diagnostics.faceFrames}
                 analyzerStatus={analyzer.diagnostics.status}
                 initError={analyzer.diagnostics.initError}
+                scoreDetail={scoreDetail}
               />
             )}
           </aside>
