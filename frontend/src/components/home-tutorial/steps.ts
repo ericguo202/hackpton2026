@@ -3,7 +3,7 @@
  *
  * Each step points at an existing element located by its `[data-tour="..."]`
  * attribute (added in `Home.tsx` + `TopBar.tsx`). Order is the walkthrough
- * order: the three TopBar nav links first, then the Home form controls top to
+ * order: the four TopBar nav links first, then the Home form controls top to
  * bottom. Copy is product-owned — keep it in sync with the approved plan.
  */
 
@@ -26,6 +26,10 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     selector: '[data-tour="nav-personalize"]',
     body: 'Update target industry and role, bio, and resume, or add custom questions to practice.',
+  },
+  {
+    selector: '[data-tour="nav-calibration"]',
+    body: 'Calibrate your webcam so we can score delivery. Calibration is saved to this browser only, so switching devices or browsers means you will need to calibrate again.',
   },
   {
     selector: '[data-tour="company-input"]',
