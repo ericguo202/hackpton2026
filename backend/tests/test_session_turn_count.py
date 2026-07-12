@@ -95,7 +95,10 @@ async def test_insert_followup_turn_uses_next_turn_number():
     assert db.added.is_followup is True
 
 
-def test_lazy_reaper_waits_for_configured_final_turn(monkeypatch):
+def test_lazy_reaper_waits_while_a_turn_is_still_pending(monkeypatch):
+    """A genuinely mid-interview session has a committed dangling (unanswered)
+    turn — the question the candidate is currently on. The reaper must leave it
+    alone so a slow answer isn't finalized out from under the user."""
     spawned = []
     monkeypatch.setattr(
         sessions_module,
@@ -106,7 +109,7 @@ def test_lazy_reaper_waits_for_configured_final_turn(monkeypatch):
     session = SimpleNamespace(
         id=uuid.uuid4(),
         status=SessionStatus.in_progress,
-        num_turns=4,
+        num_turns=6,
         updated_at=datetime.now(timezone.utc) - timedelta(minutes=10),
         company_summary=None,
         experience_level=None,
@@ -114,12 +117,52 @@ def test_lazy_reaper_waits_for_configured_final_turn(monkeypatch):
     turns = [
         SimpleNamespace(id=uuid.uuid4(), turn_number=1, transcript_text="one"),
         SimpleNamespace(id=uuid.uuid4(), turn_number=2, transcript_text="two"),
-        SimpleNamespace(id=uuid.uuid4(), turn_number=3, transcript_text="three"),
+        # The next question was inserted + committed but not yet answered.
+        SimpleNamespace(id=uuid.uuid4(), turn_number=3, transcript_text=None),
     ]
 
     sessions_module._maybe_reap_stuck_session(session, turns)
 
     assert spawned == []
+
+
+def test_lazy_reaper_spawns_for_early_ended_session(monkeypatch):
+    """An early-ended session (quit after 2 of 6 turns) has had its dangling
+    turn trimmed, so every remaining turn is answered. A stuck one — the
+    detached finalizer died — is reaped even though it never reached num_turns,
+    anchored on the highest-numbered answered turn."""
+    spawned = []
+    monkeypatch.setattr(
+        sessions_module,
+        "_spawn_finalize",
+        lambda **kwargs: spawned.append(kwargs),
+    )
+
+    session = SimpleNamespace(
+        id=uuid.uuid4(),
+        status=SessionStatus.in_progress,
+        num_turns=6,
+        updated_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        company_summary=None,
+        experience_level=None,
+    )
+    last_answered = SimpleNamespace(id=uuid.uuid4(), turn_number=2, transcript_text="two")
+    turns = [
+        SimpleNamespace(id=uuid.uuid4(), turn_number=1, transcript_text="one"),
+        last_answered,
+    ]
+
+    sessions_module._maybe_reap_stuck_session(session, turns)
+
+    assert spawned == [
+        {
+            "session_id": session.id,
+            "final_turn_id": last_answered.id,
+            "category": None,
+            "experience_level": None,
+            "jd_summary": None,
+        }
+    ]
 
 
 def test_lazy_reaper_spawns_after_configured_final_turn(monkeypatch):

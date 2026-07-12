@@ -34,6 +34,7 @@ from app.schemas.session import (
     SessionCreateIn,
     SessionCreateOut,
     SessionDetailOut,
+    SessionEndOut,
     SessionListItem,
     TurnOut,
     TurnSubmitOut,
@@ -516,6 +517,8 @@ async def _followup_and_tts(
     sample_question_themes: list[str] | None = None,
     experience_level: ExperienceLevel | None = None,
     jd_summary: list[str] | None = None,
+    already_asked: list[str] | None = None,
+    block_history: list[dict[str, str]] | None = None,
 ) -> tuple[str, str]:
     """Generate follow-up via Flash then TTS — runs before background eval.
 
@@ -530,6 +533,11 @@ async def _followup_and_tts(
     facts, empty/None otherwise) is threaded the same way so the follow-up
     doesn't mischaracterize how the role operates — e.g. probing group
     collaboration for a solo role.
+
+    `already_asked` (questions already posed this interview) and `block_history`
+    (the current story block's prior Q/A pairs) keep a follow-up from repeating
+    or re-treading earlier questions — the anti-repetition half of the
+    variety fix.
     """
     next_q = await generate_followup(
         question,
@@ -539,6 +547,8 @@ async def _followup_and_tts(
         sample_question_themes=sample_question_themes,
         experience_level=experience_level,
         jd_summary=jd_summary,
+        already_asked=already_asked,
+        block_history=block_history,
     )
     audio_url = await synthesize_speech(next_q, voice_id=voice_id)
     return next_q, audio_url
@@ -675,6 +685,26 @@ def _session_opening_avoid_list(
     )
     seen: list[str] = []
     for q in candidates:
+        if q and q not in seen:
+            seen.append(q)
+    return seen
+
+
+def _session_asked_questions(
+    prior_turns: list[InterviewTurn],
+    current_turn: InterviewTurn,
+) -> list[str]:
+    """Every question asked so far this session (openings AND follow-ups),
+    de-duplicated with order preserved. Fed to the follow-up generator's
+    avoid-list so a follow-up doesn't echo any earlier question — in
+    particular so a 2nd follow-up in a block doesn't re-tread the 1st.
+
+    Within-session only: unlike `_session_opening_avoid_list` it omits the
+    user's cross-session recents, since follow-ups are answer-contextual and
+    cross-session repetition is already handled for openings.
+    """
+    seen: list[str] = []
+    for q in [t.question_text for t in prior_turns] + [current_turn.question_text]:
         if q and q not in seen:
             seen.append(q)
     return seen
@@ -1443,6 +1473,9 @@ async def submit_turn(
                 parent_turn_id=None,
             )
         else:
+            # Anti-repetition context: the block's prior Q/As (everything before
+            # the turn we're following up on) plus the within-session avoid-list,
+            # so a 2nd follow-up probes a new facet instead of echoing the 1st.
             next_q, next_audio_url = await _followup_and_tts(
                 current_turn.question_text,
                 transcript,
@@ -1454,6 +1487,10 @@ async def submit_turn(
                 ),
                 experience_level=experience_level,
                 jd_summary=jd_summary,
+                already_asked=_session_asked_questions(prior_turns, current_turn),
+                block_history=_current_block_history(
+                    prior_turns, current_turn, transcript
+                )[:-1],
             )
             await _insert_next_turn(
                 db,
@@ -1494,6 +1531,7 @@ async def submit_turn(
             filler_word_breakdown=filler_breakdown,
             next_question=next_q,
             next_question_audio_url=next_audio_url,
+            next_question_is_followup=(route == "followup"),
             is_final=False,
             evaluation_pending=True,
         )
@@ -1527,6 +1565,85 @@ async def submit_turn(
         next_question_audio_url=None,
         is_final=True,
         evaluation_pending=True,
+    )
+
+
+@router.post("/{session_id}/end", response_model=SessionEndOut)
+async def end_session_early(
+    session_id: UUID,
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> SessionEndOut:
+    """Finalize a session the user is quitting mid-interview, grading only the
+    turns they actually completed.
+
+    A longer (2–8 turn) interview can be interrupted — class starts, time runs
+    out — so abandoning the whole thing and losing the feedback for turns the
+    candidate DID finish is unfair. Every completed turn was already submitted
+    and evaluated in the background, so we can grade the session on just those.
+
+    Requires ≥ 1 answered (transcript-bearing) turn; the frontend only calls
+    this in that case (a zero-turn quit stays a pure client-side abandon with
+    no record and no daily-limit charge). The completed session counts toward
+    the free-tier daily limit like any other finalized session — the normal
+    finalize path increments the counter.
+
+    Mirrors the final-turn finalize: trims the dangling unanswered turn, then
+    spawns the same detached `_run_background_finalize`. Returning immediately
+    (rather than awaiting) lets the finalize survive the user closing the tab
+    the instant they quit; the generalized lazy reaper in `get_session` is the
+    backstop if that detached task dies.
+    """
+    session = await db.get(InterviewSession, session_id)
+    if not session or session.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != SessionStatus.in_progress:
+        raise HTTPException(status_code=400, detail="Session is not in progress")
+
+    turns_result = await db.execute(
+        select(InterviewTurn)
+        .where(InterviewTurn.session_id == session_id)
+        .order_by(InterviewTurn.turn_number)
+    )
+    turns = list(turns_result.scalars().all())
+
+    answered = [t for t in turns if t.transcript_text is not None]
+    if not answered:
+        raise HTTPException(
+            status_code=422,
+            detail="No completed turns to grade.",
+        )
+
+    # Trim the dangling turn(s): when a non-final turn is submitted the next
+    # question is inserted + committed with a NULL transcript, so a quit mid-
+    # interview leaves exactly one unanswered turn. Deleting it leaves the
+    # session with only completed turns, so (a) SessionDetail/history render no
+    # empty trailing turn and (b) the reaper's "no pending turn" signal is
+    # well-defined. Each is a leaf (nothing points to it as parent_turn_id).
+    for turn in turns:
+        if turn.transcript_text is None:
+            await db.delete(turn)
+
+    final_turn = max(answered, key=lambda t: t.turn_number)
+
+    # Fresh reaper clock (mirrors the final-turn path), then commit before
+    # spawning so the detached finalizer reads the trimmed, committed state.
+    session.updated_at = datetime.utcnow()
+    await db.commit()
+
+    brief = _parse_company_summary(session.company_summary)
+    _spawn_finalize(
+        session_id=session_id,
+        final_turn_id=final_turn.id,
+        category=brief.category if brief else None,
+        experience_level=session.experience_level,
+        jd_summary=brief.jd_summary if brief else None,
+    )
+
+    return SessionEndOut(
+        session_id=session_id,
+        status=session.status.value,
+        graded_turns=len(answered),
     )
 
 
@@ -1622,27 +1739,35 @@ def _maybe_reap_stuck_session(
 ) -> None:
     """Lazily recover a session left `in_progress` by a dead finalizer.
 
-    The final-turn POST persists the transcript and hands scoring to a
-    detached `_run_background_finalize` task. If the worker that spawned it
-    dies before it commits (deploy, crash, OOM) — or the task itself raised
-    and left the session un-finalized — the row stays `in_progress` forever:
-    there is no cron sweeper. Recover opportunistically on read.
+    Two paths hand scoring to a detached `_run_background_finalize` task and
+    return before it commits: the final-turn POST, and `POST /{id}/end` (early
+    quit, graded on the completed turns). If the worker that spawned the task
+    dies before it commits (deploy, crash, OOM) — or the task itself raised and
+    left the session un-finalized — the row stays `in_progress` forever: there
+    is no cron sweeper. Recover opportunistically on read.
 
-    Only fires once the final answer is durably persisted and the grace
-    window has elapsed, and re-uses `_spawn_finalize`'s per-session dedup so
-    it can never run alongside a finalizer this worker is already driving.
-    `_run_background_finalize` is itself idempotent — it no-ops on a session
-    that's since completed and only evaluates still-unscored turns — so a
-    spurious re-spawn is harmless.
+    Fires once the session has NO pending (unanswered) turn and the grace
+    window has elapsed. "No pending turn" is the general finalizable signal:
+    mid-interview there is always a committed dangling next turn (the non-final
+    branch inserts + commits it), so an `in_progress` session with every turn
+    answered is either the final turn done (finalizer died) or an early-ended
+    session whose trailing unanswered turn was trimmed — both should finalize.
+    A candidate merely taking a long time still has their current turn as a
+    NULL-transcript row, so they're never reaped mid-answer.
+
+    Re-uses `_spawn_finalize`'s per-session dedup so it can never run alongside
+    a finalizer this worker is already driving. `_run_background_finalize` is
+    itself idempotent — it no-ops on a session that's since completed and only
+    evaluates still-unscored turns — so a spurious re-spawn is harmless.
     """
     if session.status != SessionStatus.in_progress:
         return
-    # Final answer committed? The persisted turn target carries the last answer.
+    # Finalizable only once every turn is answered (no dangling unanswered
+    # turn). The highest-numbered answered turn is the finalizer's anchor.
     final_turn = max(turns, key=lambda t: t.turn_number, default=None)
     if (
         final_turn is None
-        or final_turn.turn_number < session.num_turns
-        or final_turn.transcript_text is None
+        or any(t.transcript_text is None for t in turns)
     ):
         return
     # Still within the window where a normal finalizer is expected to finish.

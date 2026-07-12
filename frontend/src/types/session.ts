@@ -54,6 +54,10 @@ export type TurnResult = {
   filler_word_breakdown: Record<string, number>;
   next_question: string | null;
   next_question_audio_url: string | null;
+  // True when the next question is a follow-up (drills into the current story)
+  // rather than a fresh opening. Drives the "Follow-up question" label during
+  // recording. False on the final turn and for mid-session opening pivots.
+  next_question_is_followup: boolean;
   is_final: boolean;
   // True when scores are still being computed in the background.
   evaluation_pending: boolean;

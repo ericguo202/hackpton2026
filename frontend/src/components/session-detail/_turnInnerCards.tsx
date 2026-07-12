@@ -129,7 +129,7 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
   const transcriptId = useId();
   return (
     <InnerCard>
-      <Eyebrow>Question</Eyebrow>
+      <Eyebrow>{turn.is_followup ? 'Follow-up question' : 'Question'}</Eyebrow>
       <p className="mt-2 text-lg leading-snug text-text">
         {turn.question_text}
       </p>

@@ -6,6 +6,7 @@ with a `messages`-capturing variant so tests can assert what the actual
 prompt the model would have seen looks like.
 """
 
+import random
 from types import SimpleNamespace
 
 import pytest
@@ -13,7 +14,13 @@ import pytest
 from app.db.models.enums import ExperienceLevel
 from app.services.followup import (
     _FALLBACK,
+    _FOLLOWUP_EXAMPLES,
+    _PROBE_ANGLES,
+    _SYSTEM_PROMPT,
+    _render_avoid_block,
+    _render_block_history,
     _render_context_block,
+    _render_variety_block,
     _sanitize_followup,
     generate_followup,
 )
@@ -322,3 +329,103 @@ async def test_experience_level_threaded_into_prompt(monkeypatch):
     )
     user_message = next(m for m in captured[0] if m["role"] == "user")["content"]
     assert "Candidate's experience level: executive" in user_message
+
+
+# ── variety machinery: probe-angle + example rotation ────────────────────────
+
+
+def test_variety_block_samples_exactly_two_angles_and_examples():
+    """A pinned rng surfaces exactly 2 probe-angles + 2 style exemplars — the
+    2-of-N sampling that breaks the single-template attractor."""
+    block = _render_variety_block(random.Random(0))
+    angles_hit = [a for a in _PROBE_ANGLES if a in block]
+    examples_hit = [e for e in _FOLLOWUP_EXAMPLES if e in block]
+    assert len(angles_hit) == 2
+    assert len(examples_hit) == 2
+    assert "Angles worth probing" in block
+    assert "Style cues" in block
+
+
+def test_variety_block_rotates_with_rng():
+    """Different rng seeds pick different angle/example sets — successive
+    follow-ups don't converge on one fixed set."""
+    a = _render_variety_block(random.Random(1))
+    b = _render_variety_block(random.Random(4))
+    assert a != b
+
+
+def test_variety_block_always_present_even_without_rng():
+    """Production passes rng=None (fresh randomness); the block still renders
+    2 angles + 2 examples."""
+    block = _render_variety_block(None)
+    assert len([a for a in _PROBE_ANGLES if a in block]) == 2
+    assert len([e for e in _FOLLOWUP_EXAMPLES if e in block]) == 2
+
+
+# ── avoid-list + block-history (anti-repetition) ─────────────────────────────
+
+
+def test_avoid_block_rendered_and_omitted():
+    block = _render_avoid_block(["What was the hardest part?", "Who else was involved?"])
+    assert "AVOID REPETITION" in block
+    assert "What was the hardest part?" in block
+    assert "Who else was involved?" in block
+    # Empty-omission: no already-asked list → no block (legacy prompt unchanged).
+    assert _render_avoid_block([]) == ""
+    assert _render_avoid_block(None) == ""
+
+
+def test_block_history_rendered_and_omitted():
+    block = _render_block_history(
+        [
+            {"question": "Tell me about a launch you led.", "transcript": "I led the payments launch."},
+            {"question": "How did you de-risk it?", "transcript": "We shipped behind a flag."},
+        ]
+    )
+    assert "Already explored earlier in THIS story" in block
+    assert "Opening asked: Tell me about a launch you led." in block
+    assert "Earlier follow-up 1 asked: How did you de-risk it?" in block
+    # Empty-omission.
+    assert _render_block_history([]) == ""
+    assert _render_block_history(None) == ""
+
+
+# ── system prompt no longer carries static exemplars ─────────────────────────
+
+
+def test_system_prompt_dropped_static_good_examples_and_softened_reference():
+    """The three hardcoded 'Good examples' (the fixed attractor) are gone from
+    the cached system prefix, and the rigid 'reference something concrete' rule
+    is softened so not every follow-up opens with 'You mentioned…'."""
+    assert "Good examples" not in _SYSTEM_PROMPT
+    assert "how did you prioritize when everything felt urgent" not in _SYSTEM_PROMPT
+    assert 'Do NOT open every follow-up with "You mentioned..."' in _SYSTEM_PROMPT
+    # Bad examples stay (universal anti-patterns, safe to cache).
+    assert "Bad examples" in _SYSTEM_PROMPT
+
+
+# ── end-to-end threading through generate_followup ───────────────────────────
+
+
+async def test_generate_followup_threads_avoid_list_and_block_history(monkeypatch):
+    """already_asked + block_history reach the user message so a follow-up
+    doesn't re-tread earlier questions in the interview."""
+    captured: list = []
+    monkeypatch.setattr(
+        "app.services.followup.get_client",
+        lambda: _make_fake_client("What would you do differently next time?", captured),
+    )
+    await generate_followup(
+        "How did you de-risk the launch?",
+        "We shipped behind a feature flag.",
+        already_asked=["Tell me about a launch you led."],
+        block_history=[
+            {"question": "Tell me about a launch you led.", "transcript": "The payments launch."}
+        ],
+        rng=random.Random(7),
+    )
+    user_message = next(m for m in captured[0] if m["role"] == "user")["content"]
+    assert "AVOID REPETITION" in user_message
+    assert "Tell me about a launch you led." in user_message
+    assert "Already explored earlier in THIS story" in user_message
+    assert "Angles worth probing" in user_message

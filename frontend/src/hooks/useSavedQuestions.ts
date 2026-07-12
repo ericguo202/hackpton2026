@@ -29,10 +29,18 @@ export function useSavedQuestions() {
     useFetch<SavedQuestionListItem[]>('/api/v1/saved-questions');
 
   const save = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, turnId?: string) => {
       const created = await apiFetch<SavedQuestionOut>(
         '/api/v1/saved-questions',
-        { method: 'POST', body: JSON.stringify({ session_id: sessionId }) },
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            session_id: sessionId,
+            // Target a specific opening turn (mid-session openings are
+            // savable too); omitted → the backend saves turn 1.
+            ...(turnId ? { turn_id: turnId } : {}),
+          }),
+        },
       );
       await fetchSaved();
       return created;
