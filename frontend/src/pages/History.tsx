@@ -585,8 +585,11 @@ export default function History() {
                   onChange={handleFilterFieldChange}
                 />
               </div>
+              {/* Left-aligned so the right-side dropdown popup (which opens
+                  downward) never covers the active-filter status or its Clear
+                  link. */}
               {activeFilter && (
-                <p className="mt-3 text-right text-xs text-text-subtle">
+                <p className="mt-3 text-left text-xs text-text-subtle">
                   Showing {activeFilter.field === 'company' ? 'company' : 'role'}{' '}
                   <span className="text-text-muted">“{activeFilter.value}”</span> ·{' '}
                   {filteredCount} session{filteredCount === 1 ? '' : 's'}
