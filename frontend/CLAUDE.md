@@ -139,13 +139,21 @@ The per-turn cards live in **`components/session-detail/_turnInnerCards.tsx`** a
 - **History section** — `SavedQuestionsSection` above "Sessions", hidden when zero. Re-practice → `POST /saved-questions/{id}/practice` → `navigate('/practice', {state})`. Row click → `/saved-question/:id`.
 - **`pages/SavedQuestionDetail.tsx`** — recharts `LineChart`: Overall + per-dimension lines across attempts. **Overall recomputed frontend-side as mean of turn-1 dims** (`openingOverall()`) — NOT session blended `overall_score` (fixes turn-1-vs-blended mismatch). Failed-eval attempts get a marker, **not plotted** (never a 0 point).
 
+### Setup screen layout (`Home.tsx`)
+
+`Home.tsx` splits at 900px but both breakpoints share one core (company question + `Begin session`) and one `surface` state (`'basic' | 'advanced' | 'privacy'`) driving the optional refinements. `RefineTrigger` (quiet `Advanced ›` / `Privacy ›` links) flips `surface`; the same `AdvancedPanel` / `PrivacyPanel` content is reused on both breakpoints.
+
+- **Desktop (≥900px):** inline triggers + right-edge slide-in drawers (`AdvancedPanelDrawer` / `PrivacyPanelDrawer`, `hidden min-[900px]:flex`, no backdrop so the form stays usable). `Begin session` is inline.
+- **Mobile (<900px):** the core body only, then `Begin session` as a **pinned thumb bar** — portaled to `<body>` (the hero is `overflow-hidden` under transformed ancestors), `fixed bottom-0 z-40 min-[900px]:hidden`, submitting the `id="setup-form"` form via the `form` attribute. Advanced/Privacy open as **bottom sheets** (`MobileSheet.tsx` — portal + backdrop + ESC + grab handle + `anim-sheet-up`, sticky `Done` footer, `min-[900px]:hidden`), so the PR-95 pace toggle sits one tap away with no scrolling. The old `ModeTabs` (Basic/Advanced/Privacy pills) and the full-screen mode swap are **retired**. Root carries `pb-28 min-[900px]:pb-0` so the footer clears the pinned bar; the bar (z-40) sits below the sheet overlay (z-50) so it's covered while a sheet is open.
+
 ### Setup Advanced panel — pasted job description
 
-The Home setup screen's Advanced panel (`AdvancedPanel.tsx`, wrapped on mobile by `AdvancedPanelDrawer.tsx`) takes an **optional job description** textarea. Backend contract in `../CLAUDE.md` → "Optional pasted job description".
+The Home setup screen's Advanced panel (`AdvancedPanel.tsx`; wrapped by `AdvancedPanelDrawer.tsx` on desktop and `MobileSheet` on mobile — see "Setup screen layout") takes an **optional job description** textarea. Backend contract in `../CLAUDE.md` → "Optional pasted job description".
 
 - **Cap mirror:** `MAX_JOB_DESCRIPTION_CHARS = 6000` (exported) mirrors `SessionCreateIn.job_description`; `maxLength` + a remaining-char counter shown only within 500 of the cap. Instant client-side `violatesContentPolicy(jobDescription)` gate (mirrors the bio/résumé gate; backend re-checks authoritatively).
 - **`Home.tsx` flow:** `createAndGoToSession(deliveryAnalyticsWillBeEnabled, acknowledgeMismatch=false)` POSTs `job_description`/`acknowledge_mismatch` only when set. A **409** (`ApiError.status === 409`) opens `MismatchConfirmDialog` — its message is parsed by `mismatchMessageFrom(err)` since the 409 `detail` is a non-string `{code, message}` object (so `extractApiErrorDetail` returns raw JSON). "Continue anyway" re-calls `createAndGoToSession(_, true)`, which sets `acknowledge_mismatch: true` and skips the server match-check. (429 still routes to the FlashBanner daily-limit path, unchanged.)
 - **`MismatchConfirmDialog.tsx`** — modal (`role="dialog"`, ESC + backdrop → cancel) confirming the user wants to proceed past a flagged role/industry/company ↔ JD mismatch.
+- **Voice pace toggle** — shared segmented control in `SpeechSpeedToggle.tsx` (owns `SPEECH_SPEED_NORMAL = 1.1` / `SPEECH_SPEED_SLOWER = 0.9`, mirroring `tts.py`). Used in two places: (1) the setup Advanced panel under the voice grid (`AdvancedPanel.tsx:SpeedToggle` wraps it with a hint), writing `speechSpeed` state in `Home.tsx` → sent as `speech_speed` in the `POST /sessions` body; (2) the re-practice popup (`RePracticeVoiceDialog.tsx`) — `onStart(voiceId, speechSpeed)` threads it through `useSavedQuestions.rePractice` into the `POST /saved-questions/{id}/practice` body. Aimed at non-native English speakers; backend maps it to ElevenLabs `voice_settings.speed` (see `../CLAUDE.md` → "Interview voices → Speech pace toggle").
 
 ### Ask Tutor (turn-scoped chat)
 

@@ -188,7 +188,11 @@ export default function SavedQuestionDetail() {
     }
   }, [shouldRedirect, navigate]);
 
-  async function handleRePractice(sq: SavedQuestionDetailType, voiceId: string | null) {
+  async function handleRePractice(
+    sq: SavedQuestionDetailType,
+    voiceId: string | null,
+    speechSpeed: number,
+  ) {
     setRePracticing(true);
     try {
       try {
@@ -201,7 +205,7 @@ export default function SavedQuestionDetail() {
         });
         return;
       }
-      const data = await rePractice(sq.id, voiceId);
+      const data = await rePractice(sq.id, voiceId, speechSpeed);
       const state: PracticeLocationState = {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
@@ -288,7 +292,9 @@ export default function SavedQuestionDetail() {
                 busy={rePracticing}
                 questionText={saved.question_text}
                 onCancel={() => setDialogOpen(false)}
-                onStart={(voiceId) => void handleRePractice(saved, voiceId)}
+                onStart={(voiceId, speechSpeed) =>
+                  void handleRePractice(saved, voiceId, speechSpeed)
+                }
               />
 
               {/* Trend chart */}

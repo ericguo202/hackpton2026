@@ -67,7 +67,7 @@ from app.services.job_description import (
 from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
-from app.services.tts import synthesize_speech
+from app.services.tts import DEFAULT_SPEED, synthesize_speech
 from app.services.voice_pool import resolve_voice, voice_for_session
 
 logger = logging.getLogger(__name__)
@@ -135,6 +135,7 @@ async def _persist_session_and_turn(
     experience_level: ExperienceLevel | None,
     roll_recent: bool = True,
     saved_question_id: UUID | None = None,
+    speech_speed: float = DEFAULT_SPEED,
 ) -> UUID:
     """INSERT the session row + turn 1 atomically; return session.id.
 
@@ -166,6 +167,7 @@ async def _persist_session_and_turn(
         voice_id=voice_id,
         experience_level=experience_level,
         saved_question_id=saved_question_id,
+        speech_speed=speech_speed,
     )
     db.add(session)
     await db.flush()
@@ -387,7 +389,7 @@ async def create_session(
     voice_id = resolve_voice(body.voice_id, session_id)
 
     audio_url, _ = await asyncio.gather(
-        synthesize_speech(opening_q, voice_id=voice_id),
+        synthesize_speech(opening_q, voice_id=voice_id, speed=body.speech_speed),
         _persist_session_and_turn(
             db,
             user,
@@ -401,6 +403,8 @@ async def create_session(
             # A custom question is a deliberate, reusable pick — don't push it
             # into the generation avoid-list (it isn't a generated question).
             roll_recent=custom_question is None,
+            # Persist the chosen pace so turn 2's TTS matches turn 1.
+            speech_speed=body.speech_speed,
         ),
     )
     await log_interview_session_started(
@@ -479,6 +483,7 @@ async def _followup_and_tts(
     sample_question_themes: list[str] | None = None,
     experience_level: ExperienceLevel | None = None,
     jd_summary: list[str] | None = None,
+    speech_speed: float | None = None,
 ) -> tuple[str, str]:
     """Generate follow-up via Flash then TTS — runs before background eval.
 
@@ -503,7 +508,9 @@ async def _followup_and_tts(
         experience_level=experience_level,
         jd_summary=jd_summary,
     )
-    audio_url = await synthesize_speech(next_q, voice_id=voice_id)
+    audio_url = await synthesize_speech(
+        next_q, voice_id=voice_id, speed=speech_speed
+    )
     return next_q, audio_url
 
 
@@ -1204,6 +1211,13 @@ async def submit_turn(
             ),
             experience_level=experience_level,
             jd_summary=jd_summary,
+            # Frozen at create time (None on legacy rows → tts default),
+            # so turn 2 plays at the pace the candidate chose for turn 1.
+            speech_speed=(
+                float(session.speech_speed)
+                if session.speech_speed is not None
+                else None
+            ),
         )
         await _insert_followup_turn(db, session_id, current_turn.id, next_q)
         # Commit BEFORE registering the background task so the bg task's
