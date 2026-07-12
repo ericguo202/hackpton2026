@@ -70,7 +70,7 @@ export default function FilterFieldMenu({
         <div
           role="menu"
           aria-label="Filter sessions by"
-          className="absolute left-0 top-full z-20 mt-1 min-w-[10rem] overflow-hidden rounded-lg border border-border bg-surface-raised py-1 shadow-lg"
+          className="absolute right-0 top-full z-20 mt-1 min-w-[10rem] overflow-hidden rounded-lg border border-border bg-surface-raised py-1 shadow-lg"
         >
           {OPTIONS.map((opt) => {
             const on = opt.key === value;

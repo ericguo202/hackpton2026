@@ -550,13 +550,13 @@ export default function History() {
               className="anim-reveal relative z-30 mb-10"
               style={{ animationDelay: '200ms' }}
             >
-              <div className="flex flex-wrap items-center gap-3">
-                <FilterFieldMenu
-                  value={filterField}
-                  onChange={handleFilterFieldChange}
-                />
+              {/* Right-aligned so an expanded dropdown never covers the
+                  Score-trend heading on the left. Input sits to the LEFT of the
+                  dropdown; on mobile it stretches (flex-1), on desktop it's
+                  capped so the cluster hugs the right edge. */}
+              <div className="flex items-center justify-end gap-3">
                 {filterField !== 'none' && (
-                  <div className="flex-1 min-w-[12rem] max-w-[24rem]">
+                  <div className="flex-1 min-w-[8rem] max-w-[20rem]">
                     <LocalSuggestionField
                       options={filterField === 'company' ? companyOptions : roleOptions}
                       value={filterValue}
@@ -580,9 +580,13 @@ export default function History() {
                     />
                   </div>
                 )}
+                <FilterFieldMenu
+                  value={filterField}
+                  onChange={handleFilterFieldChange}
+                />
               </div>
               {activeFilter && (
-                <p className="mt-3 text-xs text-text-subtle">
+                <p className="mt-3 text-right text-xs text-text-subtle">
                   Showing {activeFilter.field === 'company' ? 'company' : 'role'}{' '}
                   <span className="text-text-muted">“{activeFilter.value}”</span> ·{' '}
                   {filteredCount} session{filteredCount === 1 ? '' : 's'}
