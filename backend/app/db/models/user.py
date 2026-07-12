@@ -42,7 +42,18 @@ class User(Base):
     # Personalization fields, filled during onboarding.
     resume_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     industry: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # `target_role` is the candidate's ACTIVE role — it conditions every
+    # downstream prompt (opening question, tutor, custom-question validation)
+    # and is the default `job_title` for new sessions. `target_roles` holds the
+    # full set the candidate declared (1 required + up to 2 optional, max 3);
+    # `target_role` is always one member of it. Onboarding writes both; the Home
+    # role switcher (`PUT /me/target-role`) re-points `target_role` at another
+    # member without re-moderating (the set was vetted at onboarding). Always
+    # REASSIGNED, never mutated in place, so SQLAlchemy dirty-tracking fires.
     target_role: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_roles: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
     experience_level: Mapped[ExperienceLevel | None] = mapped_column(
         Enum(ExperienceLevel, name="experience_level", create_type=False),
         nullable=True,

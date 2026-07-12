@@ -24,6 +24,10 @@ type Props = {
   inputClassName: string;
   id?: string;
   autoFocus?: boolean;
+  // Optional overrides so multiple role fields (primary + extras) can be
+  // labelled distinctly. Default to the single-field "Target role" copy.
+  placeholder?: string;
+  ariaLabel?: string;
 };
 
 export default function RoleAutocompleteField({
@@ -37,6 +41,8 @@ export default function RoleAutocompleteField({
   inputClassName,
   id,
   autoFocus,
+  placeholder = 'Target role',
+  ariaLabel = 'Target role',
 }: Props) {
   const { apiFetch } = useApi();
   const industryParam = industry.trim();
@@ -62,8 +68,8 @@ export default function RoleAutocompleteField({
       inputClassName={inputClassName}
       id={id}
       autoFocus={autoFocus}
-      placeholder="Target role"
-      ariaLabel="Target role"
+      placeholder={placeholder}
+      ariaLabel={ariaLabel}
       loadingLabel="Finding roles…"
     />
   );

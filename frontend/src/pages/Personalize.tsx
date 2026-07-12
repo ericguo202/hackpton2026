@@ -27,11 +27,12 @@ import AccountButton from '../components/AccountButton';
 import CustomQuestionsManager from '../components/CustomQuestionsManager';
 import IndustryAutocompleteField from '../components/IndustryAutocompleteField';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
-import RoleAutocompleteField from '../components/RoleAutocompleteField';
+import TargetRolesField from '../components/TargetRolesField';
 import SpeechToTextButton from '../components/SpeechToTextButton';
 import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
 import { useMe } from '../hooks/useMe';
+import { useTargetRoles } from '../hooks/useTargetRoles';
 import { ApiError } from '../lib/api';
 import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPolicy';
 import { joinSpoken } from '../lib/joinSpoken';
@@ -117,7 +118,15 @@ function PersonalizeForm({ me, refetch }: FormProps) {
   const name = user?.fullName ?? me.name ?? '';
 
   const [industry, setIndustry] = useState(me.industry ?? '');
-  const [targetRole, setTargetRole] = useState(me.target_role ?? '');
+  // Seed from the stored set; fall back to the legacy single role for rows that
+  // predate `target_roles` (or an empty row for a not-yet-set profile).
+  const targetRoles = useTargetRoles(
+    me.target_roles.length > 0
+      ? me.target_roles
+      : me.target_role
+        ? [me.target_role]
+        : [''],
+  );
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(
     me.experience_level ?? 'entry',
   );
@@ -129,7 +138,6 @@ function PersonalizeForm({ me, refetch }: FormProps) {
   // "selected" — Save isn't blocked until the user edits a field, which
   // re-arms its gate (onSelectedChange(false)) until they pick again.
   const [industrySelected, setIndustrySelected] = useState(Boolean(me.industry));
-  const [roleSelected, setRoleSelected] = useState(Boolean(me.target_role));
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,8 +145,7 @@ function PersonalizeForm({ me, refetch }: FormProps) {
   const canSubmit =
     industry.trim().length > 0 &&
     industrySelected &&
-    targetRole.trim().length > 0 &&
-    roleSelected &&
+    targetRoles.ready &&
     shortBio.trim().length > 0;
 
   function chooseResumeFile(file: File | null) {
@@ -187,7 +194,9 @@ function PersonalizeForm({ me, refetch }: FormProps) {
 
     const body = new FormData();
     body.append('industry', industry);
-    body.append('target_role', targetRole);
+    const [primaryRole, ...extraRoles] = targetRoles.filledRoles;
+    body.append('target_role', primaryRole);
+    for (const role of extraRoles) body.append('additional_roles', role);
     body.append('experience_level', experienceLevel);
     body.append('short_bio', shortBio);
     body.append('email', email);
@@ -287,18 +296,15 @@ function PersonalizeForm({ me, refetch }: FormProps) {
             </Field>
 
             <Field
-              id="personalize-target-role"
-              label="Target role"
+              id="personalize-target-role-0"
+              label="Target roles"
               hint="e.g. backend engineer, product manager"
             >
-              <RoleAutocompleteField
-                id="personalize-target-role"
-                value={targetRole}
-                onChange={setTargetRole}
+              <TargetRolesField
+                state={targetRoles}
                 industry={industry}
-                selected={roleSelected}
-                onSelectedChange={setRoleSelected}
                 inputClassName={inputClass}
+                idPrefix="personalize-target-role"
               />
             </Field>
 

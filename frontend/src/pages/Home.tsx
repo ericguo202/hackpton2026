@@ -37,6 +37,7 @@ import MobileSheet from '../components/MobileSheet';
 import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
+import RoleSwitcher from '../components/RoleSwitcher';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
@@ -178,7 +179,7 @@ function RefineTrigger({
 
 export default function Home() {
   const { user } = useUser();
-  const { me } = useMe();
+  const { me, refetch } = useMe();
   const { apiFetch } = useApi();
   const navigate = useNavigate();
 
@@ -359,10 +360,9 @@ export default function Home() {
     void createAndGoToSession(false);
   }
 
-  const targetRoleBadge = me?.target_role ? (
-    <p className="text-sm text-text-subtle">
-      Target role: <span className="text-text-muted">{me.target_role}</span>
-    </p>
+  // Active-role badge; for multi-role users this becomes a "Change" switcher.
+  const targetRoleBadge = me ? (
+    <RoleSwitcher me={me} refetch={refetch} />
   ) : null;
 
   // Free-tier usage indicator. Pro users see nothing — the counter is
