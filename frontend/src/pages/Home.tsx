@@ -408,7 +408,7 @@ export default function Home() {
             <TopBarNavLink to="/personalize" tourId="nav-personalize">
               Personalize
             </TopBarNavLink>
-            <TopBarNavLink to="/calibrate">
+            <TopBarNavLink to="/calibrate" tourId="nav-calibration">
               Calibration
             </TopBarNavLink>
           </>

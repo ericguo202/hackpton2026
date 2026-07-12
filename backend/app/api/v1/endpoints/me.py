@@ -18,7 +18,7 @@ Expected behaviors for /me:
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import Integer, desc, func, select
@@ -361,6 +361,8 @@ def _to_decimal(v) -> Decimal | None:
 async def get_me_stats(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
+    company: str | None = Query(None),
+    job_title: str | None = Query(None),
 ) -> MeStatsOut:
     """Roll up the caller's lifetime scoring history.
 
@@ -374,7 +376,26 @@ async def get_me_stats(
     `total_sessions` and `completed_sessions` but not the per-dimension
     averages (their metrics row is null). Acceptable for the demo: legacy
     rows wash out once a couple of new sessions land.
+
+    Optional `company` / `job_title` filters narrow every aggregate to the
+    sessions matching that value (case-insensitive equality). The History
+    page passes these so the summary tiles and the "Most used filler words"
+    bar can honor its Company / Role filter without a separate endpoint.
+    Empty/whitespace values are ignored (treated as no filter).
     """
+    # Case-insensitive equality filters, applied to EVERY aggregate below so
+    # the returned object is internally coherent. Parameterized — no injection
+    # surface.
+    session_filters = []
+    if company and company.strip():
+        session_filters.append(
+            func.lower(InterviewSession.company) == company.strip().lower()
+        )
+    if job_title and job_title.strip():
+        session_filters.append(
+            func.lower(InterviewSession.job_title) == job_title.strip().lower()
+        )
+
     # Total / completed counts come straight from `interview_sessions`.
     counts_row = (await db.execute(
         select(
@@ -382,7 +403,7 @@ async def get_me_stats(
             func.count(InterviewSession.id).filter(
                 InterviewSession.status == SessionStatus.completed
             ).label("completed"),
-        ).where(InterviewSession.user_id == user.id)
+        ).where(InterviewSession.user_id == user.id, *session_filters)
     )).one()
 
     # Per-dimension averages + filler totals come from the cached metrics
@@ -413,6 +434,7 @@ async def get_me_stats(
         .where(
             InterviewSession.user_id == user.id,
             InterviewSession.status == SessionStatus.completed,
+            *session_filters,
         )
     )).one()
 
@@ -435,6 +457,7 @@ async def get_me_stats(
         .where(
             InterviewSession.user_id == user.id,
             InterviewSession.status == SessionStatus.completed,
+            *session_filters,
         )
         .group_by(kv.c.key)
         .order_by(desc("count"), kv.c.key.asc())

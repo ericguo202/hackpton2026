@@ -274,6 +274,39 @@ def test_render_context_block_includes_experience_level():
     assert "experience level" not in _render_context_block(None, None, None, None)
 
 
+def test_render_context_block_includes_jd_summary():
+    """Pasted-JD role facts render as a dedicated line; empty/None omits it."""
+    block = _render_context_block(
+        None, None, None, None,
+        jd_summary=["Solo IC role — no team", "Reports to the founder"],
+    )
+    assert "Concrete facts about this role from the job posting" in block
+    assert "Solo IC role — no team" in block
+    assert "Reports to the founder" in block
+
+    # Empty-omission: no JD facts → no line.
+    assert "Concrete facts about this role" not in _render_context_block(
+        None, None, None, None, jd_summary=[],
+    )
+
+
+async def test_jd_summary_threaded_into_prompt(monkeypatch):
+    """generate_followup surfaces pasted-JD role facts in the user message so
+    the follow-up doesn't mischaracterize the role (e.g. group vs. solo)."""
+    captured: list = []
+    monkeypatch.setattr(
+        "app.services.followup.get_client",
+        lambda: _make_fake_client("How did you make that call on your own?", captured),
+    )
+    await generate_followup(
+        "Tell me about a hard decision.",
+        "I decided to cut the feature myself.",
+        jd_summary=["Solo individual-contributor role — no team"],
+    )
+    user_message = next(m for m in captured[0] if m["role"] == "user")["content"]
+    assert "Solo individual-contributor role — no team" in user_message
+
+
 async def test_experience_level_threaded_into_prompt(monkeypatch):
     """generate_followup surfaces the candidate's seniority in the user
     message so the model can calibrate the follow-up's depth."""

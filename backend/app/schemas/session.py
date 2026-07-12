@@ -81,6 +81,12 @@ class CompanyBriefOut(BaseModel):
     # generator as inspiration only — the model is instructed to riff
     # off the theme, not copy the wording.
     sample_question_themes: list[str] = []
+    # Role-focused operational facts distilled from a pasted job description
+    # (solo vs. collaborative, scope, duties, expectations). Only populated on
+    # sessions created with a pasted JD; `[]` otherwise and on legacy rows.
+    # Rides inside the persisted `company_summary` JSON and is threaded into the
+    # opening-question / follow-up / evaluator prompts (empty-omission gated).
+    jd_summary: list[str] = []
 
 
 class SessionCreateOut(BaseModel):
