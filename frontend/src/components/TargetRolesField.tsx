@@ -45,6 +45,7 @@ export default function TargetRolesField({
 
   return (
     <div className="space-y-3">
+      <div className="space-y-4">
       {roles.map((role, i) => (
         <div key={i} className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
@@ -75,6 +76,7 @@ export default function TargetRolesField({
           )}
         </div>
       ))}
+      </div>
 
       {canAddMore && (
         <button

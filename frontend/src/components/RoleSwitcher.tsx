@@ -101,9 +101,10 @@ export default function RoleSwitcher({ me, refetch }: Props) {
           onClick={() => setOpen((o) => !o)}
           aria-haspopup="listbox"
           aria-expanded={open}
-          className="rounded-sm text-link underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          aria-label="Change target role"
+          className="rounded-sm text-link underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
-          Change
+          (Change)
         </button>
       </p>
 
@@ -132,7 +133,7 @@ export default function RoleSwitcher({ me, refetch }: Props) {
                   (busy ? ' cursor-wait opacity-70' : '')
                 }
               >
-                <span className="min-w-0 truncate">{role}</span>
+                <span className="min-w-0 flex-1 truncate">{role}</span>
                 {active && (
                   <Check className="h-4 w-4 shrink-0 text-link" aria-hidden />
                 )}
