@@ -547,7 +547,7 @@ export default function History() {
               the user has at least one session. */}
           {hasAnySessions && (
             <section
-              className="anim-reveal mb-10"
+              className="anim-reveal relative z-30 mb-10"
               style={{ animationDelay: '200ms' }}
             >
               <div className="flex flex-wrap items-center gap-3">
