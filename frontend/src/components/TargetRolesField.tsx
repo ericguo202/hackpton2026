@@ -7,6 +7,8 @@
  * the Personalize page so the two stay in lockstep.
  */
 
+import { X } from 'lucide-react';
+
 import { MAX_TARGET_ROLES, type TargetRolesState } from '../hooks/useTargetRoles';
 import RoleAutocompleteField from './RoleAutocompleteField';
 
@@ -36,11 +38,16 @@ export default function TargetRolesField({
     canAddMore,
   } = state;
 
+  // Reserve the trailing remove-button column on every row once there's more
+  // than one, so all inputs keep the same width (the primary row gets an
+  // invisible spacer instead of a button).
+  const showRemoveColumn = roles.length > 1;
+
   return (
     <div className="space-y-3">
       {roles.map((role, i) => (
         <div key={i} className="flex items-start gap-2">
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <RoleAutocompleteField
               autoFocus={autoFocusFirst && i === 0}
               id={`${idPrefix}-${i}`}
@@ -54,15 +61,17 @@ export default function TargetRolesField({
               ariaLabel={i === 0 ? 'Target role' : `Additional target role ${i}`}
             />
           </div>
-          {i > 0 && (
+          {i > 0 ? (
             <button
               type="button"
               onClick={() => removeRole(i)}
               aria-label={`Remove additional role ${i}`}
-              className="mt-2 shrink-0 text-sm text-text-muted underline decoration-border-strong underline-offset-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded-sm"
+              className="grid h-[2.6rem] w-9 shrink-0 place-items-center rounded text-text-muted hover:bg-surface-sunken hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
             >
-              Remove
+              <X className="h-4 w-4" aria-hidden />
             </button>
+          ) : (
+            showRemoveColumn && <span aria-hidden className="h-[2.6rem] w-9 shrink-0" />
           )}
         </div>
       ))}
