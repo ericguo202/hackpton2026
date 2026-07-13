@@ -1,5 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
 
+import {
+  preferredCaptureMode,
+  type CaptureMode,
+  videoConstraintsFor,
+} from '../lib/captureMode';
+
 type RecorderState = 'idle' | 'recording' | 'stopped';
 type StartOptions = { video?: boolean };
 /** Why a video-wanting start() ended up audio-only. 'denied' = the user
@@ -46,6 +52,10 @@ export function useRecorder() {
   const [replayBlob, setReplayBlob] = useState<Blob | null>(null);
   const [replayUrl, setReplayUrl]   = useState<string | null>(null);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  // Fixed for each start() so constraints, preview framing, and the analytics
+  // sidecar all describe the same capture. Re-evaluated on a retake in case a
+  // phone rotated while the recorder was idle.
+  const [captureMode, setCaptureMode] = useState<CaptureMode>(preferredCaptureMode);
   // Non-null when a start() asked for video but ended up audio-only, tagged
   // with why ('denied' vs 'failed'). Reset on each start() outcome and reset().
   const [cameraError, setCameraError] = useState<CameraError | null>(null);
@@ -75,6 +85,14 @@ export function useRecorder() {
 
   const start = useCallback(async (options: StartOptions = {}) => {
     const wantsVideo = options.video !== false;
+    const nextCaptureMode = preferredCaptureMode();
+    setCaptureMode(nextCaptureMode);
+    const audioConstraints: MediaTrackConstraints = {
+      echoCancellation: { ideal: true },
+      noiseSuppression: { ideal: true },
+      autoGainControl: { ideal: true },
+      channelCount: { ideal: 1 },
+    };
     // Try for both tracks only after the user has opted into delivery
     // analytics. If camera setup fails, fall back to audio-only so the answer
     // still goes through — recording WHY so the page can distinguish a
@@ -82,10 +100,13 @@ export function useRecorder() {
     let stream: MediaStream;
     let videoDenied = false;
     if (!wantsVideo) {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     } else {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints,
+          video: videoConstraintsFor(nextCaptureMode),
+        });
       } catch (err) {
         // NotAllowedError = the user (or a policy) blocked the camera — a
         // legitimate "no webcam" choice, not a malfunction. The audio-only
@@ -93,7 +114,7 @@ export function useRecorder() {
         if (err instanceof DOMException && err.name === 'NotAllowedError') {
           videoDenied = true;
         }
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       }
     }
 
@@ -206,5 +227,17 @@ export function useRecorder() {
     setCameraError(null);
   }, [audioUrl, replayUrl]);
 
-  return { state, start, stop, audioBlob, audioUrl, replayBlob, replayUrl, videoStream, cameraError, reset };
+  return {
+    state,
+    start,
+    stop,
+    audioBlob,
+    audioUrl,
+    replayBlob,
+    replayUrl,
+    videoStream,
+    captureMode,
+    cameraError,
+    reset,
+  };
 }
