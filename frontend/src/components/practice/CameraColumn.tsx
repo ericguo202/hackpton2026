@@ -1,6 +1,7 @@
 import { CameraPreview } from '../CameraPreview';
 import { Button } from '../ui/button';
 import type { CameraError } from '../../hooks/useRecorder';
+import { isMobileCapture, type CaptureMode } from '../../lib/captureMode';
 import { cn } from '../../lib/utils';
 
 /** A timed recording-length notice shown UNDER the camera box. `warning` is the
@@ -36,6 +37,7 @@ interface Props {
       blocked). Distinguishes the in-box placeholder from the intentional
       "webcam off" case (null). */
   cameraError: CameraError | null;
+  captureMode: CaptureMode;
   onSubmitPreview: () => void;
   onReRecordPreview: () => void;
   className?: string;
@@ -52,10 +54,14 @@ export function CameraColumn({
   recordingNotice,
   firstTurnHint,
   cameraError,
+  captureMode,
   onSubmitPreview,
   onReRecordPreview,
   className,
 }: Props) {
+  const mobileCapture = isMobileCapture(captureMode);
+  const portraitCapture = captureMode === 'mobile_portrait';
+
   return (
     <div
       className={cn(
@@ -73,7 +79,14 @@ export function CameraColumn({
           box itself vertically centered on the page whether or not a notice is
           showing, so it no longer jumps up when the notice appears. On mobile
           the notices stay in normal flow (`mt-4`). */}
-      <div className="relative w-full min-[900px]:w-[45vw]">
+      <div
+        className={cn(
+          'relative',
+          portraitCapture
+            ? 'h-[min(50dvh,32rem)] max-w-full aspect-[3/4] min-[900px]:h-auto min-[900px]:w-[45vw] min-[900px]:aspect-video'
+            : 'w-full min-[900px]:w-[45vw]',
+        )}
+      >
         {/* Camera box: full width on mobile, locked to 45vw on desktop so the
             column-ratio toggle (33/67 ↔ 25/50/25) never resizes the box and
             there's horizontal breathing room when the transcript column opens
@@ -84,11 +97,34 @@ export function CameraColumn({
             espresso dark theme — so it never blends into the page. Raw hex (no
             single token expresses "the other theme's surface"), matching the
             camera-box raw-hex precedent. */}
-        <div className="aspect-video w-full overflow-hidden rounded-lg bg-[#1E1711] dark:bg-[#F5E7CF]">
+        <div
+          className={cn(
+            'relative h-full w-full overflow-hidden rounded-lg bg-[#1E1711] dark:bg-[#F5E7CF]',
+            !portraitCapture && 'aspect-video',
+          )}
+        >
           {showPreview && replayUrl ? (
-            <video src={replayUrl} controls className="h-full w-full object-cover" />
+            <video
+              src={replayUrl}
+              controls
+              playsInline
+              className={cn(
+                'h-full w-full',
+                mobileCapture ? 'object-contain' : 'object-cover',
+              )}
+            />
           ) : videoStream ? (
-            <CameraPreview stream={videoStream} />
+            <>
+              <CameraPreview
+                stream={videoStream}
+                fit={mobileCapture ? 'contain' : 'cover'}
+              />
+              {mobileCapture && recorderState === 'recording' && (
+                <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-md bg-[#1E1711]/75 px-3 py-2 text-center text-xs text-primary-100 backdrop-blur-sm">
+                  Keep your phone propped at eye level and frame your head and shoulders.
+                </div>
+              )}
+            </>
           ) : (
             <div className="flex h-full w-full items-center justify-center p-6">
               <p className="text-center text-sm text-primary-100 dark:text-primary-700">
@@ -97,7 +133,9 @@ export function CameraColumn({
                     ? 'Evaluating your recording…'
                     : 'Audio/video recording will restart when the follow-up question finishes playing.'
                   : recorderState === 'idle'
-                    ? 'Recording will start once the question audio ends.'
+                    ? mobileCapture
+                      ? `${portraitCapture ? 'Portrait' : 'Phone'} capture is ready. Prop your phone at eye level and frame your head and shoulders; recording starts after the question.`
+                      : 'Recording will start once the question audio ends.'
                     : cameraError === 'failed'
                       ? 'Camera didn’t start — recording audio only.'
                       : cameraError === 'denied'

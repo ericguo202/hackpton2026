@@ -7,7 +7,8 @@
  * the `<CameraPreview>` component stays visual-only and doesn't have
  * to cooperate with MediaPipe's `detectForVideo` timestamp cadence.
  *
- * Throttled to ~15fps. The `FrameSummary` EMA (alpha 0.12) converges
+ * Throttled to ~15fps on desktop and ~10fps on phones. The `FrameSummary`
+ * EMA (alpha 0.12) converges
  * in ~2-3 seconds at that rate, which is plenty for a 30-60s answer,
  * and skipping every other frame frees the main thread for audio
  * capture on weaker laptops.
@@ -15,12 +16,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { isMobileCapture, type CaptureMode } from '../lib/captureMode';
 import type { FaceCalibrationProfile } from '../lib/faceCalibration';
 import { FrameSummary, type InterviewSummary, type Point } from '../lib/faceHeuristics';
 import { getFaceLandmarker } from '../lib/faceLandmarker';
 
-const TARGET_FPS = 15;
-const FRAME_MIN_MS = 1000 / TARGET_FPS;
+const DESKTOP_TARGET_FPS = 15;
+const MOBILE_TARGET_FPS = 10;
 
 type AnalyzerStatus = 'warming' | 'ready' | 'running' | 'no-face' | 'idle' | 'error';
 
@@ -42,6 +44,7 @@ export function useFaceAnalyzer(
   stream: MediaStream | null,
   active: boolean,
   calibration: FaceCalibrationProfile | null = null,
+  captureMode: CaptureMode = 'desktop',
 ) {
   const [isReady, setIsReady] = useState(false);
   const [diagnostics, setDiagnostics] = useState<AnalyzerDiagnostics>({
@@ -64,11 +67,33 @@ export function useFaceAnalyzer(
   const lastSummaryRef = useRef<InterviewSummary | null>(null);
   const publishCounterRef = useRef(0);
   const lastLoggedStatusRef = useRef<string>('');
+  const captureContextRef = useRef<{
+    capture_mode: CaptureMode;
+    capture_width?: number;
+    capture_height?: number;
+  }>({ capture_mode: captureMode });
+
+  const withCaptureContext = useCallback(
+    (summary: InterviewSummary | null): InterviewSummary | null => {
+      if (!summary) return null;
+      const video = videoRef.current;
+      const context = captureContextRef.current;
+      const width = video?.videoWidth || context.capture_width;
+      const height = video?.videoHeight || context.capture_height;
+      return {
+        ...summary,
+        capture_mode: context.capture_mode,
+        ...(width ? { capture_width: width } : {}),
+        ...(height ? { capture_height: height } : {}),
+      };
+    },
+    [],
+  );
 
   const publishDiagnostics = useCallback((force = false) => {
     publishCounterRef.current += 1;
     if (!force && publishCounterRef.current % 5 !== 0) return;
-    lastSummaryRef.current = summaryRef.current.buildSummary();
+    lastSummaryRef.current = withCaptureContext(summaryRef.current.buildSummary());
     setDiagnostics({
       isReady,
       status: statusRef.current,
@@ -77,7 +102,7 @@ export function useFaceAnalyzer(
       faceFrames: faceFrameCountRef.current,
       lastSummary: lastSummaryRef.current,
     });
-  }, [isReady]);
+  }, [isReady, withCaptureContext]);
 
   // Re-seed the FrameSummary baseline if the resolved calibration arrives or
   // changes BEFORE capture starts (e.g. `me` loads a tick after mount, so the
@@ -106,6 +131,12 @@ export function useFaceAnalyzer(
       }
       return;
     }
+    const settings = stream.getVideoTracks()[0]?.getSettings();
+    captureContextRef.current = {
+      capture_mode: captureMode,
+      ...(settings?.width ? { capture_width: settings.width } : {}),
+      ...(settings?.height ? { capture_height: settings.height } : {}),
+    };
     if (!videoRef.current) {
       const el = document.createElement('video');
       el.muted = true;
@@ -119,7 +150,7 @@ export function useFaceAnalyzer(
     // `play()` returns a promise that rejects if the element is garbage-
     // collected mid-transition; a detached video is safe to ignore.
     videoRef.current.play().catch(() => undefined);
-  }, [stream]);
+  }, [captureMode, stream]);
 
   // Warm the landmarker singleton the moment the component mounts so
   // we're not paying the ~1.5s model load at the instant the user hits
@@ -197,13 +228,15 @@ export function useFaceAnalyzer(
 
     let cancelled = false;
     let lastTickMs = 0;
+    const frameMinMs = 1000 /
+      (isMobileCapture(captureMode) ? MOBILE_TARGET_FPS : DESKTOP_TARGET_FPS);
 
     const tick = async (tMs: number) => {
       if (cancelled) return;
       rafRef.current = requestAnimationFrame(tick);
 
       if (!activeRef.current) return;
-      if (tMs - lastTickMs < FRAME_MIN_MS) return;
+      if (tMs - lastTickMs < frameMinMs) return;
       lastTickMs = tMs;
 
       const video = videoRef.current;
@@ -244,10 +277,10 @@ export function useFaceAnalyzer(
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
-  }, [active, stream, isReady, publishDiagnostics]);
+  }, [active, captureMode, stream, isReady, publishDiagnostics]);
 
   const buildSummary = useCallback((): InterviewSummary | null => {
-    const summary = summaryRef.current.buildSummary();
+    const summary = withCaptureContext(summaryRef.current.buildSummary());
     lastSummaryRef.current = summary;
     console.log('[useFaceAnalyzer] buildSummary()', {
       returnedNull: summary == null,
@@ -258,7 +291,7 @@ export function useFaceAnalyzer(
     });
     publishDiagnostics(true);
     return summary;
-  }, [publishDiagnostics]);
+  }, [publishDiagnostics, withCaptureContext]);
 
   const reset = useCallback(() => {
     console.log('[useFaceAnalyzer] reset()', {
@@ -270,9 +303,10 @@ export function useFaceAnalyzer(
     frameCountRef.current = 0;
     faceFrameCountRef.current = 0;
     lastSummaryRef.current = null;
+    captureContextRef.current = { capture_mode: captureMode };
     statusRef.current = isReady ? 'ready' : 'warming';
     publishDiagnostics(true);
-  }, [isReady, publishDiagnostics]);
+  }, [captureMode, isReady, publishDiagnostics]);
 
   return { buildSummary, reset, isReady, diagnostics };
 }
