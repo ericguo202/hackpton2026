@@ -35,11 +35,16 @@ class SavedQuestionCreateIn(BaseModel):
 class RePracticeIn(BaseModel):
     """Start a fresh practice attempt of a saved question.
 
-    Same optional knobs as `SessionCreateIn` (voice + timezone); company /
-    job_title / question come frozen off the saved row, so they're absent here.
+    Same optional knobs as `SessionCreateIn` (voice + speech pace + timezone);
+    company / job_title / question come frozen off the saved row, so they're
+    absent here.
     """
 
     voice_id: str | None = Field(default=None, max_length=64)
+    # Per-session ElevenLabs speech pace (→ `voice_settings.speed`), same
+    # "Normal" (1.1, default) / "Slower" (0.9) choice as `SessionCreateIn`.
+    # Bounded to the quality-safe range; the TTS layer clamps again.
+    speech_speed: float = Field(default=1.1, ge=0.7, le=1.2)
     timezone: str | None = Field(default=None, max_length=64)
 
 

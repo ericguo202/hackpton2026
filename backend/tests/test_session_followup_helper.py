@@ -18,7 +18,7 @@ async def test_followup_and_tts_forwards_jd_summary(monkeypatch):
         captured.update(kwargs)
         return "How did you make that call on your own?"
 
-    async def _fake_tts(text, *, voice_id):
+    async def _fake_tts(text, *, voice_id, speed=None):
         return "data:audio/mp3;base64,AAAA"
 
     monkeypatch.setattr(sessions_module, "generate_followup", _fake_generate_followup)
@@ -45,7 +45,7 @@ async def test_followup_and_tts_defaults_jd_summary_to_none(monkeypatch):
         captured.update(kwargs)
         return "What happened next?"
 
-    async def _fake_tts(text, *, voice_id):
+    async def _fake_tts(text, *, voice_id, speed=None):
         return "data:audio/mp3;base64,AAAA"
 
     monkeypatch.setattr(sessions_module, "generate_followup", _fake_generate_followup)

@@ -24,7 +24,8 @@ import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPol
 import { joinSpoken } from '../lib/joinSpoken';
 import type { ExperienceLevel, MeResponse } from '../types/user';
 import IndustryAutocompleteField from './IndustryAutocompleteField';
-import RoleAutocompleteField from './RoleAutocompleteField';
+import TargetRolesField from './TargetRolesField';
+import { useTargetRoles } from '../hooks/useTargetRoles';
 import SpeechToTextButton from './SpeechToTextButton';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
@@ -73,7 +74,7 @@ export default function OnboardingForm() {
   const name = user?.fullName ?? '';
 
   const [industry, setIndustry] = useState('');
-  const [targetRole, setTargetRole] = useState('');
+  const targetRoles = useTargetRoles(['']);
   const [experienceLevel, setExperienceLevel] =
     useState<ExperienceLevel>('entry');
   const [shortBio, setShortBio] = useState('');
@@ -82,7 +83,6 @@ export default function OnboardingForm() {
   const [resumeText, setResumeText] = useState('');
   const [skipResume, setSkipResume] = useState(false);
   const [industrySelected, setIndustrySelected] = useState(false);
-  const [roleSelected, setRoleSelected] = useState(false);
 
   const [step, setStep] = useState(0);
   const [stepKey, setStepKey] = useState(0);
@@ -92,7 +92,7 @@ export default function OnboardingForm() {
 
   const industryCanContinue = industry.trim().length > 0 && industrySelected;
 
-  const roleCanContinue = targetRole.trim().length > 0 && roleSelected;
+  const roleCanContinue = targetRoles.ready;
 
   const validators: Array<() => boolean> = [
     () => industryCanContinue,
@@ -176,7 +176,10 @@ export default function OnboardingForm() {
 
     const body = new FormData();
     body.append('industry', industry);
-    body.append('target_role', targetRole);
+    // Primary role plus any optional extras (each a repeated multipart key).
+    const [primaryRole, ...extraRoles] = targetRoles.filledRoles;
+    body.append('target_role', primaryRole);
+    for (const role of extraRoles) body.append('additional_roles', role);
     body.append('experience_level', experienceLevel);
     body.append('short_bio', shortBio);
     body.append('email', email);
@@ -259,15 +262,12 @@ export default function OnboardingForm() {
           )}
 
           {step === 1 && (
-            <RoleAutocompleteField
-              autoFocus
-              value={targetRole}
-              onChange={setTargetRole}
+            <TargetRolesField
+              state={targetRoles}
               industry={industry}
-              selected={roleSelected}
-              onSelectedChange={setRoleSelected}
-              onSelect={advanceToNext}
               inputClassName={inputClass}
+              idPrefix="onboarding-target-role"
+              autoFocusFirst
             />
           )}
 

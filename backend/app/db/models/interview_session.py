@@ -70,6 +70,16 @@ class InterviewSession(Base):
     # `voice_for_session(session.id)` in that case.
     voice_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Per-session speech pace passed to ElevenLabs as `voice_settings.speed`
+    # (see `tts.NORMAL_SPEED`/`SLOWER_SPEED`). Picked on the setup form's
+    # Advanced panel and persisted here so turn 2's TTS uses the same pace the
+    # candidate chose for turn 1. Nullable for legacy rows created before this
+    # column existed; the TTS call sites fall back to `tts.DEFAULT_SPEED` via
+    # `clamp_speed(None)` in that case.
+    speech_speed: Mapped[Decimal | None] = mapped_column(
+        Numeric(3, 2), nullable=True
+    )
+
     # Frozen candidate seniority for THIS session. Stamped at create time from
     # the user's live `experience_level` (or from a saved question's frozen
     # level on re-practice). `submit_turn` reads this — NOT the live user row —

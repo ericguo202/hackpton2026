@@ -25,6 +25,8 @@ type Props = {
   onClose: () => void;
   voiceId: string | null;
   onVoiceSelect: (id: string | null) => void;
+  speechSpeed: number;
+  onSpeechSpeedChange: (speed: number) => void;
   jobDescription: string;
   onJobDescriptionChange: (value: string) => void;
   customQuestions: CustomQuestion[];
@@ -40,6 +42,8 @@ export default function AdvancedPanelDrawer({
   onClose,
   voiceId,
   onVoiceSelect,
+  speechSpeed,
+  onSpeechSpeedChange,
   jobDescription,
   onJobDescriptionChange,
   customQuestions,
@@ -96,6 +100,8 @@ export default function AdvancedPanelDrawer({
         <AdvancedPanel
           voiceId={voiceId}
           onVoiceSelect={onVoiceSelect}
+          speechSpeed={speechSpeed}
+          onSpeechSpeedChange={onSpeechSpeedChange}
           jobDescription={jobDescription}
           onJobDescriptionChange={onJobDescriptionChange}
           customQuestions={customQuestions}

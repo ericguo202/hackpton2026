@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import SpeechSpeedToggle, { SPEECH_SPEED_NORMAL } from './SpeechSpeedToggle';
 import VoicePickerGrid from './VoicePickerGrid';
 import { Button } from './ui/button';
 
@@ -19,7 +20,7 @@ interface Props {
   open: boolean;
   busy: boolean;
   onCancel: () => void;
-  onStart: (voiceId: string | null) => void;
+  onStart: (voiceId: string | null, speechSpeed: number) => void;
   questionText?: string;
 }
 
@@ -31,13 +32,17 @@ export default function RePracticeVoiceDialog({
   questionText,
 }: Props) {
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [speechSpeed, setSpeechSpeed] = useState<number>(SPEECH_SPEED_NORMAL);
 
-  // Reset to "Surprise me" on each open transition, via the React-19
-  // compare-state-during-render pattern (no setState-in-effect).
+  // Reset to "Surprise me" + "Normal" pace on each open transition, via the
+  // React-19 compare-state-during-render pattern (no setState-in-effect).
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setVoiceId(null);
+    if (open) {
+      setVoiceId(null);
+      setSpeechSpeed(SPEECH_SPEED_NORMAL);
+    }
   }
 
   // Escape cancels — but not while a launch is in flight.
@@ -87,6 +92,23 @@ export default function RePracticeVoiceDialog({
           <VoicePickerGrid voiceId={voiceId} onSelect={setVoiceId} disabled={busy} />
         </div>
 
+        <div className="mt-6">
+          <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted text-sm">
+            Pace
+          </p>
+          <div className="mt-2">
+            <SpeechSpeedToggle
+              speechSpeed={speechSpeed}
+              onChange={setSpeechSpeed}
+              disabled={busy}
+            />
+          </div>
+          <p className="mt-2 text-sm leading-relaxed text-text-subtle">
+            How fast the interviewer speaks. Slower can help if English isn't
+            your first language.
+          </p>
+        </div>
+
         <div className="mt-8 flex justify-end gap-3">
           <Button
             variant="outline"
@@ -98,7 +120,7 @@ export default function RePracticeVoiceDialog({
           </Button>
           <Button
             type="button"
-            onClick={() => onStart(voiceId)}
+            onClick={() => onStart(voiceId, speechSpeed)}
             disabled={busy}
           >
             {busy ? 'Starting…' : 'Start session'}

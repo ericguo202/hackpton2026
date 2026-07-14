@@ -30,11 +30,13 @@ import {
 } from 'recharts';
 
 import DimensionMenu from '../components/DimensionMenu';
+import FilterFieldMenu, { type FilterField } from '../components/FilterFieldMenu';
+import LocalSuggestionField from '../components/LocalSuggestionField';
 import { StrengthsRadarPanel } from '../components/StrengthsRadar';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
-import { useMeStats } from '../hooks/useMeStats';
+import { useMeStats, type MeStatsFilter } from '../hooks/useMeStats';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { useSessions } from '../hooks/useSessions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
@@ -376,9 +378,64 @@ export default function History() {
   const [scoreRange, setScoreRange] = useState<RangeWindow>(10);
   const [fillerRange, setFillerRange] = useState<RangeWindow>(10);
 
-  const chartData = useMemo(
-    () => (sessions ? buildChartData(sessions) : []),
+  // Company / Role filter. `filterField` picks the dimension; `filterValue` +
+  // `filterSelected` come from the autocomplete — a filter is only "active"
+  // once a concrete option is picked, so free-typed text never filters.
+  const [filterField, setFilterField] = useState<FilterField>('none');
+  const [filterValue, setFilterValue] = useState('');
+  const [filterSelected, setFilterSelected] = useState(false);
+
+  const activeFilter = useMemo<MeStatsFilter | null>(
+    () =>
+      filterField !== 'none' && filterSelected && filterValue
+        ? { field: filterField, value: filterValue }
+        : null,
+    [filterField, filterSelected, filterValue],
+  );
+
+  // Autocomplete option universe — the distinct companies / roles across the
+  // user's sessions (sorted). Built from the full unfiltered list so the
+  // options stay complete regardless of the active filter.
+  const companyOptions = useMemo(
+    () =>
+      sessions
+        ? [...new Set(sessions.map((s) => s.company).filter(Boolean))].sort()
+        : [],
     [sessions],
+  );
+  const roleOptions = useMemo(
+    () =>
+      sessions
+        ? [...new Set(sessions.map((s) => s.job_title).filter(Boolean))].sort()
+        : [],
+    [sessions],
+  );
+
+  // Client-side filtered session list (case-insensitive equality). Everything
+  // derived from sessions — the charts, radar, and the list — reads this.
+  const filteredSessions = useMemo(() => {
+    if (!sessions) return null;
+    if (!activeFilter) return sessions;
+    const needle = activeFilter.value.toLowerCase();
+    return sessions.filter(
+      (s) =>
+        (activeFilter.field === 'company' ? s.company : s.job_title).toLowerCase() ===
+        needle,
+    );
+  }, [sessions, activeFilter]);
+
+  // The summary tiles + "Most used filler words" bar are aggregated
+  // server-side. When a filter is active we fetch a filtered /me/stats (same
+  // query, one extra WHERE) and show that; otherwise the all-time stats.
+  const { stats: filteredStats, isLoading: filteredStatsLoading } = useMeStats(
+    activeFilter ?? undefined,
+  );
+  const displayStats = activeFilter ? filteredStats : stats;
+  const displayStatsLoading = activeFilter ? filteredStatsLoading : statsLoading;
+
+  const chartData = useMemo(
+    () => (filteredSessions ? buildChartData(filteredSessions) : []),
+    [filteredSessions],
   );
 
   const scoreData = useMemo(
@@ -394,16 +451,24 @@ export default function History() {
   // Independent of the line chart's RangeSelector — always its own fixed window.
   // `chartData` is oldest→newest, so the last ≤5 rows are the most recent.
   const radar = useMemo(
-    () => (sessions ? buildRadarData(chartData.slice(-5)) : null),
-    [sessions, chartData],
+    () => (filteredSessions ? buildRadarData(chartData.slice(-5)) : null),
+    [filteredSessions, chartData],
   );
 
-  const hasSessions = (sessions?.length ?? 0) > 0;
+  const hasAnySessions = (sessions?.length ?? 0) > 0;
+  const filteredCount = filteredSessions?.length ?? 0;
+  const hasFilteredSessions = filteredCount > 0;
   const enoughForChart = chartData.length >= 1;
   // Filler-rate trend only renders once at least one session carries a
   // non-null rate (legacy rows without a cached word total are skipped).
   const hasFillerRate = chartData.some((d) => d.filler_rate !== null);
-  const hasTopFillerWords = (stats?.top_filler_words?.length ?? 0) > 0;
+  const hasTopFillerWords = (displayStats?.top_filler_words?.length ?? 0) > 0;
+
+  function handleFilterFieldChange(next: FilterField) {
+    setFilterField(next);
+    setFilterValue('');
+    setFilterSelected(false);
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
@@ -444,7 +509,7 @@ export default function History() {
             Progress over time.
           </h1>
 
-          {/* Lifetime stats strip */}
+          {/* Summary stats strip — all-time, or narrowed when a filter is active. */}
           <section
             className="anim-reveal grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-10 pb-10 mb-10 border-b border-border"
             style={{ animationDelay: '160ms' }}
@@ -452,30 +517,93 @@ export default function History() {
             <StatCell
               label="Sessions"
               value={
-                statsLoading ? '—'
-                  : String(stats?.completed_sessions ?? 0)
+                displayStatsLoading ? '—'
+                  : String(displayStats?.completed_sessions ?? 0)
               }
               href="#sessions"
             />
             <StatCell
               label="Overall avg"
-              value={statsLoading ? '—' : fmt(stats?.average_overall_score ?? null, '/100')}
+              value={displayStatsLoading ? '—' : fmt(displayStats?.average_overall_score ?? null, '/100')}
             />
             <StatCell
               label="Turns evaluated"
-              value={statsLoading ? '—' : String(stats?.total_turns_evaluated ?? 0)}
+              value={displayStatsLoading ? '—' : String(displayStats?.total_turns_evaluated ?? 0)}
             />
             <StatCell
               label="Filler rate"
-              value={statsLoading ? '—' : fmt(stats?.filler_word_rate ?? null, '%')}
+              value={displayStatsLoading ? '—' : fmt(displayStats?.filler_word_rate ?? null, '%')}
               hint={
-                statsLoading
+                displayStatsLoading
                   ? undefined
-                  : `${stats?.total_filler_word_count ?? 0} filler words`
+                  : `${displayStats?.total_filler_word_count ?? 0} filler words`
               }
               href="#filler-words"
             />
           </section>
+
+          {/* Company / Role filter — governs everything below (charts, radar,
+              filler words, saved questions, and the session list). Shown once
+              the user has at least one session. */}
+          {hasAnySessions && (
+            <section
+              className="anim-reveal relative z-30 mb-10"
+              style={{ animationDelay: '200ms' }}
+            >
+              {/* Right-aligned so an expanded dropdown never covers the
+                  Score-trend heading on the left. Input sits to the LEFT of the
+                  dropdown; on mobile it stretches (flex-1), on desktop it's
+                  capped so the cluster hugs the right edge. */}
+              <div className="flex items-center justify-end gap-3">
+                {filterField !== 'none' && (
+                  <div className="flex-1 min-w-[8rem] max-w-[20rem]">
+                    <LocalSuggestionField
+                      options={filterField === 'company' ? companyOptions : roleOptions}
+                      value={filterValue}
+                      onChange={(v) => {
+                        setFilterValue(v);
+                        setFilterSelected(false);
+                      }}
+                      selected={filterSelected}
+                      onSelectedChange={setFilterSelected}
+                      inputClassName="w-full rounded-full border border-border-strong bg-surface-raised px-4 py-1.5 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                      placeholder={
+                        filterField === 'company'
+                          ? 'Type a company…'
+                          : 'Type a role…'
+                      }
+                      ariaLabel={
+                        filterField === 'company'
+                          ? 'Filter by company'
+                          : 'Filter by role'
+                      }
+                    />
+                  </div>
+                )}
+                <FilterFieldMenu
+                  value={filterField}
+                  onChange={handleFilterFieldChange}
+                />
+              </div>
+              {/* Left-aligned so the right-side dropdown popup (which opens
+                  downward) never covers the active-filter status or its Clear
+                  link. */}
+              {activeFilter && (
+                <p className="mt-3 text-left text-xs text-text-subtle">
+                  Showing {activeFilter.field === 'company' ? 'company' : 'role'}{' '}
+                  <span className="text-text-muted">“{activeFilter.value}”</span> ·{' '}
+                  {filteredCount} session{filteredCount === 1 ? '' : 's'}
+                  <button
+                    type="button"
+                    onClick={() => handleFilterFieldChange('none')}
+                    className="ml-2 text-link underline-offset-2 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded-sm"
+                  >
+                    Clear
+                  </button>
+                </p>
+              )}
+            </section>
+          )}
 
           {/* Trend chart */}
           <section
@@ -507,7 +635,9 @@ export default function History() {
 
             {!sessionsLoading && !enoughForChart && (
               <p className="text-sm text-text-muted">
-                Finish your first session to see a trend here.
+                {activeFilter
+                  ? 'No sessions match this filter.'
+                  : 'Finish your first session to see a trend here.'}
               </p>
             )}
 
@@ -640,15 +770,16 @@ export default function History() {
                     <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle mb-4">
                       Most used
                     </p>
-                    <FillerWordsChart entries={stats!.top_filler_words} />
+                    <FillerWordsChart entries={displayStats!.top_filler_words} />
                   </div>
                 )}
               </div>
             </section>
           )}
 
-          {/* Saved questions — hidden entirely when the user has none. */}
-          <SavedQuestionsSection />
+          {/* Saved questions — hidden entirely when the user has none (or none
+              match the active filter). */}
+          <SavedQuestionsSection activeFilter={activeFilter} />
 
           {/* Session list */}
           <section id="sessions" className="anim-reveal scroll-mt-8" style={{ animationDelay: '320ms' }}>
@@ -660,11 +791,11 @@ export default function History() {
                 Sessions
               </h2>
               <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle tabular-nums">
-                {hasSessions ? `${sessions!.length} total` : ''}
+                {hasFilteredSessions ? `${filteredCount} total` : ''}
               </p>
             </div>
 
-            {!sessionsLoading && !hasSessions && !sessionsError && (
+            {!sessionsLoading && !hasAnySessions && !sessionsError && (
               <div className="mt-8 py-16 text-center">
                 <p className="font-display text-xl text-text mb-2">
                   No completed sessions yet.
@@ -681,13 +812,19 @@ export default function History() {
               </div>
             )}
 
-            {hasSessions && (
+            {!sessionsLoading && hasAnySessions && !hasFilteredSessions && (
+              <p className="mt-8 py-8 text-sm text-text-muted">
+                No sessions match this filter.
+              </p>
+            )}
+
+            {hasFilteredSessions && (
               <div className="mt-2">
-                {sessions!.map((s, i) => (
+                {filteredSessions!.map((s, i) => (
                   <SessionRow
                     key={s.id}
                     session={s}
-                    ordinal={sessions!.length - i}
+                    ordinal={filteredCount - i}
                     onClick={() => navigate(`/sessions/${s.id}`)}
                   />
                 ))}
@@ -707,18 +844,37 @@ export default function History() {
  * the FROZEN `job_title` (what the question was generated for), not the live
  * profile target_role, so the card reads as an intentional snapshot.
  */
-function SavedQuestionsSection() {
+function SavedQuestionsSection({
+  activeFilter,
+}: {
+  activeFilter: MeStatsFilter | null;
+}) {
   const navigate = useNavigate();
   const { saved, isLoading, remove, rePractice } = useSavedQuestions();
   const [busyId, setBusyId] = useState<string | null>(null);
   // The saved question pending in the voice picker (null = dialog closed).
   const [pendingSq, setPendingSq] = useState<SavedQuestionListItem | null>(null);
 
-  // Don't render anything (not even a heading) until we know there's at least
-  // one saved question — an empty section would be visual noise.
-  if (isLoading || !saved || saved.length === 0) return null;
+  // Same case-insensitive company/role filter the rest of the page uses.
+  const filtered = useMemo(() => {
+    if (!saved || !activeFilter) return saved;
+    const needle = activeFilter.value.toLowerCase();
+    return saved.filter(
+      (sq) =>
+        (activeFilter.field === 'company' ? sq.company : sq.job_title).toLowerCase() ===
+        needle,
+    );
+  }, [saved, activeFilter]);
 
-  async function handleRePractice(sq: SavedQuestionListItem, voiceId: string | null) {
+  // Don't render anything (not even a heading) until we know there's at least
+  // one saved question in view — an empty section would be visual noise.
+  if (isLoading || !filtered || filtered.length === 0) return null;
+
+  async function handleRePractice(
+    sq: SavedQuestionListItem,
+    voiceId: string | null,
+    speechSpeed: number,
+  ) {
     setBusyId(sq.id);
     try {
       // Same mic preflight as Home's Begin-session, so the user lands in
@@ -733,7 +889,7 @@ function SavedQuestionsSection() {
         });
         return;
       }
-      const data = await rePractice(sq.id, voiceId);
+      const data = await rePractice(sq.id, voiceId, speechSpeed);
       const state: PracticeLocationState = {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
@@ -765,7 +921,7 @@ function SavedQuestionsSection() {
           Saved questions
         </h2>
         <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle tabular-nums">
-          {saved.length}/5 saved
+          {saved!.length}/5 saved
         </p>
       </div>
       <p className="mb-4 text-sm leading-[1.6] text-text-muted">
@@ -776,7 +932,7 @@ function SavedQuestionsSection() {
         improve over time. You can keep up to five saved questions at once.
       </p>
       <div className="mt-2">
-        {saved.map((sq) => (
+        {filtered.map((sq) => (
           <SavedQuestionRow
             key={sq.id}
             sq={sq}
@@ -793,8 +949,8 @@ function SavedQuestionsSection() {
         busy={busyId !== null}
         questionText={pendingSq?.question_text}
         onCancel={() => setPendingSq(null)}
-        onStart={(voiceId) => {
-          if (pendingSq) void handleRePractice(pendingSq, voiceId);
+        onStart={(voiceId, speechSpeed) => {
+          if (pendingSq) void handleRePractice(pendingSq, voiceId, speechSpeed);
         }}
       />
     </section>

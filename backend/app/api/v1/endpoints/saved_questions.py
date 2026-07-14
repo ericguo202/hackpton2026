@@ -417,7 +417,9 @@ async def practice_saved_question(
     session_id = uuid.uuid4()
     voice_id = resolve_voice(body.voice_id, session_id)
 
-    audio_url = await synthesize_speech(opening_q, voice_id=voice_id)
+    audio_url = await synthesize_speech(
+        opening_q, voice_id=voice_id, speed=body.speech_speed
+    )
     await _persist_session_and_turn(
         db,
         user,
@@ -435,6 +437,8 @@ async def practice_saved_question(
         # Re-practice WANTS the repeat — don't add it to the avoid-list.
         roll_recent=False,
         saved_question_id=sq.id,
+        # Persist the chosen pace so turn 2's follow-up TTS matches turn 1.
+        speech_speed=body.speech_speed,
     )
     await log_interview_session_started(
         db,

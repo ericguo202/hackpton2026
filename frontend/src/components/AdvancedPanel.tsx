@@ -14,7 +14,12 @@ import { Link } from 'react-router';
 
 import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPolicy';
 import type { CustomQuestion } from '../types/customQuestions';
+import SpeechSpeedToggle from './SpeechSpeedToggle';
 import VoicePickerGrid from './VoicePickerGrid';
+
+// Re-exported so existing importers (Home) keep their import path; the source
+// of truth lives alongside the shared toggle component.
+export { SPEECH_SPEED_NORMAL, SPEECH_SPEED_SLOWER } from './SpeechSpeedToggle';
 
 // Mirrors the server-side cap in `SessionCreateIn.job_description`.
 export const MAX_JOB_DESCRIPTION_CHARS = 6000;
@@ -29,6 +34,8 @@ const linkClass =
 type Props = {
   voiceId: string | null;
   onVoiceSelect: (id: string | null) => void;
+  speechSpeed: number;
+  onSpeechSpeedChange: (speed: number) => void;
   jobDescription: string;
   onJobDescriptionChange: (value: string) => void;
   customQuestions: CustomQuestion[];
@@ -42,6 +49,8 @@ type Props = {
 export default function AdvancedPanel({
   voiceId,
   onVoiceSelect,
+  speechSpeed,
+  onSpeechSpeedChange,
   jobDescription,
   onJobDescriptionChange,
   customQuestions,
@@ -64,6 +73,11 @@ export default function AdvancedPanel({
         <VoicePickerGrid
           voiceId={voiceId}
           onSelect={onVoiceSelect}
+          disabled={disabled}
+        />
+        <SpeedToggle
+          speechSpeed={speechSpeed}
+          onChange={onSpeechSpeedChange}
           disabled={disabled}
         />
       </Section>
@@ -208,6 +222,36 @@ export default function AdvancedPanel({
           </p>
         )}
       </Section>
+    </div>
+  );
+}
+
+/**
+ * Interview-pace control sitting under the voice grid: the shared segmented
+ * toggle plus a one-line hint. "Normal" is the brisk 1.1 default; "Slower"
+ * (0.9) is aimed at non-native English speakers who want the interviewer to
+ * talk more deliberately.
+ */
+function SpeedToggle({
+  speechSpeed,
+  onChange,
+  disabled,
+}: {
+  speechSpeed: number;
+  onChange: (speed: number) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <SpeechSpeedToggle
+        speechSpeed={speechSpeed}
+        onChange={onChange}
+        disabled={disabled}
+      />
+      <p className="text-text-subtle text-sm">
+        How fast the interviewer speaks. Slower can help if English isn't your
+        first language.
+      </p>
     </div>
   );
 }

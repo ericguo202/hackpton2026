@@ -18,7 +18,7 @@ Expected behaviors for /me:
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import Integer, desc, func, select
@@ -34,6 +34,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.session import DimensionAverages, FillerWordStat, MeStatsOut
 from app.schemas.user import (
+    ActiveTargetRoleIn,
     DeliveryAnalyticsConsentIn,
     FaceCalibrationConsentIn,
     PolicyAcceptanceIn,
@@ -225,6 +226,34 @@ async def accept_policies(
     return user
 
 
+@router.put("/target-role", response_model=UserOut)
+async def switch_active_target_role(
+    body: ActiveTargetRoleIn,
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Home role switcher — re-point the active `target_role` at a stored role.
+
+    Only a role already in the caller's `target_roles` set can be activated; that
+    set was injection-gated + moderated at onboarding, so no re-check is needed
+    here. Switching the active role changes the shape of future opening questions,
+    so the recent-questions avoid-list is reset (same contract as onboarding).
+    """
+    if body.target_role not in (user.target_roles or []):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="That role is not one of your saved target roles.",
+        )
+
+    # No-op when it's already active — don't needlessly discard the avoid-list.
+    if body.target_role != user.target_role:
+        user.target_role = body.target_role
+        user.recent_opening_questions = []
+        await db.commit()
+        await db.refresh(user)
+    return user
+
+
 def _columns(obj, fields: tuple[str, ...]) -> dict:
     """Pull a fixed allowlist of column values off an ORM row into a dict.
 
@@ -236,6 +265,7 @@ def _columns(obj, fields: tuple[str, ...]) -> dict:
 
 _EXPORT_USER_FIELDS = (
     "id", "email", "name", "resume_text", "industry", "target_role",
+    "target_roles",
     "experience_level", "short_bio", "timezone", "tier",
     "delivery_analytics_consent_at", "delivery_analytics_consent_version",
     "delivery_analytics_revoked_at",
@@ -361,6 +391,8 @@ def _to_decimal(v) -> Decimal | None:
 async def get_me_stats(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
+    company: str | None = Query(None),
+    job_title: str | None = Query(None),
 ) -> MeStatsOut:
     """Roll up the caller's lifetime scoring history.
 
@@ -374,7 +406,26 @@ async def get_me_stats(
     `total_sessions` and `completed_sessions` but not the per-dimension
     averages (their metrics row is null). Acceptable for the demo: legacy
     rows wash out once a couple of new sessions land.
+
+    Optional `company` / `job_title` filters narrow every aggregate to the
+    sessions matching that value (case-insensitive equality). The History
+    page passes these so the summary tiles and the "Most used filler words"
+    bar can honor its Company / Role filter without a separate endpoint.
+    Empty/whitespace values are ignored (treated as no filter).
     """
+    # Case-insensitive equality filters, applied to EVERY aggregate below so
+    # the returned object is internally coherent. Parameterized — no injection
+    # surface.
+    session_filters = []
+    if company and company.strip():
+        session_filters.append(
+            func.lower(InterviewSession.company) == company.strip().lower()
+        )
+    if job_title and job_title.strip():
+        session_filters.append(
+            func.lower(InterviewSession.job_title) == job_title.strip().lower()
+        )
+
     # Total / completed counts come straight from `interview_sessions`.
     counts_row = (await db.execute(
         select(
@@ -382,7 +433,7 @@ async def get_me_stats(
             func.count(InterviewSession.id).filter(
                 InterviewSession.status == SessionStatus.completed
             ).label("completed"),
-        ).where(InterviewSession.user_id == user.id)
+        ).where(InterviewSession.user_id == user.id, *session_filters)
     )).one()
 
     # Per-dimension averages + filler totals come from the cached metrics
@@ -413,6 +464,7 @@ async def get_me_stats(
         .where(
             InterviewSession.user_id == user.id,
             InterviewSession.status == SessionStatus.completed,
+            *session_filters,
         )
     )).one()
 
@@ -435,6 +487,7 @@ async def get_me_stats(
         .where(
             InterviewSession.user_id == user.id,
             InterviewSession.status == SessionStatus.completed,
+            *session_filters,
         )
         .group_by(kv.c.key)
         .order_by(desc("count"), kv.c.key.asc())
