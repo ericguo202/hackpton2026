@@ -2,7 +2,7 @@
  * Signed-out landing page.
  *
  * Design brief: .impeccable/brief-rebrand-stage1.md (confirmed). Four beats:
- * hero with a real-feedback specimen in place of illustration, the two-turn
+ * hero with a real-feedback specimen in place of illustration, the
  * session as a numbered sequence, the methodology case, and the free-tier
  * statement with a closing CTA. Student-first, but professional enough to
  * demo to a college career center as-is (PRODUCT.md future audience).
@@ -56,8 +56,8 @@ export default function Hero() {
                 style={{ animationDelay: '90ms' }}
               >
                 Speak your answer out loud. Get six scores, the exact quotes
-                that earned them, and a short list of fixes. Two turns per
-                session: a tight rep, not a marathon.
+                that earned them, and a short list of fixes. Two turns for a
+                tight rep, up to eight when you want a longer run.
               </p>
 
               <div
