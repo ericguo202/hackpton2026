@@ -16,7 +16,10 @@ class UserOut(BaseModel):
     email: str | None
     name: str | None
     industry: str | None
+    # Active role (conditions downstream prompts + default session job_title) and
+    # the full declared set it belongs to (1 required + up to 2 optional).
     target_role: str | None
+    target_roles: list[str]
     experience_level: ExperienceLevel | None
     short_bio: str | None
     resume_text: str | None
@@ -50,6 +53,17 @@ class UserOut(BaseModel):
     privacy_accepted_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class ActiveTargetRoleIn(BaseModel):
+    """Home role switcher: re-point the active `target_role` at a stored role.
+
+    The value must already be a member of the caller's `target_roles` (the set
+    was vetted at onboarding), so the endpoint validates membership rather than
+    re-moderating.
+    """
+
+    target_role: str
 
 
 class DeliveryAnalyticsConsentIn(BaseModel):

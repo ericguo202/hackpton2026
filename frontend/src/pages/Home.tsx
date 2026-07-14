@@ -37,6 +37,7 @@ import MobileSheet from '../components/MobileSheet';
 import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
+import RoleSwitcher from '../components/RoleSwitcher';
 import ScoreDimensions from '../components/ScoreDimensions';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
@@ -178,7 +179,7 @@ function RefineTrigger({
 
 export default function Home() {
   const { user } = useUser();
-  const { me } = useMe();
+  const { me, refetch } = useMe();
   const { apiFetch } = useApi();
   const navigate = useNavigate();
 
@@ -359,10 +360,9 @@ export default function Home() {
     void createAndGoToSession(false);
   }
 
-  const targetRoleBadge = me?.target_role ? (
-    <p className="text-sm text-text-subtle">
-      Target role: <span className="text-text-muted">{me.target_role}</span>
-    </p>
+  // Active-role badge; for multi-role users this becomes a "Change" switcher.
+  const targetRoleBadge = me ? (
+    <RoleSwitcher me={me} refetch={refetch} />
   ) : null;
 
   // Free-tier usage indicator. Pro users see nothing — the counter is
@@ -375,15 +375,11 @@ export default function Home() {
     </p>
   ) : null;
 
-  // Compact one-line status for the mobile pinned Begin bar — the same target
-  // role + daily-count data as the desktop badges, joined into a single line so
-  // it fits under the button. Empty (hidden) when neither applies.
-  const mobileBarStatus = [
-    me?.target_role ?? null,
-    me?.tier === 'free' ? `${me.daily_session_count}/5 today` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  // Compact daily-count status under the mobile pinned Begin button. The target
+  // role now lives in the mobile slab as its own switcher (see below), so the
+  // pinned bar only carries the free-tier daily count. Empty (hidden) otherwise.
+  const mobileBarStatus =
+    me?.tier === 'free' ? `${me.daily_session_count}/5 today` : '';
 
   const errorBlock = setupError ? (
     <p role="alert" aria-live="polite" className="mt-10 text-sm leading-[1.6] text-text-muted">
@@ -562,6 +558,11 @@ export default function Home() {
                     disabled={submitting}
                   />
                 </div>
+
+                {/* Target role + switcher. On mobile it lives in the slab body
+                    (not the pinned bar) so its popover opens downward into the
+                    content instead of off the bottom edge. */}
+                {targetRoleBadge && <div className="mt-6">{targetRoleBadge}</div>}
 
                 <div className="mt-6 flex items-center gap-x-6">
                   <RefineTrigger

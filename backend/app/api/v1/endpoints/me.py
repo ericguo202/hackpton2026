@@ -34,6 +34,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.session import DimensionAverages, FillerWordStat, MeStatsOut
 from app.schemas.user import (
+    ActiveTargetRoleIn,
     DeliveryAnalyticsConsentIn,
     FaceCalibrationConsentIn,
     PolicyAcceptanceIn,
@@ -225,6 +226,34 @@ async def accept_policies(
     return user
 
 
+@router.put("/target-role", response_model=UserOut)
+async def switch_active_target_role(
+    body: ActiveTargetRoleIn,
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Home role switcher — re-point the active `target_role` at a stored role.
+
+    Only a role already in the caller's `target_roles` set can be activated; that
+    set was injection-gated + moderated at onboarding, so no re-check is needed
+    here. Switching the active role changes the shape of future opening questions,
+    so the recent-questions avoid-list is reset (same contract as onboarding).
+    """
+    if body.target_role not in (user.target_roles or []):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="That role is not one of your saved target roles.",
+        )
+
+    # No-op when it's already active — don't needlessly discard the avoid-list.
+    if body.target_role != user.target_role:
+        user.target_role = body.target_role
+        user.recent_opening_questions = []
+        await db.commit()
+        await db.refresh(user)
+    return user
+
+
 def _columns(obj, fields: tuple[str, ...]) -> dict:
     """Pull a fixed allowlist of column values off an ORM row into a dict.
 
@@ -236,6 +265,7 @@ def _columns(obj, fields: tuple[str, ...]) -> dict:
 
 _EXPORT_USER_FIELDS = (
     "id", "email", "name", "resume_text", "industry", "target_role",
+    "target_roles",
     "experience_level", "short_bio", "timezone", "tier",
     "delivery_analytics_consent_at", "delivery_analytics_consent_version",
     "delivery_analytics_revoked_at",

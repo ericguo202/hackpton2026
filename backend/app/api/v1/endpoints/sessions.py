@@ -278,7 +278,11 @@ async def create_session(
     # concurrently; each logs its incident in its own short-lived session, so the
     # request `db` is never touched concurrently.
     moderation_targets = [("sessions.company", body.company)]
-    if body.job_title != user.target_role:
+    # `job_title` is the profile's active role by default, but a multi-role user
+    # can start a session under any of their declared roles — all of which were
+    # moderated at onboarding. Skip re-moderation when it matches ANY stored role.
+    vetted_roles = user.target_roles or ([user.target_role] if user.target_role else [])
+    if body.job_title not in vetted_roles:
         moderation_targets.append(("sessions.job_title", body.job_title))
     # The pasted job description is freshly user-supplied each session, so it
     # always needs moderation when present.
