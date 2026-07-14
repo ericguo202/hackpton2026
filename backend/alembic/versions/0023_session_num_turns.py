@@ -1,7 +1,7 @@
 """add per-session turn count
 
-Revision ID: 0021_session_num_turns
-Revises: 0020_face_calib_consent
+Revision ID: 0023_session_num_turns
+Revises: 0022_target_roles
 Create Date: 2026-07-03
 """
 
@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0021_session_num_turns"
-down_revision: Union[str, None] = "0020_face_calib_consent"
+revision: str = "0023_session_num_turns"
+down_revision: Union[str, None] = "0022_target_roles"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
