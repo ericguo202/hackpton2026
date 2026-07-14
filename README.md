@@ -240,28 +240,15 @@ Browser (React + Vite)
 ---
 
 ## Future improvements
-
-The MVP's scope was intentionally tight (two turns, one company at a time,
-single-shot scoring). A few directions worth exploring beyond this build:
-
-- **Variable-length sessions** — drop the hardcoded 2-turn rule, let the
-  evaluator decide when the answer warrants a deeper follow-up vs. moving on.
-  Requires a smarter end-condition than `turn_number >= 2`. **coming soon!**
 - **More interview formats** — the architecture is generic; technical-screen
   framing, case-interview prompts, and consulting fit-style questions are all
   swap-the-prompt features.
-- **Streaming TTS / LiveAvatar** — ElevenLabs supports streaming; pairing it
-  with a HeyGen LiveAvatar would give the interviewer a face. Lite-mode
-  integration was scoped but cut for time.
 - **Spoken-feedback mode** — pipe the structured feedback back through TTS at the
   end of the session so the review feels like a debrief, not a report card.
 - **Comparative analytics** — anonymized cohort percentiles ("your
   Structure and Impact scores trail the median for entry-level SWE
   candidates") would turn the trend chart from a self-comparison into a
   benchmark.
-- **Mobile capture** — the current MediaPipe loop assumes a laptop webcam;
-  a dedicated phone capture flow with portrait framing and on-device STT
-  would extend the practice context.
 - **Production hardening** — exponential backoff on the ElevenLabs / Gemini
   rate limits and an actual test suite beyond the evaluator unit tests.
   Per-user daily caps and the internal incidents table already ship; broader
