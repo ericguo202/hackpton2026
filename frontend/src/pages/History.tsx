@@ -566,7 +566,7 @@ export default function History() {
                       }}
                       selected={filterSelected}
                       onSelectedChange={setFilterSelected}
-                      inputClassName="w-full rounded-full border border-border-strong bg-surface-raised px-4 py-1.5 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                      inputClassName="w-full rounded-full border border-border-strong bg-surface-raised px-4 py-1 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                       placeholder={
                         filterField === 'company'
                           ? 'Type a company…'

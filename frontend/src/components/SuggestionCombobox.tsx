@@ -157,7 +157,14 @@ export default function SuggestionCombobox({
     // While the dropdown is open, lift this field above its same-context
     // siblings (the next field / buttons below it) so the opaque dropdown
     // covers them instead of letting them ghost through.
-    <div className={`relative space-y-2${open ? ' z-30' : ''}`}>
+    //
+    // No `space-y-*` here: in Tailwind v4 it resolves to a margin-block-end on
+    // the input (`:not(:last-child)`) whenever the dropdown <ul> mounts as a
+    // second child, adding 8px below the input. The <ul> is absolute (out of
+    // flow), so that phantom margin only grows the wrapper and, in a flex
+    // items-center row, re-centers the input upward. The dropdown sets its own
+    // gap via `top-full mt-1`, so no in-flow spacing is needed.
+    <div className={`relative${open ? ' z-30' : ''}`}>
       <input
         id={id}
         type="text"
