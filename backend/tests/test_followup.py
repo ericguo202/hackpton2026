@@ -17,12 +17,16 @@ from app.services.followup import (
     _FOLLOWUP_EXAMPLES,
     _PROBE_ANGLES,
     _SYSTEM_PROMPT,
+    _parse_transition_payload,
     _render_avoid_block,
     _render_block_history,
     _render_context_block,
     _render_variety_block,
     _sanitize_followup,
+    _sanitize_bridge,
+    _tts_text,
     generate_followup,
+    generate_followup_transition,
 )
 
 
@@ -121,6 +125,28 @@ async def test_falls_back_on_short_output(monkeypatch):
     )
     result = await generate_followup("Q", "Some answer.")
     assert result == _FALLBACK
+
+
+async def test_generate_followup_transition_returns_structured_question(monkeypatch):
+    captured: list = []
+    raw = (
+        '{"spoken_bridge":"That disagreement gives us a concrete thread to follow.",'
+        '"question":"When that teammate disagreed, how did you decide which technical signal mattered most?"}'
+    )
+    monkeypatch.setattr(
+        "app.services.followup.get_client",
+        lambda: _make_fake_client(raw, captured),
+    )
+    result = await generate_followup_transition(
+        "Tell me about a technical disagreement.",
+        "A teammate and I disagreed about face-attention weighting.",
+    )
+    assert result.spoken_bridge == "That disagreement gives us a concrete thread to follow."
+    assert result.question == (
+        "When that teammate disagreed, how did you decide which technical signal mattered most?"
+    )
+    assert captured[0][0]["role"] == "system"
+    assert "spoken_bridge" in captured[0][0]["content"]
 
 
 # ── injection backstop ───────────────────────────────────────────────────────
@@ -245,6 +271,39 @@ def test_sanitize_preserves_prefatory_statement():
     survive intact through the sanitizer."""
     text = "Anthropic values AI safety. What did you learn?"
     assert _sanitize_followup(text) == text
+
+
+def test_transition_payload_keeps_bridge_separate():
+    raw = (
+        '{"spoken_bridge":"The Clerk mismatch thread is worth digging into.",'
+        '"question":"In the Clerk data-mismatch bug, how did you personally trace the root cause?"}'
+    )
+    result = _parse_transition_payload(raw)
+    assert result.spoken_bridge == "The Clerk mismatch thread is worth digging into."
+    assert result.question == (
+        "In the Clerk data-mismatch bug, how did you personally trace the root cause?"
+    )
+    assert _tts_text(result) == (
+        "The Clerk mismatch thread is worth digging into. "
+        "In the Clerk data-mismatch bug, how did you personally trace the root cause?"
+    )
+
+
+def test_transition_drops_generic_or_evaluative_bridge():
+    assert _sanitize_bridge("Thanks, let's switch to a different example.") is None
+    assert _sanitize_bridge("Great answer.") is None
+    assert _sanitize_bridge("The testing cleanup detail is useful context.") == (
+        "The testing cleanup detail is useful context."
+    )
+
+
+def test_transition_rejects_bad_visible_question():
+    raw = (
+        '{"spoken_bridge":null,'
+        '"question":"It is fascinating how testing changes user experience. Tell me about a time..."}'
+    )
+    with pytest.raises(ValueError):
+        _parse_transition_payload(raw)
 
 
 # ── _render_context_block unit tests ─────────────────────────────────────────

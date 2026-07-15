@@ -41,6 +41,38 @@ def test_session_create_rejects_out_of_range_turn_counts(num_turns):
         )
 
 
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "Can you clarify the question?",
+        "What do you mean by challenge?",
+        "Can you be more explicit?",
+        "Challenge regarding what?",
+    ],
+)
+def test_clarification_detector_accepts_explicit_requests(transcript):
+    assert sessions_module._is_clarification_request(transcript) is True
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "I don't know how I feel about this.",
+        "I don't have an example.",
+        "We clarified the requirements with the designer and shipped it.",
+        "This is a long partial answer about a real project where I needed more information before deciding what to do next.",
+    ],
+)
+def test_clarification_detector_rejects_weak_or_real_answers(transcript):
+    assert sessions_module._is_clarification_request(transcript) is False
+
+
+def test_clarified_question_keeps_same_prompt_concrete():
+    assert sessions_module._clarified_question(
+        "Tell me about a time you handled conflict?"
+    ) == "Tell me about a time you handled conflict using one specific work or school example."
+
+
 async def test_eval_registry_tracks_multiple_pending_turns_per_session():
     async def _wait():
         await asyncio.sleep(0.01)

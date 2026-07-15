@@ -190,6 +190,10 @@ class TurnSubmitOut(BaseModel):
     # question as a follow-up during recording. False on the final turn (no
     # next question) and whenever the next turn is a fresh opening.
     next_question_is_followup: bool = False
+    # True when the submitted audio was only a clarification request. The
+    # backend re-asks the same turn more concretely and does not persist the
+    # transcript, score the turn, or advance the turn count.
+    clarification_retry: bool = False
     is_final: bool
     # True when the evaluator is still running in the background. The
     # frontend uses this to (a) avoid showing 0/10 placeholder bars on

@@ -343,7 +343,21 @@ function PracticeSession({
         final_turn: result.is_final,
         total_turns: totalTurns,
         evaluation_pending: Boolean(result.evaluation_pending),
+        clarification_retry: Boolean(result.clarification_retry),
       });
+
+      if (result.clarification_retry) {
+        setCurrentQ({
+          text: result.next_question!,
+          audioUrl: result.next_question_audio_url!,
+          num: currentQ.num,
+          isFollowup: result.next_question_is_followup,
+        });
+        setReplayKey((k) => k + 1);
+        recorder.reset();
+        analyzer.reset();
+        return;
+      }
 
       // Stash the recorded answer's replay URLs so SessionDetail's per-turn
       // replay cards can show them after the redirect. Fresh object URLs (not

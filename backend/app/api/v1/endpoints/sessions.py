@@ -10,6 +10,7 @@ GET  /api/v1/sessions/{id}        — full session detail (session + turns).
 import asyncio
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -56,7 +57,11 @@ from app.services.coaching import generate_next_take
 from app.services.delivery_consent import has_active_delivery_analytics_consent
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
-from app.services.followup import generate_followup, should_continue_followup
+from app.services.followup import (
+    generate_followup_transition,
+    should_continue_followup,
+    _tts_text,
+)
 from app.services.incidents import (
     log_error,
     log_injection_detected,
@@ -448,6 +453,45 @@ async def create_session(
 # résumé read (`_read_pdf_bounded`).
 _MAX_AUDIO_BYTES = 50 * 1024 * 1024
 _AUDIO_CHUNK_SIZE = 1024 * 1024
+_FALLBACK_CLARIFICATION_QUESTION = (
+    "Tell me about one specific work or school situation, what you did, and what happened."
+)
+_CLARIFICATION_RE = re.compile(
+    r"\b(?:"
+    r"can you clarify|could you clarify|please clarify|"
+    r"what do you mean|what did you mean|"
+    r"can you be more explicit|could you be more explicit|"
+    r"be more specific|can you explain the question|"
+    r"could you explain the question|what are you asking|"
+    r"challenge regarding what|clarify the question"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_clarification_request(transcript: str) -> bool:
+    """Conservative detector for explicit clarification requests only."""
+    cleaned = " ".join((transcript or "").strip().lower().split())
+    if not cleaned or len(cleaned) > 180:
+        return False
+    return bool(_CLARIFICATION_RE.search(cleaned))
+
+
+def _clarified_question(question: str) -> str:
+    """Re-ask the same prompt with a concrete-answer frame."""
+    q = " ".join((question or "").strip().split())
+    if not q:
+        return _FALLBACK_CLARIFICATION_QUESTION
+    stripped = q.rstrip("?.!")
+    lower = stripped.lower()
+    if lower.startswith("tell me about"):
+        return f"{stripped} using one specific work or school example."
+    if lower.startswith("describe"):
+        return (
+            f"{stripped} using one specific situation and what you personally did."
+        )
+    topic = stripped[0].lower() + stripped[1:] if stripped else "the situation"
+    return f"Using one specific work or school example, {topic}?"
 
 
 async def _read_audio_bounded(audio: UploadFile) -> bytes:
@@ -548,7 +592,7 @@ async def _followup_and_tts(
     or re-treading earlier questions — the anti-repetition half of the
     variety fix.
     """
-    next_q = await generate_followup(
+    generated = await generate_followup_transition(
         question,
         transcript,
         category=category,
@@ -560,9 +604,9 @@ async def _followup_and_tts(
         block_history=block_history,
     )
     audio_url = await synthesize_speech(
-        next_q, voice_id=voice_id, speed=speech_speed
+        _tts_text(generated), voice_id=voice_id, speed=speech_speed
     )
-    return next_q, audio_url
+    return generated.question, audio_url
 
 
 async def _opening_and_tts(
@@ -1385,6 +1429,39 @@ async def submit_turn(
                 "Your answer contains content that violates our usage "
                 "policy. Please re-record and try again."
             ),
+        )
+
+    if (
+        not session.clarification_retry_used
+        and _is_clarification_request(transcript)
+    ):
+        clarified = _clarified_question(current_turn.question_text)
+        turn_voice_id = session.voice_id or voice_for_session(session.id)
+        turn_speech_speed = (
+            float(session.speech_speed)
+            if session.speech_speed is not None
+            else None
+        )
+        audio_url = await synthesize_speech(
+            clarified, voice_id=turn_voice_id, speed=turn_speech_speed
+        )
+        current_turn.question_text = clarified
+        session.clarification_retry_used = True
+        await db.commit()
+        filler_count, filler_breakdown = count_filler_words(transcript)
+        return TurnSubmitOut(
+            transcript=transcript,
+            scores=None,
+            feedback=None,
+            feedback_detail=None,
+            filler_word_count=filler_count,
+            filler_word_breakdown=filler_breakdown,
+            next_question=clarified,
+            next_question_audio_url=audio_url,
+            next_question_is_followup=current_turn.is_followup,
+            clarification_retry=True,
+            is_final=False,
+            evaluation_pending=False,
         )
 
     # 4. Filler words (regex ground truth per CLAUDE.md) + total word count
