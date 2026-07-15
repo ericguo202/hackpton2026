@@ -10,6 +10,7 @@ import { useCallback } from 'react';
 
 import { useApi } from './useApi';
 import { useFetch } from './useFetch';
+import type { SpeechPace } from '../components/SpeechSpeedToggle';
 import type {
   SavedQuestionListItem,
   SavedQuestionOut,
@@ -49,13 +50,13 @@ export function useSavedQuestions() {
   );
 
   const rePractice = useCallback(
-    async (id: string, voiceId?: string | null, speechSpeed?: number) =>
+    async (id: string, voiceId?: string | null, speechPace?: SpeechPace) =>
       apiFetch<RePracticeResult>(`/api/v1/saved-questions/${id}/practice`, {
         method: 'POST',
         body: JSON.stringify({
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(voiceId ? { voice_id: voiceId } : {}),
-          ...(speechSpeed !== undefined ? { speech_speed: speechSpeed } : {}),
+          ...(speechPace !== undefined ? { speech_pace: speechPace } : {}),
         }),
       }),
     [apiFetch],

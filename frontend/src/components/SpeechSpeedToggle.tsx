@@ -4,30 +4,33 @@
  * re-practice popup (`RePracticeVoiceDialog`).
  *
  * Renders only the segmented control; callers own the surrounding label/hint.
- * The value maps to the backend `speech_speed` (→ ElevenLabs
- * `voice_settings.speed`); constants mirror `tts.NORMAL_SPEED`/`SLOWER_SPEED`.
+ * The value is a semantic pace label (→ backend `speech_pace`), NOT a raw
+ * speed. The actual ElevenLabs `voice_settings.speed` is resolved PER VOICE
+ * server-side (`voice_pool.resolve_speed`), because a global 1.1/0.9 reads
+ * very differently across accents — and on "Surprise me" the frontend can't
+ * even know which voice will be picked.
  */
 
-// "Normal" is a deliberate 1.1 (not 1.0): without voice_settings ElevenLabs
-// uses each voice's stored, slower settings. "Slower" (0.9) is aimed at
-// non-native English speakers.
-export const SPEECH_SPEED_NORMAL = 1.1;
-export const SPEECH_SPEED_SLOWER = 0.9;
+export type SpeechPace = 'normal' | 'slower';
+
+// "Normal" is the brisk default; "Slower" is aimed at non-native English
+// speakers. The per-voice float each maps to lives on the backend.
+export const SPEECH_PACE_DEFAULT: SpeechPace = 'normal';
 
 type Props = {
-  speechSpeed: number;
-  onChange: (speed: number) => void;
+  pace: SpeechPace;
+  onChange: (pace: SpeechPace) => void;
   disabled?: boolean;
 };
 
 export default function SpeechSpeedToggle({
-  speechSpeed,
+  pace,
   onChange,
   disabled = false,
 }: Props) {
-  const options: { label: string; value: number }[] = [
-    { label: 'Normal', value: SPEECH_SPEED_NORMAL },
-    { label: 'Slower', value: SPEECH_SPEED_SLOWER },
+  const options: { label: string; value: SpeechPace }[] = [
+    { label: 'Normal', value: 'normal' },
+    { label: 'Slower', value: 'slower' },
   ];
   return (
     <div
@@ -36,7 +39,7 @@ export default function SpeechSpeedToggle({
       className="inline-flex rounded-full border border-border bg-surface-sunken p-0.5"
     >
       {options.map(({ label, value }) => {
-        const active = speechSpeed === value;
+        const active = pace === value;
         return (
           <button
             key={label}

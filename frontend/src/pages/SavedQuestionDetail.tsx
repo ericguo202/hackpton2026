@@ -31,6 +31,7 @@ import {
 import DimensionMenu from '../components/DimensionMenu';
 import { StrengthsRadarPanel } from '../components/StrengthsRadar';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
+import type { SpeechPace } from '../components/SpeechSpeedToggle';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useSavedQuestionDetail } from '../hooks/useSavedQuestionDetail';
@@ -191,7 +192,7 @@ export default function SavedQuestionDetail() {
   async function handleRePractice(
     sq: SavedQuestionDetailType,
     voiceId: string | null,
-    speechSpeed: number,
+    speechPace: SpeechPace,
   ) {
     setRePracticing(true);
     try {
@@ -205,7 +206,7 @@ export default function SavedQuestionDetail() {
         });
         return;
       }
-      const data = await rePractice(sq.id, voiceId, speechSpeed);
+      const data = await rePractice(sq.id, voiceId, speechPace);
       const state: PracticeLocationState = {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
@@ -292,8 +293,8 @@ export default function SavedQuestionDetail() {
                 busy={rePracticing}
                 questionText={saved.question_text}
                 onCancel={() => setDialogOpen(false)}
-                onStart={(voiceId, speechSpeed) =>
-                  void handleRePractice(saved, voiceId, speechSpeed)
+                onStart={(voiceId, speechPace) =>
+                  void handleRePractice(saved, voiceId, speechPace)
                 }
               />
 

@@ -12,7 +12,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import SpeechSpeedToggle, { SPEECH_SPEED_NORMAL } from './SpeechSpeedToggle';
+import SpeechSpeedToggle, { SPEECH_PACE_DEFAULT } from './SpeechSpeedToggle';
+import type { SpeechPace } from './SpeechSpeedToggle';
 import VoicePickerGrid from './VoicePickerGrid';
 import { Button } from './ui/button';
 
@@ -20,7 +21,7 @@ interface Props {
   open: boolean;
   busy: boolean;
   onCancel: () => void;
-  onStart: (voiceId: string | null, speechSpeed: number) => void;
+  onStart: (voiceId: string | null, speechPace: SpeechPace) => void;
   questionText?: string;
 }
 
@@ -32,7 +33,7 @@ export default function RePracticeVoiceDialog({
   questionText,
 }: Props) {
   const [voiceId, setVoiceId] = useState<string | null>(null);
-  const [speechSpeed, setSpeechSpeed] = useState<number>(SPEECH_SPEED_NORMAL);
+  const [speechPace, setSpeechPace] = useState<SpeechPace>(SPEECH_PACE_DEFAULT);
 
   // Reset to "Surprise me" + "Normal" pace on each open transition, via the
   // React-19 compare-state-during-render pattern (no setState-in-effect).
@@ -41,7 +42,7 @@ export default function RePracticeVoiceDialog({
     setWasOpen(open);
     if (open) {
       setVoiceId(null);
-      setSpeechSpeed(SPEECH_SPEED_NORMAL);
+      setSpeechPace(SPEECH_PACE_DEFAULT);
     }
   }
 
@@ -98,8 +99,8 @@ export default function RePracticeVoiceDialog({
           </p>
           <div className="mt-2">
             <SpeechSpeedToggle
-              speechSpeed={speechSpeed}
-              onChange={setSpeechSpeed}
+              pace={speechPace}
+              onChange={setSpeechPace}
               disabled={busy}
             />
           </div>
@@ -120,7 +121,7 @@ export default function RePracticeVoiceDialog({
           </Button>
           <Button
             type="button"
-            onClick={() => onStart(voiceId, speechSpeed)}
+            onClick={() => onStart(voiceId, speechPace)}
             disabled={busy}
           >
             {busy ? 'Starting…' : 'Start session'}

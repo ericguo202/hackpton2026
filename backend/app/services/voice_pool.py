@@ -27,7 +27,18 @@ to keep historical sessions stable when no `voice_id` was persisted
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 from uuid import UUID
+
+from app.services import tts
+
+# Interview-voice pace, chosen by the "Normal"/"Slower" setup toggle. The wire
+# carries this label (not a raw float) because the actual ElevenLabs speed for
+# each pace is PER VOICE — 1.1 reads brisk on one accent and sluggish on another
+# — and the resolved voice isn't known frontend-side on the "Surprise me" path.
+# `resolve_speed(voice_id, pace)` turns the pair into the float we persist.
+SpeechPace = Literal["normal", "slower"]
+DEFAULT_PACE: SpeechPace = "normal"
 
 
 @dataclass(frozen=True)
@@ -37,29 +48,43 @@ class VoiceProfile:
     `id` is the ElevenLabs voice ID and is what the TTS endpoint
     actually consumes. `name` and `accent` are display-only metadata
     surfaced in the picker UI and never sent to ElevenLabs.
+
+    `normal_speed`/`slower_speed` are the `voice_settings.speed` this voice
+    uses for the "Normal"/"Slower" pace toggle. They're hand-tuned per voice
+    (see `resolve_speed`) because a single global 1.1/0.9 pair reads very
+    differently across accents. All values sit inside `tts`'s quality-safe
+    [MIN_SPEED, MAX_SPEED] window; `clamp_speed` re-clamps at synth time.
     """
 
     id: str
     name: str
     accent: str
+    normal_speed: float
+    slower_speed: float
 
 
 # Order matters only for the legacy fallback path
 # (`voice_for_session(session.id)`): reordering changes which voice an
 # unpicked session resolves to. Sessions that explicitly persisted a
 # `voice_id` are immune. Add new voices to the END.
+# The trailing (normal, slower) pair is the hand-tuned per-voice pace (see
+# `resolve_speed` / `VoiceProfile`). Grouped by the calibrated tier:
+#   1.1 / 0.8   — Cindy, James, Divya, Maxime
+#   1.0 / 0.75  — David, Ruy, Rafael
+#   1.2 / 1.0   — Irina, Daniela, Hanna
+#   1.1 / 0.9   — Ding
 _VOICE_POOL: tuple[VoiceProfile, ...] = (
-    VoiceProfile("DODLEQrClDo8wCz460ld", "Cindy",    "American"),
-    VoiceProfile("1cuDPO8sIMatoOE4Z2Zv", "James",    "American"),
-    VoiceProfile("MwUMLXurEzSN7bIfIdXF", "Divya",    "Indian"),
-    VoiceProfile("K8nDX2f6wjv6bCh5UeZi", "Maxime",   "French"),
-    VoiceProfile("Fahco4VZzobUeiPqni1S", "David",    "British"),
-    VoiceProfile("GCPLhb1XrVwcoKUJYcvz", "Irina",    "Russian"),
-    VoiceProfile("RBUtdrDRjER5aScqHwAS", "Ding",     "Chinese"),
-    VoiceProfile("QZRlT5NqTgs34Uz6r1me", "Ruy",      "Spanish"),
-    VoiceProfile("IpCcRCVYm2nsZJjBFn4H", "Rafael",   "Portuguese"),
-    VoiceProfile("n5UxjYFlD5aLGVRI2HXk", "Daniela",  "Australian"),
-    VoiceProfile("Zjb2Dbq5IbWDKpVOllIo", "Hanna",    "Korean")
+    VoiceProfile("DODLEQrClDo8wCz460ld", "Cindy",    "American",   1.1, 0.8),
+    VoiceProfile("1cuDPO8sIMatoOE4Z2Zv", "James",    "American",   1.1, 0.8),
+    VoiceProfile("MwUMLXurEzSN7bIfIdXF", "Divya",    "Indian",     1.1, 0.8),
+    VoiceProfile("K8nDX2f6wjv6bCh5UeZi", "Maxime",   "French",     1.1, 0.8),
+    VoiceProfile("Fahco4VZzobUeiPqni1S", "David",    "British",    1.0, 0.75),
+    VoiceProfile("GCPLhb1XrVwcoKUJYcvz", "Irina",    "Russian",    1.2, 1.0),
+    VoiceProfile("RBUtdrDRjER5aScqHwAS", "Ding",     "Chinese",    1.1, 0.9),
+    VoiceProfile("QZRlT5NqTgs34Uz6r1me", "Ruy",      "Spanish",    1.0, 0.75),
+    VoiceProfile("IpCcRCVYm2nsZJjBFn4H", "Rafael",   "Portuguese", 1.0, 0.75),
+    VoiceProfile("n5UxjYFlD5aLGVRI2HXk", "Daniela",  "Australian", 1.2, 1.0),
+    VoiceProfile("Zjb2Dbq5IbWDKpVOllIo", "Hanna",    "Korean",     1.2, 1.0),
 )
 
 # id-keyed lookup for O(1) validation. Built once at import time so
@@ -76,6 +101,22 @@ def is_valid_voice_id(voice_id: str) -> bool:
     burn quota on a voice we didn't intend to ship).
     """
     return voice_id in _VOICE_BY_ID
+
+
+def resolve_speed(voice_id: str, pace: SpeechPace = DEFAULT_PACE) -> float:
+    """Resolve the ElevenLabs `voice_settings.speed` for a voice + pace.
+
+    Callers pass the already-resolved voice (from `resolve_voice`) plus the
+    candidate's "Normal"/"Slower" toggle, and get the hand-tuned per-voice
+    float to persist on the session row. `voice_id` is always a pool member in
+    practice (resolve_voice guarantees it); an unknown ID falls back to the
+    global `tts` defaults purely as defense. `clamp_speed` still re-clamps at
+    synth time, so this can never emit an out-of-range value.
+    """
+    profile = _VOICE_BY_ID.get(voice_id)
+    if profile is None:
+        return tts.SLOWER_SPEED if pace == "slower" else tts.DEFAULT_SPEED
+    return profile.slower_speed if pace == "slower" else profile.normal_speed
 
 
 def resolve_voice(requested: str | None, session_id: UUID) -> str:

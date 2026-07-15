@@ -68,7 +68,7 @@ from app.services.moderation import check_moderation
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
 from app.services.tts import DEFAULT_SPEED, synthesize_speech
-from app.services.voice_pool import resolve_voice, voice_for_session
+from app.services.voice_pool import resolve_speed, resolve_voice, voice_for_session
 
 logger = logging.getLogger(__name__)
 
@@ -391,9 +391,14 @@ async def create_session(
     # per-session voice (see `resolve_voice`). The resolved voice is persisted
     # on the session row below so turn 2's TTS reads the same value.
     voice_id = resolve_voice(body.voice_id, session_id)
+    # Turn the "Normal"/"Slower" toggle into this voice's tuned speed now that
+    # the voice is resolved (works for the "Surprise me" path, where the
+    # frontend couldn't know the voice). The resolved float is persisted and
+    # reused verbatim by turn 2's follow-up TTS.
+    speech_speed = resolve_speed(voice_id, body.speech_pace)
 
     audio_url, _ = await asyncio.gather(
-        synthesize_speech(opening_q, voice_id=voice_id, speed=body.speech_speed),
+        synthesize_speech(opening_q, voice_id=voice_id, speed=speech_speed),
         _persist_session_and_turn(
             db,
             user,
@@ -407,8 +412,8 @@ async def create_session(
             # A custom question is a deliberate, reusable pick — don't push it
             # into the generation avoid-list (it isn't a generated question).
             roll_recent=custom_question is None,
-            # Persist the chosen pace so turn 2's TTS matches turn 1.
-            speech_speed=body.speech_speed,
+            # Persist the resolved pace so turn 2's TTS matches turn 1.
+            speech_speed=speech_speed,
         ),
     )
     await log_interview_session_started(
