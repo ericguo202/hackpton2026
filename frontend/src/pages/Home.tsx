@@ -28,11 +28,11 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 
 import AccountButton from '../components/AccountButton';
-import AdvancedPanel, {
-  MIN_SESSION_TURNS,
-  SPEECH_SPEED_NORMAL,
-} from '../components/AdvancedPanel';
+import AdvancedPanel, { SPEECH_SPEED_NORMAL } from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
+import SessionLengthField, {
+  MIN_SESSION_TURNS,
+} from '../components/SessionLengthField';
 import DeliveryConsentDialog from '../components/DeliveryConsentDialog';
 import FlashBanner from '../components/FlashBanner';
 import HomeTutorial from '../components/home-tutorial/HomeTutorial';
@@ -490,6 +490,13 @@ export default function Home() {
                       disabled={submitting}
                     />
                   </span>
+                  <SessionLengthField
+                    id="session-turns-desktop"
+                    tourId="length-slider"
+                    numTurns={numTurns}
+                    onChange={setNumTurns}
+                    disabled={submitting}
+                  />
                   <RefineTrigger
                     label="Advanced"
                     active={surface === 'advanced'}
@@ -554,7 +561,7 @@ export default function Home() {
                   />
                 </label>
 
-                <div className="mt-8 flex flex-wrap items-center gap-2">
+                <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2">
                   <AutoSubmitPill
                     autoSubmit={autoSubmit}
                     onToggle={() => setAutoSubmit((v) => !v)}
@@ -563,6 +570,12 @@ export default function Home() {
                   <ShowQuestionTextPill
                     showQuestionText={showQuestionText}
                     onToggle={() => setShowQuestionText((v) => !v)}
+                    disabled={submitting}
+                  />
+                  <SessionLengthField
+                    id="session-turns-mobile"
+                    numTurns={numTurns}
+                    onChange={setNumTurns}
                     disabled={submitting}
                   />
                 </div>
@@ -604,8 +617,6 @@ export default function Home() {
             customQuestions={customQuestions ?? []}
             selectedCustomQuestionId={selectedCustomQuestionId}
             onSelectCustomQuestion={setSelectedCustomQuestionId}
-            numTurns={numTurns}
-            onNumTurnsChange={setNumTurns}
             disabled={submitting}
           />
 
@@ -638,8 +649,6 @@ export default function Home() {
               customQuestions={customQuestions ?? []}
               selectedCustomQuestionId={selectedCustomQuestionId}
               onSelectCustomQuestion={setSelectedCustomQuestionId}
-              numTurns={numTurns}
-              onNumTurnsChange={setNumTurns}
               disabled={submitting}
             />
           </MobileSheet>

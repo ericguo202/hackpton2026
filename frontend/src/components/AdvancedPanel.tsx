@@ -23,8 +23,6 @@ export { SPEECH_SPEED_NORMAL, SPEECH_SPEED_SLOWER } from './SpeechSpeedToggle';
 
 // Mirrors the server-side cap in `SessionCreateIn.job_description`.
 export const MAX_JOB_DESCRIPTION_CHARS = 6000;
-export const MIN_SESSION_TURNS = 2;
-export const MAX_SESSION_TURNS = 8;
 // Show the remaining-characters counter only once the user is close to the cap.
 const JOB_DESCRIPTION_COUNTER_THRESHOLD = 500;
 
@@ -41,8 +39,6 @@ type Props = {
   customQuestions: CustomQuestion[];
   selectedCustomQuestionId: string | null;
   onSelectCustomQuestion: (id: string | null) => void;
-  numTurns: number;
-  onNumTurnsChange: (value: number) => void;
   disabled: boolean;
 };
 
@@ -56,8 +52,6 @@ export default function AdvancedPanel({
   customQuestions,
   selectedCustomQuestionId,
   onSelectCustomQuestion,
-  numTurns,
-  onNumTurnsChange,
   disabled,
 }: Props) {
   const remaining = MAX_JOB_DESCRIPTION_CHARS - jobDescription.length;
@@ -80,41 +74,6 @@ export default function AdvancedPanel({
           onChange={onSpeechSpeedChange}
           disabled={disabled}
         />
-      </Section>
-
-      <Section
-        label="Length"
-        hint="Choose how many questions the interviewer asks in this session."
-      >
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <label
-              htmlFor="session-turns"
-              className="text-sm font-medium text-text-muted"
-            >
-              Session length
-            </label>
-            <span className="text-sm font-semibold tabular-nums text-text">
-              {numTurns} turns
-            </span>
-          </div>
-          <input
-            id="session-turns"
-            type="range"
-            min={MIN_SESSION_TURNS}
-            max={MAX_SESSION_TURNS}
-            step={1}
-            value={numTurns}
-            disabled={disabled}
-            onChange={(e) => onNumTurnsChange(Number(e.target.value))}
-            className="h-2 w-full cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-50"
-            aria-valuetext={`${numTurns} turns`}
-          />
-          <div className="flex items-center justify-between text-xs tabular-nums text-text-subtle">
-            <span>{MIN_SESSION_TURNS}</span>
-            <span>{MAX_SESSION_TURNS}</span>
-          </div>
-        </div>
       </Section>
 
       <Section
