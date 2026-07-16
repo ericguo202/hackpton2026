@@ -198,7 +198,6 @@ function DeliveryNav() {
         History
       </TopBarNavLink>
       <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
-      <TopBarNavLink to="/delivery-playground">Delivery</TopBarNavLink>
       <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
     </>
   );
@@ -350,66 +349,77 @@ function AdvancedMetrics({
         </p>
       )}
 
-      <dl className="rounded-lg border border-border bg-surface-raised p-5 grid grid-cols-[minmax(8rem,11rem)_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-        {rows.map(([label, value]) => (
-          <div key={label} className="contents">
-            <dt className="text-text-subtle">{label}</dt>
-            <dd className="text-text">{value}</dd>
-          </div>
-        ))}
-      </dl>
-
-      {scoreDetail && (
+      {/*
+        Two columns on desktop: the raw metric readout + score calculation on
+        the left, the weighted components + penalties (+ active caps) on the
+        right. Stacks vertically below 1040px.
+      */}
+      <div className="grid gap-5 min-[1040px]:grid-cols-2 min-[1040px]:items-start">
         <div className="space-y-4">
-          <div className="rounded-lg border border-border bg-surface-raised p-5">
-            <p className="text-sm font-medium text-text">
-              Score calculation
-            </p>
-            <p className="mt-1 text-xs leading-5 text-text-subtle">
-              Base {formatDecimal(scoreDetail.baseScore)}/100, score before caps {scoreDetail.scoreBeforeCaps}/10.
-            </p>
-          </div>
-
-          <div className="grid gap-2 rounded-lg border border-border bg-surface-raised p-3">
-            {scoreDetail.components.map((component) => (
-              <div
-                key={component.label}
-                className="flex items-center justify-between gap-3 rounded border border-border bg-surface-sunken px-3 py-2 text-xs"
-              >
-                <span className="text-text-muted">{component.label}</span>
-                <span className="text-right tabular-nums text-text">
-                  {formatMetric(component.value)} / weight {component.weight}%
-                </span>
+          <dl className="rounded-lg border border-border bg-surface-raised p-5 grid grid-cols-[minmax(8rem,11rem)_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+            {rows.map(([label, value]) => (
+              <div key={label} className="contents">
+                <dt className="text-text-subtle">{label}</dt>
+                <dd className="text-text">{value}</dd>
               </div>
             ))}
-          </div>
+          </dl>
 
-          <div className="grid gap-2 rounded-lg border border-border bg-surface-raised p-3">
-            {scoreDetail.penalties.map((penalty) => (
-              <div
-                key={penalty.label}
-                className="flex items-center justify-between gap-3 rounded border border-border bg-surface-sunken px-3 py-2 text-xs"
-              >
-                <span className="text-text-muted">{penalty.label}</span>
-                <span className="text-right tabular-nums text-text">
-                  -{formatDecimal(penalty.points)} pts
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {scoreDetail.caps.length > 0 && (
-            <div className="space-y-2 rounded-lg border border-critique/50 bg-critique/10 px-3 py-3">
-              <p className="text-xs font-medium text-text">Active caps</p>
-              <ul className="space-y-1 text-xs leading-5 text-text-muted">
-                {scoreDetail.caps.map((cap) => (
-                  <li key={cap}>{cap}</li>
-                ))}
-              </ul>
+          {scoreDetail && (
+            <div className="rounded-lg border border-border bg-surface-raised p-5">
+              <p className="text-sm font-medium text-text">
+                Score calculation
+              </p>
+              <p className="mt-1 text-xs leading-5 text-text-subtle">
+                Base {formatDecimal(scoreDetail.baseScore)}/100, score before caps {scoreDetail.scoreBeforeCaps}/10.
+              </p>
             </div>
           )}
         </div>
-      )}
+
+        {scoreDetail && (
+          <div className="space-y-4">
+            <div className="grid gap-2 rounded-lg border border-border bg-surface-raised p-3">
+              {scoreDetail.components.map((component) => (
+                <div
+                  key={component.label}
+                  className="flex items-center justify-between gap-3 rounded border border-border bg-surface-sunken px-3 py-2 text-xs"
+                >
+                  <span className="text-text-muted">{component.label}</span>
+                  <span className="text-right tabular-nums text-text">
+                    {formatMetric(component.value)} / weight {component.weight}%
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid gap-2 rounded-lg border border-border bg-surface-raised p-3">
+              {scoreDetail.penalties.map((penalty) => (
+                <div
+                  key={penalty.label}
+                  className="flex items-center justify-between gap-3 rounded border border-border bg-surface-sunken px-3 py-2 text-xs"
+                >
+                  <span className="text-text-muted">{penalty.label}</span>
+                  <span className="text-right tabular-nums text-text">
+                    -{formatDecimal(penalty.points)} pts
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {scoreDetail.caps.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-critique/50 bg-critique/10 px-3 py-3">
+                <p className="text-xs font-medium text-text">Active caps</p>
+                <ul className="space-y-1 text-xs leading-5 text-text-muted">
+                  {scoreDetail.caps.map((cap) => (
+                    <li key={cap}>{cap}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -518,27 +528,32 @@ export default function DeliveryPlayground() {
       <TopBar nav={<DeliveryNav />} rightSlot={<AccountButton />} />
 
       <main className="mx-auto flex w-full max-w-[92rem] flex-col gap-8 px-8 py-8 md:px-16 md:py-12">
+        <div className="space-y-4">
+          <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
+            Delivery playground
+          </p>
+          <h1 className="max-w-4xl font-display text-5xl font-semibold leading-[1.05] tracking-normal md:text-6xl">
+            Practice delivery without starting an interview.
+          </h1>
+          <p className="max-w-2xl text-sm leading-7 text-text-muted">
+            Nothing is recorded or uploaded from this playground. It uses the same local webcam summary that powers practice delivery scoring.
+          </p>
+        </div>
+
+        <QuestionSelector
+          selected={selectedQuestion}
+          onSelect={setSelectedQuestion}
+        />
+
+        {/*
+          Camera card and the Live delivery scores share one row on desktop
+          (aligned at the top via items-start) so the candidate can watch their
+          webcam and their live score at once, no scrolling. Advanced metrics
+          drop to a full-width two-column section below.
+        */}
         <section className="grid gap-8 min-[1040px]:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.75fr)] min-[1040px]:items-start">
-          <div className="space-y-6">
-            <div className="space-y-4">
-              <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
-                Delivery playground
-              </p>
-              <h1 className="max-w-4xl font-display text-5xl font-semibold leading-[1.05] tracking-normal md:text-6xl">
-                Practice delivery without starting an interview.
-              </h1>
-              <p className="max-w-2xl text-sm leading-7 text-text-muted">
-                Nothing is recorded or uploaded from this playground. It uses the same local webcam summary that powers practice delivery scoring.
-              </p>
-            </div>
-
-            <QuestionSelector
-              selected={selectedQuestion}
-              onSelect={setSelectedQuestion}
-            />
-
-            <section className="rounded-lg border border-border bg-surface-raised p-5">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+          <section className="rounded-lg border border-border bg-surface-raised p-5">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
                     Current prompt
@@ -613,57 +628,54 @@ export default function DeliveryPlayground() {
                 </p>
               )}
             </section>
-          </div>
 
           <aside className="space-y-5">
-            <section className="space-y-5">
-              <div className="mb-5 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-text-muted" aria-hidden />
-                  <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
-                    Live delivery
-                  </p>
-                </div>
-                <p className="text-xs tabular-nums text-text-muted">
-                  {analyzer.diagnostics.status}
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-text-muted" aria-hidden />
+                <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
+                  Live delivery
                 </p>
               </div>
+              <p className="text-xs tabular-nums text-text-muted">
+                {analyzer.diagnostics.status}
+              </p>
+            </div>
 
-              <div className="mb-5 rounded-lg border border-border bg-surface-sunken p-5">
-                <p className="text-sm text-text-muted">Delivery score</p>
-                <p className="mt-2 font-display text-6xl font-semibold leading-none text-text">
-                  {scoreDetail ? scoreDetail.score : '-'}
-                  <span className="ml-2 text-2xl text-text-muted">/10</span>
-                </p>
-                <p className="mt-3 text-sm leading-6 text-text-muted">
-                  {summary?.coaching_tip ?? 'Waiting for enough visible-face frames.'}
-                </p>
-              </div>
+            <div className="mb-5 rounded-lg border border-border bg-surface-sunken p-5">
+              <p className="text-sm text-text-muted">Delivery score</p>
+              <p className="mt-2 font-display text-6xl font-semibold leading-none text-text">
+                {scoreDetail ? scoreDetail.score : '-'}
+                <span className="ml-2 text-2xl text-text-muted">/10</span>
+              </p>
+              <p className="mt-3 text-sm leading-6 text-text-muted">
+                {summary?.coaching_tip ?? 'Waiting for enough visible-face frames.'}
+              </p>
+            </div>
 
-              <div className="grid gap-3">
-                {metricSummary.map((metric) => (
-                  <Meter
-                    key={metric.label}
-                    label={metric.label}
-                    value={metric.value}
-                    detail={metric.detail}
-                  />
-                ))}
-              </div>
-            </section>
-
-            {showAdvanced && (
-              <AdvancedMetrics
-                summary={summary}
-                framesProcessed={analyzer.diagnostics.framesProcessed}
-                faceFrames={analyzer.diagnostics.faceFrames}
-                analyzerStatus={analyzer.diagnostics.status}
-                initError={analyzer.diagnostics.initError}
-                scoreDetail={scoreDetail}
-              />
-            )}
+            <div className="grid gap-3">
+              {metricSummary.map((metric) => (
+                <Meter
+                  key={metric.label}
+                  label={metric.label}
+                  value={metric.value}
+                  detail={metric.detail}
+                />
+              ))}
+            </div>
           </aside>
         </section>
+
+        {showAdvanced && (
+          <AdvancedMetrics
+            summary={summary}
+            framesProcessed={analyzer.diagnostics.framesProcessed}
+            faceFrames={analyzer.diagnostics.faceFrames}
+            analyzerStatus={analyzer.diagnostics.status}
+            initError={analyzer.diagnostics.initError}
+            scoreDetail={scoreDetail}
+          />
+        )}
       </main>
     </div>
   );

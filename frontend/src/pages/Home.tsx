@@ -39,7 +39,7 @@ import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
 import RoleSwitcher from '../components/RoleSwitcher';
-import ScoreDimensions from '../components/ScoreDimensions';
+import SiteFooter from '../components/SiteFooter';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
@@ -677,7 +677,7 @@ export default function Home() {
         document.body,
       )}
 
-      <ScoreDimensions legal />
+      <SiteFooter showAbout />
 
       <DeliveryConsentDialog
         open={consentModalOpen}

@@ -14,9 +14,9 @@
  * indistinguishable near-black on a chart). `short` is the abbreviated
  * angle-axis tick for the narrow radar column; everywhere else uses `label`.
  *
- * The landing components (`ScoreDimensions`, `landing/Methodology`,
- * `landing/ScorePieChart`) deliberately keep their own marketing-shaped lists
- * (numbered, pie-sliced) and are NOT consumers of this.
+ * The landing components (`landing/Methodology`, `landing/ScorePieChart`)
+ * deliberately keep their own marketing-shaped lists (numbered, pie-sliced)
+ * and are NOT consumers of this.
  */
 
 export const SCORE_DIMENSIONS = [
