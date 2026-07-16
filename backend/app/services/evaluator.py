@@ -20,6 +20,7 @@ the route handler composes them. It also does NOT generate
 from __future__ import annotations
 
 import logging
+import math
 import re
 from typing import Annotated, Any, Callable, Literal, TypeVar
 
@@ -53,12 +54,19 @@ EVAL_FALLBACK_MODEL = "deepseek/deepseek-v3.2"
 # Personal calibration from `backend/recordings/calibration_20260418_230315`.
 # These are the bands that separated the user's normal / engaged delivery
 # from clearly egregious drift during calibration capture.
+#
+# SYNC: mirrored verbatim in `frontend/src/lib/deliveryScoring.ts` (the Delivery
+# playground re-derives this score client-side to explain it). If you touch any
+# of these constants, the weights/penalties/caps in `_compute_delivery_score`
+# below, or its field reads, update the mirror in the same commit — see the
+# ledger on `_compute_delivery_score`.
 CALIBRATED_EYE_BAD = 47.4
 CALIBRATED_EYE_GOOD = 71.0
 CALIBRATED_EXPRESSION_BAD = 54.7
 CALIBRATED_EXPRESSION_GOOD = 66.4
 CALIBRATED_POSTURE_BAD = 58.0
 CALIBRATED_POSTURE_GOOD = 82.0
+ROBUST_QUALITY_FULL_CONFIDENCE_SAMPLES = 20.0
 
 _WORD_RE = re.compile(r"[a-z0-9]+(?:'[a-z0-9]+)?", re.IGNORECASE)
 _NUMBER_RE = re.compile(r"\b\d+(?:[.,]\d+)?%?\b")
@@ -248,9 +256,52 @@ def _summary_float(cv_summary: dict, key: str, default: float) -> float:
     if value is None or value == "":
         return default
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return default
+    return number if math.isfinite(number) else default
+
+
+def _summary_percentage(cv_summary: dict, key: str, default: float) -> float:
+    return max(0.0, min(100.0, _summary_float(cv_summary, key, default)))
+
+
+def _summary_quality_score(
+    cv_summary: dict,
+    robust_key: str,
+    legacy_key: str,
+    default: float,
+) -> float:
+    """Blend the new face-only full-turn signal with the legacy EMA.
+
+    Twenty visible samples (about two seconds on a phone) earns full trust.
+    Shorter captures blend toward the EMA so one landmark result cannot decide
+    an entire turn. Older summaries have no aggregation version and follow the
+    legacy path byte-for-byte.
+    """
+    legacy = _summary_percentage(cv_summary, legacy_key, default)
+    version = _summary_float(cv_summary, "quality_aggregation_version", 0.0)
+    if version < 2 or cv_summary.get(robust_key) in (None, ""):
+        return legacy
+
+    robust = _summary_percentage(cv_summary, robust_key, legacy)
+    samples = max(
+        0.0,
+        _summary_float(cv_summary, "face_quality_sample_count", 0.0),
+    )
+    confidence = min(1.0, samples / ROBUST_QUALITY_FULL_CONFIDENCE_SAMPLES)
+    return legacy + ((robust - legacy) * confidence)
+
+
+def _is_mobile_capture(cv_summary: dict) -> bool:
+    """Return true only for capture modes emitted by the phone recorder.
+
+    Missing/unknown values intentionally retain the legacy desktop path.
+    """
+    return str(cv_summary.get("capture_mode") or "").strip().lower() in {
+        "mobile_portrait",
+        "mobile_landscape",
+    }
 
 
 def _cap(value: int, maximum: int) -> int:
@@ -396,29 +447,78 @@ def _compute_delivery_score(cv_summary: dict) -> int:
     visibility, and posture use sustained-issue deductions. Expression stays
     a single soft quality input: calm facial energy must not compound through
     raw-score, coverage, streak, and cap channels.
+
+    SYNC — `frontend/src/lib/deliveryScoring.ts:computeDeliveryScoreDetail` is a
+    line-for-line mirror of this function, so the Delivery playground shows the
+    same number a real turn will score. This function is the source of truth; if
+    you change ANY of the following, port the identical change to the mirror in
+    the same commit (there is no test enforcing it yet):
+      - the CALIBRATED_* bands above and the `_normalize_band` mapping;
+      - robust quality selection (aggregation version 2, 20-sample confidence)
+        and the finite 0..100 input bounds;
+      - desktop component weights (calibrated 0.38/0.20/0.22/0.20, raw
+        0.50/0.30/0.20, visual stability 0.40/0.35/0.25), mobile weights
+        (0.43/0.22/0.15/0.20, 0.58/0.22/0.20, 0.65/0.25/0.10), and the
+        shared 0.65/0.35 base blend;
+      - desktop/mobile coverage penalties (0.18/0.12/0.07 vs.
+        0.18/0.06/0.035), streak penalties + min() caps, and the
+        face-visibility penalty (<96, ×0.55, cap 12);
+      - `round(base_score / 10)` — Python round() is banker's rounding, matched
+        by the mirror's `roundHalfEven`, NOT Math.round;
+      - the hard caps (looked-away 85/70/55/40, low-eye+looked-away, face-visible
+        50/70/85, desktop posture/tilt 70/50, mobile alignment 85/70);
+      - which `cv_summary` keys are read (and the fallback chains, e.g.
+        bad_posture_pct -> posture_drift_pct) vs. the mirror's InterviewSummary.
     """
-    overall = _summary_float(cv_summary, "overall_interview_score", 0.0)
-    eye = _summary_float(cv_summary, "eye_contact_score", overall)
-    expression = _summary_float(cv_summary, "expression_score", overall)
-    posture = _summary_float(cv_summary, "posture_score", overall)
-    face_visible = _summary_float(cv_summary, "face_visible_pct", 100.0)
-    eye_stability = _summary_float(cv_summary, "eye_contact_stability", 100.0)
-    posture_stability = _summary_float(cv_summary, "posture_stability", 100.0)
-    looked_away_pct = _summary_float(cv_summary, "looked_away_pct", 0.0)
-    posture_drift_pct = _summary_float(cv_summary, "posture_drift_pct", 0.0)
-    bad_posture_pct = _summary_float(cv_summary, "bad_posture_pct", posture_drift_pct)
-    tilted_pct = _summary_float(cv_summary, "tilted_pct", 0.0)
-    looked_away_streak = _summary_float(
-        cv_summary, "longest_looked_away_streak_frames", 0.0
+    overall = _summary_percentage(cv_summary, "overall_interview_score", 0.0)
+    eye = _summary_quality_score(
+        cv_summary, "eye_contact_score_robust", "eye_contact_score", overall
     )
-    posture_streak = _summary_float(
-        cv_summary, "longest_bad_posture_streak_frames",
-        _summary_float(cv_summary, "longest_posture_drift_streak_frames", 0.0),
+    expression = _summary_quality_score(
+        cv_summary, "expression_score_robust", "expression_score", overall
     )
-    tilted_streak = _summary_float(
-        cv_summary, "longest_tilted_streak_frames", 0.0
+    posture = _summary_quality_score(
+        cv_summary, "posture_score_robust", "posture_score", overall
     )
-    frames = _summary_float(cv_summary, "frames_processed", 0.0)
+    face_visible = _summary_percentage(cv_summary, "face_visible_pct", 100.0)
+    eye_stability = _summary_percentage(
+        cv_summary, "eye_contact_stability", 100.0
+    )
+    posture_stability = _summary_percentage(
+        cv_summary, "posture_stability", 100.0
+    )
+    looked_away_pct = _summary_percentage(cv_summary, "looked_away_pct", 0.0)
+    posture_drift_pct = _summary_percentage(
+        cv_summary, "posture_drift_pct", 0.0
+    )
+    bad_posture_pct = _summary_percentage(
+        cv_summary, "bad_posture_pct", posture_drift_pct
+    )
+    tilted_pct = _summary_percentage(cv_summary, "tilted_pct", 0.0)
+    frames = max(0.0, _summary_float(cv_summary, "frames_processed", 0.0))
+    looked_away_streak = max(
+        0.0,
+        _summary_float(cv_summary, "longest_looked_away_streak_frames", 0.0),
+    )
+    posture_streak = max(
+        0.0,
+        _summary_float(
+            cv_summary,
+            "longest_bad_posture_streak_frames",
+            _summary_float(
+                cv_summary, "longest_posture_drift_streak_frames", 0.0
+            ),
+        ),
+    )
+    tilted_streak = max(
+        0.0,
+        _summary_float(cv_summary, "longest_tilted_streak_frames", 0.0),
+    )
+    if frames > 0:
+        looked_away_streak = min(looked_away_streak, frames)
+        posture_streak = min(posture_streak, frames)
+        tilted_streak = min(tilted_streak, frames)
+    mobile_capture = _is_mobile_capture(cv_summary)
 
     eye_quality = _normalize_band(eye, CALIBRATED_EYE_BAD, CALIBRATED_EYE_GOOD)
     expression_quality = _normalize_band(
@@ -431,27 +531,52 @@ def _compute_delivery_score(cv_summary: dict) -> int:
         CALIBRATED_POSTURE_BAD,
         CALIBRATED_POSTURE_GOOD,
     )
-    visual_stability = max(
-        0.0,
-        min(
-            100.0,
-            (face_visible * 0.40)
-            + (eye_stability * 0.35)
-            + (posture_stability * 0.25),
-        ),
-    )
-
-    calibrated_quality = (
-        (eye_quality * 0.38)
-        + (expression_quality * 0.20)
-        + (posture_quality * 0.22)
-        + (visual_stability * 0.20)
-    )
-    raw_quality = (
-        (eye * 0.50)
-        + (posture * 0.30)
-        + (visual_stability * 0.20)
-    )
+    if mobile_capture:
+        # A phone's front camera moves with the device, so frame-to-frame
+        # posture variation is a noisier proxy for candidate delivery than it
+        # is on a fixed laptop webcam. Keep visibility and eye behavior strong,
+        # but soften camera-motion-sensitive posture channels.
+        visual_stability = max(
+            0.0,
+            min(
+                100.0,
+                (face_visible * 0.65)
+                + (eye_stability * 0.25)
+                + (posture_stability * 0.10),
+            ),
+        )
+        calibrated_quality = (
+            (eye_quality * 0.43)
+            + (expression_quality * 0.22)
+            + (posture_quality * 0.15)
+            + (visual_stability * 0.20)
+        )
+        raw_quality = (
+            (eye * 0.58)
+            + (posture * 0.22)
+            + (visual_stability * 0.20)
+        )
+    else:
+        visual_stability = max(
+            0.0,
+            min(
+                100.0,
+                (face_visible * 0.40)
+                + (eye_stability * 0.35)
+                + (posture_stability * 0.25),
+            ),
+        )
+        calibrated_quality = (
+            (eye_quality * 0.38)
+            + (expression_quality * 0.20)
+            + (posture_quality * 0.22)
+            + (visual_stability * 0.20)
+        )
+        raw_quality = (
+            (eye * 0.50)
+            + (posture * 0.30)
+            + (visual_stability * 0.20)
+        )
     base_score = (calibrated_quality * 0.65) + (raw_quality * 0.35)
 
     # Coverage penalties: how much of the answer felt off, not just whether
@@ -460,8 +585,8 @@ def _compute_delivery_score(cv_summary: dict) -> int:
     # the neutral middle of the scale. Facial energy is deliberately absent:
     # its calibrated quality weight above is the one scoring channel.
     base_score -= looked_away_pct * 0.18
-    base_score -= bad_posture_pct * 0.12
-    base_score -= tilted_pct * 0.07
+    base_score -= bad_posture_pct * (0.06 if mobile_capture else 0.12)
+    base_score -= tilted_pct * (0.035 if mobile_capture else 0.07)
 
     # Streak penalties: sustained issues should matter more than scattered
     # blips. Normalize against total analyzed frames when possible.
@@ -470,8 +595,14 @@ def _compute_delivery_score(cv_summary: dict) -> int:
         posture_streak_pct = (posture_streak / frames) * 100
         tilted_streak_pct = (tilted_streak / frames) * 100
         base_score -= min(14.0, looked_away_streak_pct * 0.18)
-        base_score -= min(10.0, posture_streak_pct * 0.12)
-        base_score -= min(8.0, tilted_streak_pct * 0.10)
+        base_score -= min(
+            6.0 if mobile_capture else 10.0,
+            posture_streak_pct * (0.06 if mobile_capture else 0.12),
+        )
+        base_score -= min(
+            5.0 if mobile_capture else 8.0,
+            tilted_streak_pct * (0.05 if mobile_capture else 0.10),
+        )
 
     # Face visibility matters disproportionately; below this threshold the
     # interviewer cannot reliably read the candidate at all.
@@ -499,25 +630,45 @@ def _compute_delivery_score(cv_summary: dict) -> int:
         score = min(score, 3)
     elif face_visible < 85:
         score = min(score, 5)
-    if max(bad_posture_pct, tilted_pct) >= 70:
+    posture_issue_pct = max(bad_posture_pct, tilted_pct)
+    if mobile_capture:
+        if posture_issue_pct >= 85:
+            score = min(score, 4)
+        elif posture_issue_pct >= 70:
+            score = min(score, 5)
+    elif posture_issue_pct >= 70:
         score = min(score, 3)
-    elif max(bad_posture_pct, tilted_pct) >= 50:
+    elif posture_issue_pct >= 50:
         score = min(score, 4)
 
     return score
 
 
 def _delivery_quick_win(cv_summary: dict, delivery_score: int) -> str | None:
-    face_visible = _summary_float(cv_summary, "face_visible_pct", 100.0)
-    eye = _summary_float(cv_summary, "eye_contact_score", 0.0)
-    expression = _summary_float(cv_summary, "expression_score", 0.0)
-    looked_away_pct = _summary_float(cv_summary, "looked_away_pct", 0.0)
-    posture_drift_pct = _summary_float(cv_summary, "posture_drift_pct", 0.0)
-    bad_posture_pct = _summary_float(cv_summary, "bad_posture_pct", posture_drift_pct)
-    tilted_pct = _summary_float(cv_summary, "tilted_pct", 0.0)
-    low_energy_pct = _summary_float(cv_summary, "low_energy_pct", 0.0)
+    face_visible = _summary_percentage(cv_summary, "face_visible_pct", 100.0)
+    eye = _summary_quality_score(
+        cv_summary, "eye_contact_score_robust", "eye_contact_score", 0.0
+    )
+    expression = _summary_quality_score(
+        cv_summary, "expression_score_robust", "expression_score", 0.0
+    )
+    looked_away_pct = _summary_percentage(cv_summary, "looked_away_pct", 0.0)
+    posture_drift_pct = _summary_percentage(
+        cv_summary, "posture_drift_pct", 0.0
+    )
+    bad_posture_pct = _summary_percentage(
+        cv_summary, "bad_posture_pct", posture_drift_pct
+    )
+    tilted_pct = _summary_percentage(cv_summary, "tilted_pct", 0.0)
+    low_energy_pct = _summary_percentage(cv_summary, "low_energy_pct", 0.0)
+    mobile_capture = _is_mobile_capture(cv_summary)
 
     if face_visible < 85:
+        if mobile_capture:
+            return (
+                "Delivery: move the phone back until your head and shoulders "
+                f"stay in frame; your face was visible for {face_visible:.0f}% of frames."
+            )
         return (
             "Delivery: keep your face centered; it was visible for "
             f"{face_visible:.0f}% of analyzed frames."
@@ -534,7 +685,11 @@ def _delivery_quick_win(cv_summary: dict, delivery_score: int) -> str | None:
         ),
         (
             max(bad_posture_pct, tilted_pct),
-            "sit upright and keep your head level with the camera",
+            (
+                "prop your phone at eye level and keep it still while you speak"
+                if mobile_capture
+                else "sit upright and keep your head level with the camera"
+            ),
         ),
     ]
     top_pct, top_tip = max(issue_tips, key=lambda item: item[0])
@@ -559,22 +714,36 @@ def _pct(value: float) -> str:
 
 
 def _build_delivery_feedback(cv_summary: dict, delivery_score: int) -> DeliveryFeedback:
-    face_visible = _summary_float(cv_summary, "face_visible_pct", 100.0)
-    eye = _summary_float(cv_summary, "eye_contact_score", 0.0)
-    expression = _summary_float(cv_summary, "expression_score", 0.0)
-    posture = _summary_float(cv_summary, "posture_score", 0.0)
-    looked_away_pct = _summary_float(cv_summary, "looked_away_pct", 0.0)
-    posture_drift_pct = _summary_float(cv_summary, "posture_drift_pct", 0.0)
-    bad_posture_pct = _summary_float(cv_summary, "bad_posture_pct", posture_drift_pct)
-    tilted_pct = _summary_float(cv_summary, "tilted_pct", 0.0)
-    low_energy_pct = _summary_float(cv_summary, "low_energy_pct", 0.0)
+    face_visible = _summary_percentage(cv_summary, "face_visible_pct", 100.0)
+    eye = _summary_quality_score(
+        cv_summary, "eye_contact_score_robust", "eye_contact_score", 0.0
+    )
+    expression = _summary_quality_score(
+        cv_summary, "expression_score_robust", "expression_score", 0.0
+    )
+    posture = _summary_quality_score(
+        cv_summary, "posture_score_robust", "posture_score", 0.0
+    )
+    looked_away_pct = _summary_percentage(cv_summary, "looked_away_pct", 0.0)
+    posture_drift_pct = _summary_percentage(
+        cv_summary, "posture_drift_pct", 0.0
+    )
+    bad_posture_pct = _summary_percentage(
+        cv_summary, "bad_posture_pct", posture_drift_pct
+    )
+    tilted_pct = _summary_percentage(cv_summary, "tilted_pct", 0.0)
+    low_energy_pct = _summary_percentage(cv_summary, "low_energy_pct", 0.0)
     head_tilt_avg = _summary_float(cv_summary, "head_tilt_degrees_avg", 0.0)
     head_tilt_max = _summary_float(cv_summary, "head_tilt_degrees_max", 0.0)
+    mobile_capture = _is_mobile_capture(cv_summary)
 
     issue_candidates = [
         (looked_away_pct, "eye contact drift"),
         (100.0 - face_visible, "camera alignment / face visibility"),
-        (max(bad_posture_pct, tilted_pct), "posture or head alignment"),
+        (
+            max(bad_posture_pct, tilted_pct),
+            "phone/camera alignment" if mobile_capture else "posture or head alignment",
+        ),
         (low_energy_pct, "facial energy"),
     ]
     top_pct, top_issue = max(issue_candidates, key=lambda item: item[0])
@@ -601,7 +770,12 @@ def _build_delivery_feedback(cv_summary: dict, delivery_score: int) -> DeliveryF
         alignment = (
             f"Your face was visible in {_pct(face_visible)} of frames; "
             f"head tilt averaged {head_tilt_avg:.1f} degrees and peaked at "
-            f"{head_tilt_max:.1f}. Keep your face centered and level."
+            f"{head_tilt_max:.1f}. "
+            + (
+                "Prop the phone at eye level and keep your head and shoulders in frame."
+                if mobile_capture
+                else "Keep your face centered and level."
+            )
         )
     else:
         alignment = (
@@ -613,7 +787,12 @@ def _build_delivery_feedback(cv_summary: dict, delivery_score: int) -> DeliveryF
         posture_text = (
             f"Score {posture:.0f}/100, with bad-posture coverage at "
             f"{_pct(max(bad_posture_pct, posture_drift_pct))} and tilted-head coverage "
-            f"at {_pct(tilted_pct)}. Sit upright before starting the answer."
+            f"at {_pct(tilted_pct)}. "
+            + (
+                "Stabilize the phone, then keep your head level while answering."
+                if mobile_capture
+                else "Sit upright before starting the answer."
+            )
         )
     else:
         posture_text = (

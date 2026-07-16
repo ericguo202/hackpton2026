@@ -45,6 +45,10 @@ const Calibration = lazyWithRetry(
   () => import('./pages/Calibration'),
   'Calibration',
 );
+const DeliveryPlayground = lazyWithRetry(
+  () => import('./pages/DeliveryPlayground'),
+  'DeliveryPlayground',
+);
 const Personalize = lazyWithRetry(
   () => import('./pages/Personalize'),
   'Personalize',
@@ -137,6 +141,7 @@ function App() {
         <Route element={<RequireOnboarded />}>
           <Route path="/practice" element={<Practice />} />
           <Route path="/history" element={<History />} />
+          <Route path="/delivery-playground" element={<DeliveryPlayground />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
           <Route path="/saved-question/:id" element={<SavedQuestionDetail />} />
           <Route path="/personalize" element={<Personalize />} />

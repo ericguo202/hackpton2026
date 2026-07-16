@@ -14,6 +14,7 @@ import pytest
 from app.services.evaluator import (
     EvaluatorOutput,
     _compute_delivery_score,
+    _summary_quality_score,
     evaluate_turn,
 )
 from app.services.filler_words import count_filler_words
@@ -519,6 +520,129 @@ def test_compute_delivery_score_penalizes_tilted_bad_posture():
     }
 
     assert _compute_delivery_score(tilted) < _compute_delivery_score(baseline)
+
+
+def test_mobile_capture_softens_camera_motion_but_keeps_severe_cap():
+    moving_phone = {
+        "frames_processed": 180,
+        "face_visible_pct": 98.0,
+        "eye_contact_score": 72.0,
+        "expression_score": 68.0,
+        "posture_score": 50.0,
+        "overall_interview_score": 64.0,
+        "eye_contact_stability": 82.0,
+        "expression_stability": 84.0,
+        "posture_stability": 42.0,
+        "looked_away_pct": 8.0,
+        "posture_drift_pct": 75.0,
+        "bad_posture_pct": 75.0,
+        "tilted_pct": 58.0,
+        "low_energy_pct": 5.0,
+        "longest_looked_away_streak_frames": 8,
+        "longest_posture_drift_streak_frames": 126,
+        "longest_bad_posture_streak_frames": 126,
+        "longest_tilted_streak_frames": 104,
+        "longest_low_energy_streak_frames": 5,
+    }
+
+    desktop_score = _compute_delivery_score(moving_phone)
+    mobile_score = _compute_delivery_score(
+        {**moving_phone, "capture_mode": "mobile_portrait"}
+    )
+
+    assert mobile_score > desktop_score
+    # Mobile camera movement is discounted, not ignored: sustained severe
+    # alignment still cannot produce an excellent delivery score.
+    assert mobile_score <= 5
+
+
+def test_unknown_capture_mode_keeps_legacy_desktop_scoring():
+    summary = {
+        "frames_processed": 120,
+        "face_visible_pct": 98.0,
+        "eye_contact_score": 70.0,
+        "expression_score": 64.0,
+        "posture_score": 55.0,
+        "overall_interview_score": 63.0,
+        "eye_contact_stability": 76.0,
+        "posture_stability": 48.0,
+        "looked_away_pct": 12.0,
+        "bad_posture_pct": 54.0,
+        "tilted_pct": 32.0,
+        "longest_looked_away_streak_frames": 10,
+        "longest_bad_posture_streak_frames": 48,
+        "longest_tilted_streak_frames": 30,
+    }
+
+    assert _compute_delivery_score(
+        {**summary, "capture_mode": "future_device"}
+    ) == _compute_delivery_score(summary)
+
+
+def test_delivery_score_prefers_full_turn_face_only_quality_over_dropout_ema():
+    dropout_biased = {
+        "frames_processed": 180,
+        "face_visible_pct": 90.0,
+        # A detector dropout near the end pulled the legacy EMAs down even
+        # though face-visible frames were consistently strong.
+        "eye_contact_score": 28.0,
+        "expression_score": 30.0,
+        "posture_score": 32.0,
+        "overall_interview_score": 30.0,
+        "eye_contact_stability": 82.0,
+        "posture_stability": 84.0,
+        "looked_away_pct": 6.0,
+        "posture_drift_pct": 5.0,
+        "bad_posture_pct": 5.0,
+        "tilted_pct": 3.0,
+        "longest_looked_away_streak_frames": 8,
+        "longest_bad_posture_streak_frames": 7,
+        "longest_tilted_streak_frames": 4,
+    }
+    robust = {
+        **dropout_biased,
+        "quality_aggregation_version": 2,
+        "face_quality_sample_count": 150,
+        "eye_contact_score_robust": 76.0,
+        "expression_score_robust": 68.0,
+        "posture_score_robust": 82.0,
+    }
+
+    assert _compute_delivery_score(robust) > _compute_delivery_score(
+        dropout_biased
+    )
+
+
+def test_robust_quality_signal_blends_short_captures_toward_legacy_ema():
+    summary = {
+        "quality_aggregation_version": 2,
+        "face_quality_sample_count": 5,
+        "eye_contact_score": 50.0,
+        "eye_contact_score_robust": 70.0,
+    }
+
+    assert _summary_quality_score(
+        summary,
+        "eye_contact_score_robust",
+        "eye_contact_score",
+        0.0,
+    ) == pytest.approx(55.0)
+
+
+def test_nonfinite_robust_quality_falls_back_to_legacy_score():
+    summary = {
+        "quality_aggregation_version": 2,
+        "face_quality_sample_count": 40,
+        "eye_contact_score": 64.0,
+        "eye_contact_score_robust": "nan",
+    }
+
+    assert _summary_quality_score(
+        summary,
+        "eye_contact_score_robust",
+        "eye_contact_score",
+        0.0,
+    ) == 64.0
 
 
 def test_compute_delivery_score_does_not_compound_low_energy_coverage():

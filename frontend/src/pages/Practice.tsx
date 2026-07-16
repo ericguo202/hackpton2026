@@ -179,6 +179,7 @@ function PracticeSession({
     recorder.videoStream,
     recorder.state === 'recording',
     calibration,
+    recorder.captureMode,
   );
 
   const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
@@ -403,6 +404,9 @@ function PracticeSession({
 
   function handleReRecord() {
     recorder.reset();
+    // Discard delivery analytics with the discarded take. Otherwise a shaky
+    // first phone take can leak into the replacement answer's score.
+    analyzer.reset();
     setReplayKey((k) => k + 1);
   }
 
@@ -420,6 +424,7 @@ function PracticeSession({
   function handleRestart() {
     if (recorder.state !== 'idle') recorder.stop();
     recorder.reset();
+    analyzer.reset();
     setTurnError(null);
     setTurnErrorIsPolicy(false);
     setEndingTurn(false);
@@ -545,6 +550,7 @@ function PracticeSession({
           recordingNotice={recordingNotice}
           firstTurnHint={showFirstTurnHint}
           cameraError={cameraError}
+          captureMode={recorder.captureMode}
           onSubmitPreview={handleSubmitTurn}
           onReRecordPreview={handleReRecord}
         />

@@ -21,6 +21,7 @@ import {
   FACE_CALIBRATION_VERSION,
   type FaceCalibrationProfile,
 } from './faceCalibration';
+import type { CaptureMode } from './captureMode';
 
 export type Point = readonly [number, number];
 
@@ -73,9 +74,6 @@ const EXPR_BROW_WEIGHT = 0.25;
 
 const EMA_ALPHA = 0.12;
 const EMA_SEED = 50.0;
-// When no face is detected, Python smooths toward 15.0 instead of 0 so
-// a brief drop-out doesn't crater the rolling average (opencv.py L508-510).
-const NO_FACE_TARGET = 15.0;
 
 const LOOKED_AWAY_EYE_THRESHOLD = 60;
 const POSTURE_HEAD_ALIGNMENT_MIN = 62;
@@ -134,6 +132,21 @@ function scoreStability(samples: number[]): number {
   const variance =
     samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) / samples.length;
   return clamp(100 - Math.sqrt(variance) * 1.6);
+}
+
+/**
+ * Average face-visible quality across the whole turn while discarding the
+ * highest/lowest 10% once enough samples exist. The trim removes isolated
+ * landmark spikes without hiding sustained issues, which are still captured
+ * by the coverage and streak counters.
+ */
+function robustMean(samples: number[], fallback: number): number {
+  if (samples.length === 0) return fallback;
+
+  const sorted = [...samples].sort((a, b) => a - b);
+  const trim = sorted.length >= 20 ? Math.floor(sorted.length * 0.1) : 0;
+  const kept = trim > 0 ? sorted.slice(trim, sorted.length - trim) : sorted;
+  return kept.reduce((sum, value) => sum + value, 0) / kept.length;
 }
 
 function meanPoint(points: Point[], indices: readonly number[]): Point {
@@ -572,6 +585,17 @@ function summaryGuidance(
 /** Shape matches `backend/interview_feedback_latest.json`. Keep the keys
  *  stable — the backend's deterministic delivery scorer reads them by name. */
 export interface InterviewSummary {
+  /** Capture context is appended by useFaceAnalyzer. Legacy/offline callers
+   *  can omit it and retain the desktop scoring path. */
+  capture_mode?: CaptureMode;
+  capture_width?: number;
+  capture_height?: number;
+  /** Version 2 adds face-only, full-turn robust quality signals. */
+  quality_aggregation_version?: number;
+  face_quality_sample_count?: number;
+  eye_contact_score_robust?: number;
+  expression_score_robust?: number;
+  posture_score_robust?: number;
   calibration_applied: boolean;
   calibration_version: number | null;
   calibrated_at: string | null;
@@ -628,6 +652,9 @@ export class FrameSummary {
   private eyeSamples: number[] = [];
   private expressionSamples: number[] = [];
   private postureSamples: number[] = [];
+  private rawEyeSamples: number[] = [];
+  private rawExpressionSamples: number[] = [];
+  private rawPostureSamples: number[] = [];
   private headTiltSamples: number[] = [];
   private lookedAwayFrames = 0;
   private postureDriftFrames = 0;
@@ -659,16 +686,13 @@ export class FrameSummary {
   }
 
   /** Feed the 468+iris landmarks for one frame, in pixel coordinates.
-   *  Pass `null` when the detector returned no face; the EMA relaxes
-   *  toward 15 so a short drop-out doesn't tank the average. */
+   *  Pass `null` when the detector returned no face. Quality EMAs hold their
+   *  last value during detector dropouts; face visibility owns that penalty,
+   *  so one missed frame cannot lower the same signal twice. */
   update(points: Point[] | null): void {
     this.frameCount += 1;
 
     if (!points) {
-      this.eyeEma = this.smooth(this.eyeEma, NO_FACE_TARGET);
-      this.expressionEma = this.smooth(this.expressionEma, NO_FACE_TARGET);
-      this.postureEma = this.smooth(this.postureEma, NO_FACE_TARGET);
-      this.overallEma = this.smooth(this.overallEma, NO_FACE_TARGET);
       this.lastGuidance = 'Center your face in the camera to begin interview scoring.';
       this.resetIssueStreaks();
       return;
@@ -689,6 +713,9 @@ export class FrameSummary {
     this.eyeSamples.push(this.eyeEma);
     this.expressionSamples.push(this.expressionEma);
     this.postureSamples.push(this.postureEma);
+    this.rawEyeSamples.push(eye.score);
+    this.rawExpressionSamples.push(expr.score);
+    this.rawPostureSamples.push(eye.postureScore);
     this.headTiltSamples.push(eye.headTiltDegrees);
 
     const lookedAway = eye.score < LOOKED_AWAY_EYE_THRESHOLD;
@@ -769,6 +796,9 @@ export class FrameSummary {
     this.eyeSamples = [];
     this.expressionSamples = [];
     this.postureSamples = [];
+    this.rawEyeSamples = [];
+    this.rawExpressionSamples = [];
+    this.rawPostureSamples = [];
     this.headTiltSamples = [];
     this.lookedAwayFrames = 0;
     this.postureDriftFrames = 0;
@@ -803,8 +833,19 @@ export class FrameSummary {
         : 0;
     const headTiltMax =
       this.headTiltSamples.length > 0 ? Math.max(...this.headTiltSamples) : 0;
+    const robustEye = robustMean(this.rawEyeSamples, this.eyeEma);
+    const robustExpression = robustMean(
+      this.rawExpressionSamples,
+      this.expressionEma,
+    );
+    const robustPosture = robustMean(this.rawPostureSamples, this.postureEma);
 
     return {
+      quality_aggregation_version: 2,
+      face_quality_sample_count: this.rawEyeSamples.length,
+      eye_contact_score_robust: round1(robustEye),
+      expression_score_robust: round1(robustExpression),
+      posture_score_robust: round1(robustPosture),
       calibration_applied: this.calibration !== null,
       calibration_version: this.calibration?.version ?? null,
       calibrated_at: this.calibration?.calibratedAt ?? null,
@@ -848,6 +889,7 @@ export class FrameSummary {
         'Eye contact uses MediaPipe face and iris landmarks as a webcam-based gaze proxy.',
         'Expression scoring uses mouth width, eye openness, and brow relaxation as engagement cues.',
         'Posture scoring uses head tilt, face centering, and vertical head position as webcam posture cues.',
+        'Delivery quality uses trimmed face-visible full-turn means; detector dropouts are handled by face visibility.',
         ...(this.calibration
           ? ['Browser-local face calibration adjusted bounded delivery baselines for this turn.']
           : []),
