@@ -25,6 +25,8 @@ const MODEL_URL = '/models/face_landmarker.task';
 
 let instance: FaceLandmarker | null = null;
 let pending: Promise<FaceLandmarker> | null = null;
+let overlayInstance: FaceLandmarker | null = null;
+let overlayPending: Promise<FaceLandmarker> | null = null;
 let replayInstance: FaceLandmarker | null = null;
 let replayPending: Promise<FaceLandmarker> | null = null;
 
@@ -56,6 +58,29 @@ export async function getFaceLandmarker(): Promise<FaceLandmarker> {
   })();
 
   return pending;
+}
+
+/**
+ * A SECOND live VIDEO-mode landmarker, dedicated to the `CameraPreview` mesh
+ * overlay. `detectForVideo` requires strictly monotonically increasing
+ * timestamps *per instance*, and the overlay's rAF loop runs independently of
+ * the `useFaceAnalyzer` scoring loop — feeding both from the shared `instance`
+ * interleaves their timestamps and eventually one arrives out of order, which
+ * aborts the MediaPipe graph ("Packet timestamp mismatch on ... norm_rect").
+ * Giving the overlay its own instance keeps the two clocks independent. Only
+ * paid for while the mesh is toggled on.
+ */
+export async function getOverlayFaceLandmarker(): Promise<FaceLandmarker> {
+  if (overlayInstance) return overlayInstance;
+  if (overlayPending) return overlayPending;
+
+  overlayPending = (async () => {
+    const landmarker = await createLandmarker('VIDEO');
+    overlayInstance = landmarker;
+    return landmarker;
+  })();
+
+  return overlayPending;
 }
 
 export async function getReplayFaceLandmarker(): Promise<FaceLandmarker> {

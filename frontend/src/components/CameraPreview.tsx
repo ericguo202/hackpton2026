@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from 'react';
 
-import { getFaceLandmarker } from '../lib/faceLandmarker';
+import { getOverlayFaceLandmarker } from '../lib/faceLandmarker';
 
 interface Props {
   stream: MediaStream | null;
@@ -67,7 +67,7 @@ export function CameraPreview({ stream, showLandmarks = false, fit = 'cover' }: 
       overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
       try {
-        const landmarker = await getFaceLandmarker();
+        const landmarker = await getOverlayFaceLandmarker();
         const result = landmarker.detectForVideo(video, tMs);
         const face = result.faceLandmarks[0];
         if (!face?.length) return;
