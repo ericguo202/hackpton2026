@@ -91,6 +91,7 @@ MVP: Voice-in → transcript → LLM scoring + follow-up → ElevenLabs voice-ou
   - **Ephemeral:** the backend persists NOTHING — the frontend holds the conversation in memory; leaving SessionDetail (a tab switch) discards it (blank slate on return). History is re-sent per request (text bubbles only; tool results re-fetched, never echoed) for multi-turn coherence.
 
 - **Interview voices (ElevenLabs).** `VoicePicker` has preset voices + "Surprise me". Per-session choice.
+  - **Speech pace toggle (per-voice resolved).** Setup's Advanced panel (under the voice grid) offers "Normal" / "Slower" — aimed at non-native English speakers. The wire carries a **semantic pace label**, NOT a float: `SessionCreateIn.speech_pace` (`Literal["normal","slower"]`, default `"normal"`; type + `DEFAULT_PACE` live in `voice_pool.py`). **Why a label, not a float:** the actual `voice_settings.speed` is tuned **per voice** — a flat 1.1 reads brisk on one accent and sluggish on another — and on the "Surprise me" path the frontend can't even know which voice will be picked. So the backend resolves `voice_pool.resolve_speed(voice_id, pace)` **after** `resolve_voice`, using the `normal_speed`/`slower_speed` pair on each `VoiceProfile` (calibrated tiers: 1.1/0.8 Cindy·James·Divya·Maxime; 1.0/0.75 David·Ruy·Rafael; 1.2/1.0 Irina·Daniela·Hanna; 1.1/0.9 Ding), then persists the resolved float on `interview_sessions.speech_speed` (Numeric(3,2), nullable — migration `0021_session_speech_speed`, `down_revision='0020_face_calib_consent'`) so turn 2's follow-up TTS reads the same value (that path reads the column, unchanged). `tts.synthesize_speech(text, voice_id, speed=None)` sends it as `voice_settings.speed` (**only** `speed` — stability/similarity_boost stay on the voice's stored settings so pace changes without altering character). `tts.clamp_speed(None→DEFAULT_SPEED, out-of-range→[MIN,MAX])` re-clamps at synth time — legacy null rows and any bad direct-API value degrade gracefully. **Without `voice_settings` ElevenLabs uses the voice's stored (slow) settings — this is why every voice's "Normal" is ≥1.0, not the raw playground default.** Re-practice (`RePracticeIn.speech_pace`, same default) offers the same toggle inside `RePracticeVoiceDialog`. Frontend: shared `SpeechSpeedToggle.tsx` emits the `SpeechPace` union (`'normal'|'slower'`, + `SPEECH_PACE_DEFAULT`), threaded as `speechPace`/`onSpeechPaceChange` through `AdvancedPanel`/`AdvancedPanelDrawer` and the re-practice dialog; request bodies send `speech_pace`. **Per-voice constants live only on the backend** (`voice_pool.VoiceProfile`) — the frontend never sees the floats. (A parked, **unwired** tuning bench — `frontend/src/pages/SpeedTuning.tsx` + `backend/.../endpoints/speed_tuning.py` — is kept for re-tuning when voices change; its `/speed` route and router registration were removed, re-add both to use it.)
 
 - **Free tier with daily session limits.** 5 completed sessions per local calendar day. Counter increments at **finalization** (not creation — abandoning doesn't burn a slot). IANA timezone from browser (`users.timezone`, UTC fallback). Pre-check at `POST /sessions` **before** any LLM/API spend → 429. Race-safe atomic `UPDATE` in `daily_limit.py`. `GET /me` also runs `check_and_reset` — zero writes steady-state (UPDATE gated by `count_reset_date.is_distinct_from(today)`, NULL-safe). **Second daily limit, same module:** Ask Tutor chats are capped at **10 successful completions/day** (`daily_chat_count` / `chat_count_reset_date`, `check_and_reset_chat` / `enforce_chat_daily_limit` / `record_chat_completion`) — see the Ask Tutor bullet for the success-only-increment nuance. `GET /me` rolls both counters for free tier.
 
@@ -146,6 +147,7 @@ created_at, updated_at)
 
 interview_sessions(id, user_id FK, config_id FK, status, company, job_title, company_summary, overall_score, notes,
 experience_level experience_level NULL, saved_question_id UUID FK saved_questions.id ON DELETE SET NULL NULL,
+speech_speed NUMERIC(3,2) NULL,  -- ElevenLabs voice_settings.speed for this session (migration 0021_session_speech_speed); null → tts.DEFAULT_SPEED
 started_at, ended_at, created_at, updated_at)
 
 saved_questions(id, user_id FK users.id ON DELETE CASCADE, question_text, company, job_title, category TEXT NULL,
@@ -178,7 +180,7 @@ All routes except `/health` require Clerk JWT via a FastAPI dependency.
 
 ```
 POST /onboarding              { resume_file, industry, target_role, short_bio }
-POST /sessions                { company, job_title, voice_id?, timezone?, job_description? (≤6000), acknowledge_mismatch? } → 201 { session_id, summary, first_question, first_question_audio_url } | 422 (JD gibberish) | 409 { code:"job_description_mismatch", message } (JD↔profile mismatch; re-submit with acknowledge_mismatch=true) | 429 (daily limit)
+POST /sessions                { company, job_title, voice_id?, speech_speed? (0.7–1.2, default 1.1), timezone?, job_description? (≤6000), acknowledge_mismatch? } → 201 { session_id, summary, first_question, first_question_audio_url } | 422 (JD gibberish) | 409 { code:"job_description_mismatch", message } (JD↔profile mismatch; re-submit with acknowledge_mismatch=true) | 429 (daily limit)
 POST /sessions/{id}/turns     { audio_blob, cv_summary? } → { transcript, scores|null, feedback|null, feedback_detail|null, next_question, next_question_audio_url, is_final, evaluation_pending }
 GET  /sessions/{id}           full session + turns (incl. saved_question_id)
 GET  /sessions                user's session history
@@ -190,7 +192,7 @@ POST   /saved-questions             { session_id } → 201 SavedQuestionOut | 40
 GET    /saved-questions             caller's saved questions + per-question aggregates (attempt_count, last_practiced_at, avg_overall_score)
 GET    /saved-questions/{id}        frozen question + summary + attempts[] (per-attempt opening-turn scores, evaluation_failed)
 DELETE /saved-questions/{id}        → 204 (linked sessions survive — FK ON DELETE SET NULL)
-POST   /saved-questions/{id}/practice  { voice_id?, timezone? } → SessionCreateOut (re-practice; skips research/question LLM calls) | 429 (daily limit)
+POST   /saved-questions/{id}/practice  { voice_id?, speech_speed? (0.7–1.2, default 1.1), timezone? } → SessionCreateOut (re-practice; skips research/question LLM calls) | 429 (daily limit)
 
 GET    /custom-questions                   caller's custom questions (newest-first)
 POST   /custom-questions                   bulk add; 3-gate screen (injection→moderation→LLM validity, fails open); partial-success → { created[], rejected[{text,reason}], remaining_slots } | 503 (moderation down)

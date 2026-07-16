@@ -14,7 +14,9 @@ Verification flow:
 We never share secrets with Clerk here — JWKS is public by design.
 """
 
+import asyncio
 import logging
+import time
 from typing import Optional
 
 import httpx
@@ -33,11 +35,26 @@ from app.services.incidents import log_user_created, log_user_signed_in
 logger = logging.getLogger(__name__)
 
 
-# Module-level JWKS cache. Clerk rotates signing keys rarely (on the order of
-# months), so fetching once per process is fine for a hackathon. If verification
-# starts failing with "Unknown signing key" in production, invalidate this cache
-# or add a TTL + refetch-on-miss fallback.
+# Process-wide JWKS cache. Clerk rotates its signing keys rarely (months), but
+# when it does, a cache that never refreshes would 401 *every* request until a
+# manual restart — a total auth outage from a routine Clerk-side event. So the
+# cache is refreshed on two triggers (see `_get_jwks`): a TTL (proactive) and a
+# `kid` miss during verification (reactive, throttled). `_jwks_fetched_at` is a
+# `time.monotonic()` stamp of the last successful fetch (0.0 = never fetched).
 _jwks_cache: Optional[dict] = None
+_jwks_fetched_at: float = 0.0
+# Serializes refreshes so N concurrent callers that all see a stale cache
+# trigger exactly ONE network fetch (double-checked inside the lock).
+_jwks_lock = asyncio.Lock()
+
+# Treat the cache as stale after this long even without a miss, so a key
+# rotation is picked up within the hour on an otherwise-quiet key set.
+_JWKS_TTL_SECONDS = 3600
+# Floor between miss-triggered (forced) refetches. A flood of tokens bearing
+# bogus `kid`s must not be able to stampede Clerk with fetches: once we've
+# fetched this recently, a miss falls straight through to a 401 instead of
+# hitting the network again.
+_JWKS_MIN_REFETCH_INTERVAL_SECONDS = 60
 
 # Clock-skew tolerance (seconds) applied to the `exp`/`iat`/`nbf` claim checks.
 # Clerk session tokens are very short-lived (~60s) and the frontend's
@@ -53,18 +70,73 @@ _jwks_cache: Optional[dict] = None
 _CLOCK_SKEW_LEEWAY_SECONDS = 60
 
 
-async def _get_jwks() -> dict:
-    """Fetch (and memoize) Clerk's public JWKS document."""
-    global _jwks_cache
-    if _jwks_cache is None:
-        # rstrip("/") defends against issuers configured with a trailing slash
-        # that would produce a double-slash URL and a 404 from Clerk.
-        issuer = settings.CLERK_JWT_ISSUER.rstrip("/")
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{issuer}/.well-known/jwks.json")
-            resp.raise_for_status()
-            _jwks_cache = resp.json()
-    return _jwks_cache
+async def _fetch_jwks() -> dict:
+    """Download Clerk's public JWKS document (no caching — see `_get_jwks`)."""
+    # rstrip("/") defends against issuers configured with a trailing slash
+    # that would produce a double-slash URL and a 404 from Clerk.
+    issuer = settings.CLERK_JWT_ISSUER.rstrip("/")
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(f"{issuer}/.well-known/jwks.json")
+        resp.raise_for_status()
+        return resp.json()
+
+
+def _cache_is_fresh(now: float) -> bool:
+    """True when the cache is populated and younger than the TTL."""
+    return _jwks_cache is not None and (now - _jwks_fetched_at) < _JWKS_TTL_SECONDS
+
+
+def _refetch_throttled(now: float) -> bool:
+    """True when a forced refetch should be suppressed (fetched too recently).
+
+    A miss that arrives right after a fetch is almost certainly a bogus `kid`,
+    not a rotation we've yet to observe — so serve the current cache and let the
+    caller 401 rather than hitting Clerk again.
+    """
+    return (
+        _jwks_cache is not None
+        and (now - _jwks_fetched_at) < _JWKS_MIN_REFETCH_INTERVAL_SECONDS
+    )
+
+
+async def _get_jwks(*, force_refresh: bool = False) -> dict:
+    """Return Clerk's JWKS, refreshing the process-wide cache when needed.
+
+    Refresh triggers:
+      - TTL expiry (proactive): the cache goes stale after `_JWKS_TTL_SECONDS`,
+        so a key rotation is picked up within the hour even without a miss.
+      - `force_refresh` (reactive): `current_user` sets this when a token's
+        `kid` isn't in the cached set — the signature of a just-rotated key.
+        Throttled by `_JWKS_MIN_REFETCH_INTERVAL_SECONDS`.
+
+    Concurrency: an `asyncio.Lock` plus double-checked staleness means N
+    concurrent callers that all see a stale cache trigger exactly ONE fetch.
+    """
+    global _jwks_cache, _jwks_fetched_at
+
+    now = time.monotonic()
+    if _cache_is_fresh(now) and not force_refresh:
+        return _jwks_cache
+    if force_refresh and _refetch_throttled(now):
+        return _jwks_cache
+
+    async with _jwks_lock:
+        # Re-check under the lock: a peer coroutine may have refreshed while we
+        # waited, in which case we ride on its result (no second fetch).
+        now = time.monotonic()
+        if _cache_is_fresh(now) and not force_refresh:
+            return _jwks_cache
+        if force_refresh and _refetch_throttled(now):
+            return _jwks_cache
+
+        _jwks_cache = await _fetch_jwks()
+        _jwks_fetched_at = time.monotonic()
+        return _jwks_cache
+
+
+def _select_key(jwks: dict, kid: Optional[str]) -> Optional[dict]:
+    """Pick the JWK whose `kid` matches the token header's, or None."""
+    return next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
 
 
 class ClerkClaims(BaseModel):
@@ -120,10 +192,18 @@ async def current_user(authorization: str = Header(None)) -> ClerkClaims:
         #    this token (via `kid`). We read it unverified because we don't yet
         #    have a key to verify with — that's what `kid` helps us choose.
         header = jwt.get_unverified_header(token)
-        key = next((k for k in jwks["keys"] if k["kid"] == header.get("kid")), None)
+        kid = header.get("kid")
+        key = _select_key(jwks, kid)
         if key is None:
-            # Either the token wasn't signed by this Clerk instance, or Clerk
-            # rotated keys and our cache is stale.
+            # `kid` isn't in our cached set. The likeliest cause is a Clerk key
+            # rotation this process hasn't observed yet, so refresh once
+            # (throttled) and retry before giving up — otherwise a rotation
+            # would 401 every request until a manual restart.
+            jwks = await _get_jwks(force_refresh=True)
+            key = _select_key(jwks, kid)
+        if key is None:
+            # Still unknown after a fresh fetch: the token wasn't signed by this
+            # Clerk instance (or the miss-refetch was throttled).
             raise HTTPException(status_code=401, detail="Unknown signing key")
 
         # 4. Full verification: RS256 signature + issuer + exp + nbf/iat.

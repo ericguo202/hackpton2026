@@ -16,6 +16,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.session import CompanyBriefOut, ScoresOut
+from app.services.voice_pool import DEFAULT_PACE, SpeechPace
 
 
 class SavedQuestionCreateIn(BaseModel):
@@ -27,11 +28,16 @@ class SavedQuestionCreateIn(BaseModel):
 class RePracticeIn(BaseModel):
     """Start a fresh practice attempt of a saved question.
 
-    Same optional knobs as `SessionCreateIn` (voice + timezone); company /
-    job_title / question come frozen off the saved row, so they're absent here.
+    Same optional knobs as `SessionCreateIn` (voice + speech pace + timezone);
+    company / job_title / question come frozen off the saved row, so they're
+    absent here.
     """
 
     voice_id: str | None = Field(default=None, max_length=64)
+    # Per-session interview-voice pace, same "Normal" (default) / "Slower"
+    # choice as `SessionCreateIn`. Resolved to a per-voice `voice_settings.speed`
+    # server-side via `voice_pool.resolve_speed`.
+    speech_pace: SpeechPace = DEFAULT_PACE
     timezone: str | None = Field(default=None, max_length=64)
 
 

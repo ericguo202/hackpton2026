@@ -19,7 +19,12 @@ export type MeResponse = {
   email: string | null;
   name: string | null;
   industry: string | null;
+  // `target_role` is the ACTIVE role (default session job_title + conditions the
+  // opening question / tutor); `target_roles` is the full declared set it belongs
+  // to (1 required + up to 2 optional). Legacy rows may report `[]` until the
+  // user re-saves their profile.
   target_role: string | null;
+  target_roles: string[];
   experience_level: ExperienceLevel | null;
   short_bio: string | null;
   resume_text: string | null;

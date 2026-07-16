@@ -3,10 +3,17 @@ POST /onboarding — fills the user's profile fields after sign-in.
 
 Multipart form, because a PDF résumé may be part of the submission. Fields:
   industry, target_role, experience_level, short_bio   (free-text / enum)
+  additional_roles                                     (optional, repeated ≤2, extra target roles)
   email, name                                          (from Clerk on the client)
   resume_file                                          (optional, application/pdf, ≤5 MB)
   resume_text_input                                    (optional, ≤5000 chars)
   skip_resume                                          (optional bool, wins over both)
+
+`target_role` is the primary/active role (required); `additional_roles` carries
+up to two more (each a repeated multipart key). They're combined into the
+`target_roles` list (primary first, blanks dropped, case-insensitively deduped,
+capped at 3); every role is injection-gated and moderated. `target_role` is
+stored as the active role and `target_roles` as the full set.
 
 Résumé source resolution, in precedence order:
   1. `skip_resume=true`    → stored as ""
@@ -56,6 +63,32 @@ from app.services.rate_limit import rate_limited
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
+# Max number of target roles a candidate can declare (1 required primary + up
+# to 2 optional extras). Mirrored client-side in the onboarding/Personalize
+# forms.
+MAX_TARGET_ROLES = 3
+
+
+def _compose_target_roles(primary: str, extras: list[str]) -> list[str]:
+    """Combine the primary role with any extras into the ordered, deduped set.
+
+    Primary stays at index 0. Blank/whitespace-only extras are dropped and
+    duplicates are removed case-insensitively (keeping first occurrence, so the
+    primary always wins), then the list is capped at ``MAX_TARGET_ROLES``.
+    """
+    roles: list[str] = []
+    seen: set[str] = set()
+    for raw in [primary, *extras]:
+        role = raw.strip()
+        if not role:
+            continue
+        key = role.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        roles.append(role)
+    return roles[:MAX_TARGET_ROLES]
 
 
 # 5 MiB cap. Read in chunks so a malicious multi-GB upload can't OOM us.
@@ -123,6 +156,7 @@ def _extract_pdf_text(content: bytes) -> str:
 async def onboarding(
     industry: str = Form(..., min_length=1, max_length=200),
     target_role: str = Form(..., min_length=1, max_length=200),
+    additional_roles: list[str] = Form(default=[], max_length=200),
     experience_level: ExperienceLevel = Form(...),
     short_bio: str = Form(..., min_length=1, max_length=2000),
     email: EmailStr = Form(...),
@@ -222,6 +256,11 @@ async def onboarding(
         # touch the résumé section.
         final_resume_text = user.resume_text or ""
 
+    # Combine the primary role with any optional extras into the ordered, deduped
+    # set (primary at index 0). Every entry below is gated + moderated. An
+    # all-blank `additional_roles` collapses to just the primary.
+    target_roles = _compose_target_roles(target_role, additional_roles)
+
     # Deterministic prompt-injection gate on the two long free-text fields that
     # later feed LLM prompts. Free (no network) so it runs BEFORE moderation.
     # This is the AUTHORITATIVE check for PDF-extracted résumé text, which the
@@ -230,17 +269,20 @@ async def onboarding(
     # Every profile field uses the STRICT gate (none of them is an interview
     # answer, so AI-safety / prompt-hardening vocabulary has no legitimate place
     # here). The two long free-text fields (bio, résumé) tolerate "API key
-    # rotation"-style prose; the two short structured fields (industry, role)
+    # rotation"-style prose; the short structured fields (industry, each role)
     # also block a bare "API key". First hit wins; logging the offending text
     # (and which field) keeps the deterministic layer fully audited — every hit
     # lands as a `warning`. Résumé text is PDF-extracted and the client can't vet
     # it, so this is its authoritative check.
-    injection_fields = (
+    injection_fields = [
         ("onboarding.short_bio", short_bio, False),
         ("onboarding.resume_text", final_resume_text, False),
         ("onboarding.industry", industry, True),
-        ("onboarding.target_role", target_role, True),
-    )
+    ]
+    # Gate every declared role (short-field strict), not just the primary.
+    injection_fields += [
+        ("onboarding.target_role", role, True) for role in target_roles
+    ]
     for source, value, short_field in injection_fields:
         if contains_injection(value, strict=True, short_field=short_field):
             await log_injection_detected(
@@ -259,12 +301,15 @@ async def onboarding(
     # the stored resume_text, short_bio, industry, target_role). Blocking
     # here prevents a bad profile from poisoning every subsequent session
     # and racking up policy hits on our API keys.
-    moderation_fields = (
+    moderation_fields = [
         ("onboarding.industry", industry),
-        ("onboarding.target_role", target_role),
         ("onboarding.short_bio", short_bio),
         ("onboarding.resume_text", final_resume_text),
-    )
+    ]
+    # Moderate every declared role, not just the primary.
+    moderation_fields += [
+        ("onboarding.target_role", role) for role in target_roles
+    ]
     # The fields are independent, so moderate them concurrently. Empty fields
     # short-circuit to a safe verdict with no network call, and each
     # check_moderation logs its incident in its own short-lived session, so the
@@ -290,6 +335,7 @@ async def onboarding(
     profile_drivers_changed = (
         user.industry != industry
         or user.target_role != target_role
+        or user.target_roles != target_roles
         or user.experience_level != experience_level
     )
 
@@ -298,7 +344,10 @@ async def onboarding(
     user.email = email
     user.name = name
     user.industry = industry
+    # `target_role` stays the active role (the submitted primary); `target_roles`
+    # is the full declared set (reassigned, never mutated, so dirty-tracking fires).
     user.target_role = target_role
+    user.target_roles = target_roles
     user.experience_level = experience_level
     user.short_bio = short_bio
     user.resume_text = final_resume_text
