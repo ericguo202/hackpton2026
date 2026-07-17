@@ -211,6 +211,7 @@ export default function SavedQuestionDetail() {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        firstQuestionCategory: data.first_question_category,
         company: sq.company,
         jobTitle: sq.job_title,
       };

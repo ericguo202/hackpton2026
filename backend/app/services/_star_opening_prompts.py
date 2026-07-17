@@ -1,85 +1,67 @@
 """
-Field/industry-tailored prompts for the opening-question generator.
+STAR opening-question prompts — the Experience (STAR) question type.
+
+This module is scoped to the **Experience (STAR)** question category (classic
+"tell me about a time…" behavioral prompts). Its examples, themes, and the form
+clause all assume a single past story answered in STAR shape. The other three
+question types (self-assessment/growth, motivation/fit, situational) will get
+sibling modules; the shared field/industry axis it keys off of lives in
+`_field_categories` (never STAR-specific).
 
 The system prompt sent to Gemini is assembled per-call by
-`build_field_system_prompt`:
-  1. A single shared intro template (FIELD_PROMPT_INTRO_TEMPLATE) with
-     the category name interpolated. The 15 categories share the same
-     hard constraints; only the category name varies.
-  2. The full theme catalog for the category (FIELD_THEMES — all 5
+`build_star_opening_prompt`:
+  1. A single shared intro template (STAR_OPENING_INTRO_TEMPLATE) with
+     the category name interpolated, followed by the STAR-specific form
+     clause (`_STAR_OPENING_FORM_CLAUSE`). The 15 categories share the
+     same hard constraints; only the category name varies.
+  2. The full theme catalog for the category (STAR_FIELD_THEMES — all 5
      themes always shown). This gives the model breadth-of-bucket
      awareness so it can probe behaviors it doesn't see a concrete
      example of in this particular call.
-  3. Two example questions sampled randomly from FIELD_EXAMPLES (a
+  3. Two example questions sampled randomly from STAR_FIELD_EXAMPLES (a
      pool of several per category). Random rotation per call is the
      load-bearing fix for beta-tester reports of "same opening question
      over and over": when a small fixed set was shown on every call it
      acted as a strong attractor and the model converged on it. Showing
      only 2 (a different 2 each call) from a larger pool breaks that.
 
-Source-of-truth markdown: `backend/prompts/opening_question_prompts.md`.
+Source-of-truth markdown: `backend/prompts/star_opening_question_prompts.md`.
 Keep that file and this module in sync.
 """
 
 from __future__ import annotations
 
 import random
-from typing import Literal
 
 from app.db.models.enums import ExperienceLevel
-
-
-FieldCategory = Literal[
-    "Technology, Product, and Design",
-    "Data, AI/ML, and Analytics",
-    "Cybersecurity and Risk",
-    "Finance, Banking, and Private Capital",
-    "Consulting and Professional Services",
-    "Legal, Compliance, and Advocacy",
-    "Government and Public Sector",
-    "Healthcare and Life Sciences",
-    "Sales, Marketing, and Customer Functions",
-    "Operations, Supply Chain, and Manufacturing",
-    "Retail, Hospitality, and Service",
-    "Nonprofit, NGO, and Social Impact",
-    "Education and EdTech",
-    "Engineering (Non-Software)",
-    "Startups and High-Growth Environments",
-]
-
-FIELD_CATEGORIES: tuple[FieldCategory, ...] = (
-    "Technology, Product, and Design",
-    "Data, AI/ML, and Analytics",
-    "Cybersecurity and Risk",
-    "Finance, Banking, and Private Capital",
-    "Consulting and Professional Services",
-    "Legal, Compliance, and Advocacy",
-    "Government and Public Sector",
-    "Healthcare and Life Sciences",
-    "Sales, Marketing, and Customer Functions",
-    "Operations, Supply Chain, and Manufacturing",
-    "Retail, Hospitality, and Service",
-    "Nonprofit, NGO, and Social Impact",
-    "Education and EdTech",
-    "Engineering (Non-Software)",
-    "Startups and High-Growth Environments",
+from app.services._field_categories import (
+    DEFAULT_CATEGORY,
+    FieldCategory,
 )
 
-DEFAULT_CATEGORY: FieldCategory = "Technology, Product, and Design"
 
-
-FIELD_PROMPT_INTRO_TEMPLATE = """\
+STAR_OPENING_INTRO_TEMPLATE = """\
 You are a behavioral-interview coach preparing a candidate for a mock interview in the field/industry of {category}. Generate exactly ONE opening question.
 
 Hard constraints:
 - Output ONLY the question text — exactly ONE sentence, no preamble, markdown, or surrounding quotes.
 - Ideally 20-25 words. Never exceed 30 words.
-- Natural, conversational phrasing a human interviewer would use.
-- Open-ended and behavioral — invites a single specific past story the candidate can answer in STAR form.\
+- Natural, conversational phrasing a human interviewer would use.\
 """
 
 
-FIELD_THEMES: dict[FieldCategory, list[str]] = {
+# STAR-specific form clause — the single hard constraint that assumes the classic
+# STAR ("tell me about a time…") shape. Kept separate from the otherwise
+# question-form-neutral intro template so sibling question-type builders supply
+# their own form clause instead of inheriting STAR's. Appended by
+# `build_star_opening_prompt`, so today's assembled prompt is byte-identical.
+_STAR_OPENING_FORM_CLAUSE = (
+    "- Open-ended and behavioral — invites a single specific past story the "
+    "candidate can answer in STAR form."
+)
+
+
+STAR_FIELD_THEMES: dict[FieldCategory, list[str]] = {
     "Technology, Product, and Design": [
         "shipping a critical feature under incomplete requirements",
         "owning a high-severity production incident end-to-end",
@@ -188,7 +170,7 @@ FIELD_THEMES: dict[FieldCategory, list[str]] = {
 }
 
 
-FIELD_EXAMPLES: dict[FieldCategory, list[str]] = {
+STAR_FIELD_EXAMPLES: dict[FieldCategory, list[str]] = {
     "Technology, Product, and Design": [
         "Tell me about a time you had to ship something important when the requirements still weren't fully clear.",
         "Walk me through a serious production incident you took ownership of from start to finish.",
@@ -350,14 +332,15 @@ FIELD_EXAMPLES: dict[FieldCategory, list[str]] = {
 }
 
 
-def build_field_system_prompt(
+def build_star_opening_prompt(
     category: FieldCategory,
     experience_level: ExperienceLevel | None = None,
     rng: random.Random | None = None,
 ) -> str:
-    """Assemble the per-call system prompt for the opening-question generator.
+    """Assemble the per-call system prompt for a STAR opening question.
 
-    - Intro is the constant template with the category name substituted.
+    - Intro is the constant template with the category name substituted,
+      followed by the STAR-specific form clause (`_STAR_OPENING_FORM_CLAUSE`).
     - Themes catalog (all 5) is shown so the model knows what behaviors
       this bucket can probe — not just the 2 examples it sees below.
     - 2 example questions are sampled at random per call. This rotation
@@ -378,15 +361,20 @@ def build_field_system_prompt(
     production callers pass `None` to get fresh randomness per call.
     """
     # Imported lazily to avoid a circular import: `_experience_prompts`
-    # imports FieldCategory / FIELD_CATEGORIES from this module.
+    # imports FieldCategory / FIELD_CATEGORIES from `_field_categories`, and
+    # this module for STAR themes.
     from app.services._experience_prompts import experience_question_block
 
-    themes = FIELD_THEMES.get(category) or FIELD_THEMES[DEFAULT_CATEGORY]
-    examples = FIELD_EXAMPLES.get(category) or FIELD_EXAMPLES[DEFAULT_CATEGORY]
+    themes = STAR_FIELD_THEMES.get(category) or STAR_FIELD_THEMES[DEFAULT_CATEGORY]
+    examples = STAR_FIELD_EXAMPLES.get(category) or STAR_FIELD_EXAMPLES[DEFAULT_CATEGORY]
     sampler = rng if rng is not None else random
     sampled = sampler.sample(examples, 2) if len(examples) >= 2 else list(examples)
 
-    intro = FIELD_PROMPT_INTRO_TEMPLATE.format(category=category)
+    intro = (
+        STAR_OPENING_INTRO_TEMPLATE.format(category=category)
+        + "\n"
+        + _STAR_OPENING_FORM_CLAUSE
+    )
     themes_block = "\n".join(f"  - {t}" for t in themes)
     examples_block = "\n".join(f"  - {e}" for e in sampled)
     style_cues = (

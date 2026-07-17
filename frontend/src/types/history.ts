@@ -87,6 +87,9 @@ export type TurnDetail = {
   question_text: string;
   transcript_text: string | null;
   is_followup: boolean;
+  /** Question FORM (Experience/STAR today). One of the QuestionCategory enum
+   *  values; drives the per-turn category badge. Optional for legacy payloads. */
+  question_category?: string;
   scores: {
     // Null when the turn's evaluation never completed. Renders as an
     // "Evaluation Failed" placeholder, NOT as 0/10.

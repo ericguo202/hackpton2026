@@ -1,31 +1,38 @@
 """
-Field/industry-tailored evaluator system prompt.
+STAR evaluator rubric — the Experience (STAR) question type.
 
-Holds the shared rubric base (rubric definitions, scoring scale, priorities) plus 15 per-industry guidance appendices. The evaluator
-concatenates them via `build_system_instruction(category)` so a single
-codepath drives every field — only the appendix changes per industry.
+This module is scoped to the **Experience (STAR)** question category: its
+per-dimension rubric anchors are STAR-shaped (structure rewards an explicit
+STAR/equivalent arc, impact demands quantifiable outcomes, initiative demands
+"I"-ownership). The other three question types will get sibling rubrics; the
+shared scoring-scale + calibration layers can be lifted out then.
 
-Sourced from `backend/prompts/evaluator_prompts.md`. Keep the two in sync
+Holds the STAR rubric base (rubric definitions, scoring scale, priorities) plus
+15 per-industry guidance appendices. The evaluator concatenates them via
+`build_star_system_instruction(category)` so a single codepath drives every
+field — only the appendix changes per industry.
+
+Sourced from `backend/prompts/star_evaluator_prompts.md`. Keep the two in sync
 if the prompts file is updated.
 
-Reuses `FieldCategory` from `_field_prompts` so the 15 buckets are defined
-in one place and the opening-question agent + evaluator agent classify
-against the same vocabulary.
+Reuses `FieldCategory` from `_field_categories` (the shared field/industry axis)
+so the 15 buckets are defined in one place and the opening-question agent +
+evaluator agent classify against the same vocabulary.
 """
 
 from __future__ import annotations
 
 from app.db.models.enums import ExperienceLevel
-from app.services._field_prompts import (
+from app.services._field_categories import (
     DEFAULT_CATEGORY,
     FIELD_CATEGORIES,
     FieldCategory,
 )
 
 __all__ = [
-    "BASE_SYSTEM_INSTRUCTION",
+    "STAR_BASE_SYSTEM_INSTRUCTION",
     "INDUSTRY_GUIDANCE",
-    "build_system_instruction",
+    "build_star_system_instruction",
 ]
 
 
@@ -39,9 +46,9 @@ __all__ = [
 # share the full ~2k-token rubric instead of only the slice up to a mid-prompt
 # slot. Keep this slot at the tail — moving it earlier re-splits the prefix and
 # re-bills the shared rubric at full price. Mirror any move in
-# `prompts/evaluator_prompts.md` (the `[ADDITIONAL INDUSTRY-SPECIFIC CRITERIA…]`
+# `prompts/star_evaluator_prompts.md` (the `[ADDITIONAL INDUSTRY-SPECIFIC CRITERIA…]`
 # marker).
-BASE_SYSTEM_INSTRUCTION = """\
+STAR_BASE_SYSTEM_INSTRUCTION = """\
 You are a behavioral-interview coach scoring a candidate's response. Return ONLY a single JSON object with the following keys, and nothing else (no markdown, no prose, no thinking steps):
 {{
 "structure": <int 0-10>,
@@ -301,16 +308,16 @@ if _missing:
 # 15 categories, so format it once at import instead of re-scanning the ~6 KB
 # template on every evaluate_turn call.
 _BASE_INSTRUCTION_BY_KEY: dict[FieldCategory, str] = {
-    key: BASE_SYSTEM_INSTRUCTION.format(industry_guidance=guidance)
+    key: STAR_BASE_SYSTEM_INSTRUCTION.format(industry_guidance=guidance)
     for key, guidance in INDUSTRY_GUIDANCE.items()
 }
 
 
-def build_system_instruction(
+def build_star_system_instruction(
     category: FieldCategory | None,
     experience_level: ExperienceLevel | None = None,
 ) -> str:
-    """Assemble the full evaluator system prompt for a given field category.
+    """Assemble the full STAR evaluator system prompt for a given field category.
 
     Falls back to DEFAULT_CATEGORY (Tech/Product/Design) when `category` is
     None or — defensively — when a stale category string slips through that
@@ -327,7 +334,7 @@ def build_system_instruction(
     `category` falls back.
     """
     # Lazy import to avoid a circular import (`_experience_prompts` imports
-    # from `_field_prompts`, which this module also imports).
+    # from `_field_categories`, which this module also imports).
     from app.services._experience_prompts import experience_evaluator_block
 
     key = category if category in INDUSTRY_GUIDANCE else DEFAULT_CATEGORY

@@ -22,6 +22,7 @@ import { useId, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import type { TurnDetail } from '../../types/history';
+import { questionCategoryLabel } from '../../types/session';
 import type { TranscriptToken } from '../../lib/fillerWords';
 import { segmentTranscriptByImprovements } from '../../lib/transcriptHighlight';
 import FillerRateBar from './FillerRateBar';
@@ -129,7 +130,12 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
   const transcriptId = useId();
   return (
     <InnerCard>
-      <Eyebrow>{turn.is_followup ? 'Follow-up question' : 'Question'}</Eyebrow>
+      <div className="flex flex-wrap items-center gap-2">
+        <Eyebrow>{turn.is_followup ? 'Follow-up question' : 'Question'}</Eyebrow>
+        <span className="rounded-full border border-border bg-surface-raised px-2.5 py-0.5 text-xs font-medium text-text-muted">
+          {questionCategoryLabel(turn.question_category)}
+        </span>
+      </div>
       <p className="mt-2 text-lg leading-snug text-text">
         {turn.question_text}
       </p>

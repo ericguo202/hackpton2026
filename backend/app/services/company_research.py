@@ -31,7 +31,7 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.db.models.enums import ExperienceLevel
-from app.services._field_prompts import (
+from app.services._field_categories import (
     DEFAULT_CATEGORY,
     FIELD_CATEGORIES,
     FieldCategory,

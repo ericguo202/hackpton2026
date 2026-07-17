@@ -22,6 +22,7 @@ export type RePracticeResult = {
   summary: { description: string; headlines: string[]; values: string[] };
   first_question: string;
   first_question_audio_url: string;
+  first_question_category: string;
 };
 
 export function useSavedQuestions() {

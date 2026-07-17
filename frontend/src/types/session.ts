@@ -1,3 +1,21 @@
+// Display labels for the question-category axis (mirrors the backend
+// `QuestionCategory` enum). Every turn is `experience_star` today; the other
+// three are documented but unbuilt. `questionCategoryLabel` falls back to
+// Experience (STAR) for unknown/legacy values.
+export const QUESTION_CATEGORY_LABELS: Record<string, string> = {
+  experience_star: 'Experience (STAR)',
+  self_assessment_growth: 'Self-Assessment & Growth',
+  motivation_fit: 'Motivation & Fit',
+  situational: 'Situational',
+};
+
+export function questionCategoryLabel(category: string | null | undefined): string {
+  return (
+    (category ? QUESTION_CATEGORY_LABELS[category] : undefined) ??
+    QUESTION_CATEGORY_LABELS.experience_star
+  );
+}
+
 export type Scores = {
   // All five base scores are nullable: the backend returns null for any
   // turn whose evaluation never completed. UIs render an "Evaluation
@@ -58,6 +76,9 @@ export type TurnResult = {
   // rather than a fresh opening. Drives the "Follow-up question" label during
   // recording. False on the final turn and for mid-session opening pivots.
   next_question_is_followup: boolean;
+  // The next question's FORM (Experience/STAR today). Drives the category badge
+  // during recording. One of the QuestionCategory enum values.
+  next_question_category: string;
   // True when this submission was only a clarification request. The backend
   // re-asks the same turn and does not score or advance it.
   clarification_retry: boolean;

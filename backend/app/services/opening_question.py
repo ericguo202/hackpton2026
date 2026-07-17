@@ -7,7 +7,7 @@ company brief produced by `company_research.research_company()`. Runs on
 `google/gemini-3.5-flash` (minimal reasoning) via OpenRouter.
 
 The system prompt is assembled per-call by
-`_field_prompts.build_field_system_prompt(brief.category)`. That helper:
+`_star_opening_prompts.build_star_opening_prompt(brief.category)`. That helper:
   - Interpolates the shared intro / hard constraints with the category
     name.
   - Shows the full 5-theme catalog for the category so the model knows
@@ -47,10 +47,8 @@ import logging
 import random
 
 from app.db.models.user import User
-from app.services._field_prompts import (
-    DEFAULT_CATEGORY,
-    build_field_system_prompt,
-)
+from app.services._field_categories import DEFAULT_CATEGORY
+from app.services._star_opening_prompts import build_star_opening_prompt
 from app.services._injection import contains_injection
 from app.services._openrouter import create_chat_with_fallback, get_client
 from app.services.company_research import CompanyBrief
@@ -289,7 +287,7 @@ async def generate_opening_question(
             user=user,
         )
 
-    system_prompt = build_field_system_prompt(
+    system_prompt = build_star_opening_prompt(
         brief.category or DEFAULT_CATEGORY,
         experience_level=user.experience_level,
     ) + _PROFILE_SECURITY_CLAUSE

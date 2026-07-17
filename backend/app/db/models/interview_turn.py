@@ -13,6 +13,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     CheckConstraint,
+    Enum,
     ForeignKey,
     Integer,
     Numeric,
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.db.models.enums import QuestionCategory
 
 
 class InterviewTurn(Base):
@@ -75,6 +77,14 @@ class InterviewTurn(Base):
         PG_UUID(as_uuid=True),
         ForeignKey("interview_turns.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    # The question FORM (STAR / self-assessment / motivation-fit / situational).
+    # New orthogonal axis; today every turn is `experience_star`. Frozen per turn
+    # so the review UI can badge each question by type. See `QuestionCategory`.
+    question_category: Mapped[QuestionCategory] = mapped_column(
+        Enum(QuestionCategory, name="question_category", create_type=False),
+        nullable=False,
+        server_default=text("'experience_star'"),
     )
 
     # Per-turn scores (0-10, nullable until evaluated). The rubric is

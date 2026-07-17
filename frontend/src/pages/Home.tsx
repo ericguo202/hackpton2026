@@ -79,6 +79,7 @@ type SessionStart = {
   summary: { description: string; headlines: string[]; values: string[] };
   first_question: string;
   first_question_audio_url: string;
+  first_question_category: string;
   num_turns: number;
 };
 
@@ -308,6 +309,7 @@ export default function Home() {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        firstQuestionCategory: data.first_question_category,
         numTurns: data.num_turns,
         company: trimmed,
         jobTitle: me?.target_role ?? 'Software Engineer',

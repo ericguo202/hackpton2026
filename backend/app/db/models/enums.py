@@ -18,6 +18,22 @@ class ExperienceLevel(str, enum.Enum):
     executive = "executive"
 
 
+class QuestionCategory(str, enum.Enum):
+    """The FORM of an interview question (the new orthogonal axis).
+
+    Today every question is `experience_star` (the classic "tell me about a
+    time…" behavioral prompt); the other three are documented in CLAUDE.md's
+    question-type taxonomy but not yet generated. Stored on
+    `interview_turns.question_category` (default `experience_star`) so each turn
+    is labeled by its type and the four-type expansion has a clean seam.
+    """
+
+    experience_star = "experience_star"
+    self_assessment_growth = "self_assessment_growth"
+    motivation_fit = "motivation_fit"
+    situational = "situational"
+
+
 class SessionStatus(str, enum.Enum):
     pending = "pending"          # created, not started
     in_progress = "in_progress"  # currently active

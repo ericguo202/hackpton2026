@@ -16,7 +16,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.services._field_prompts import FieldCategory
+from app.services._field_categories import FieldCategory
 from app.services.voice_pool import DEFAULT_PACE, SpeechPace
 
 
@@ -97,6 +97,10 @@ class SessionCreateOut(BaseModel):
     session_id: UUID
     summary: CompanyBriefOut
     first_question: str
+    # Question FORM of turn 1. Always "experience_star" today (every question is
+    # Experience/STAR); carried so the Practice recording view can badge turn 1
+    # by category. Defaulted so create + re-practice call sites need no change.
+    first_question_category: str = "experience_star"
     num_turns: int
     # `data:audio/mpeg;base64,...` — ready to drop into `<audio src>`.
     # Not persisted; regenerated on demand per CLAUDE.md (audio inline in
@@ -191,6 +195,10 @@ class TurnSubmitOut(BaseModel):
     # question as a follow-up during recording. False on the final turn (no
     # next question) and whenever the next turn is a fresh opening.
     next_question_is_followup: bool = False
+    # Question FORM of the next question (Experience/STAR today). Mirrors
+    # `next_question_is_followup`; lets Practice badge the upcoming question by
+    # category during recording. Empty-safe default for final/clarification returns.
+    next_question_category: str = "experience_star"
     # True when the submitted audio was only a clarification request. The
     # backend re-asks the same turn more concretely and does not persist the
     # transcript, score the turn, or advance the turn count.
@@ -256,6 +264,9 @@ class TurnOut(BaseModel):
     question_text: str
     transcript_text: str | None
     is_followup: bool
+    # Question FORM (Experience/STAR today) — drives the per-turn category badge
+    # on the review cards. One of the `QuestionCategory` enum values.
+    question_category: str = "experience_star"
     scores: ScoresOut
     feedback: str | None
     feedback_detail: FeedbackDetailOut | None = None

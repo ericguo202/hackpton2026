@@ -21,7 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from app.core.auth import get_current_user_db
-from app.db.models.enums import ExperienceLevel, SessionStatus, UserTier
+from app.db.models.enums import (
+    ExperienceLevel,
+    QuestionCategory,
+    SessionStatus,
+    UserTier,
+)
 from app.db.models.custom_question import CustomQuestion
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
@@ -47,7 +52,7 @@ from app.services.company_research import (
     DEFAULT_CATEGORY,
     research_company,
 )
-from app.services._field_prompts import FieldCategory
+from app.services._field_categories import FieldCategory
 from app.services._injection import contains_injection
 from app.services.daily_limit import (
     enforce_daily_limit,
@@ -187,6 +192,9 @@ async def _persist_session_and_turn(
         turn_number=1,
         question_text=opening_q,
         is_followup=False,
+        # Every question is Experience (STAR) today; the column exists so the
+        # four-type taxonomy can label turns without another migration.
+        question_category=QuestionCategory.experience_star,
     )
     db.add(turn)
 
@@ -559,12 +567,17 @@ async def _insert_next_turn(
     question: str,
     is_followup: bool,
     parent_turn_id: UUID | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
 ) -> None:
     """Insert the next turn and flush (caller commits).
 
     Handles both branches of the story-block flow: a follow-up
     (`is_followup=True`, `parent_turn_id` = the block's opening turn) and a
     fresh opening (`is_followup=False`, `parent_turn_id=None`).
+
+    `question_category` is `experience_star` for every turn today; it's a
+    parameter (not hard-coded) so the future question-type routing sets it in
+    one place when the other three types are generated.
     """
     db.add(InterviewTurn(
         session_id=session_id,
@@ -572,6 +585,7 @@ async def _insert_next_turn(
         question_text=question,
         is_followup=is_followup,
         parent_turn_id=parent_turn_id,
+        question_category=question_category,
     ))
     await db.flush()
 
@@ -1599,6 +1613,12 @@ async def submit_turn(
                 else "opening"
             )
 
+        # The next question's FORM. Every question is Experience (STAR) today —
+        # both routes generate STAR openings/follow-ups — so this is constant;
+        # it's threaded explicitly so the future question-type routing sets it
+        # per generated question in one place.
+        next_question_category = QuestionCategory.experience_star
+
         if route == "opening":
             next_q, next_audio_url = await _opening_and_tts(
                 user,
@@ -1615,6 +1635,7 @@ async def submit_turn(
                 question=next_q,
                 is_followup=False,
                 parent_turn_id=None,
+                question_category=next_question_category,
             )
         else:
             # Anti-repetition context: the block's prior Q/As (everything before
@@ -1644,6 +1665,7 @@ async def submit_turn(
                 question=next_q,
                 is_followup=True,
                 parent_turn_id=_block_opening_id(ordered_turns),
+                question_category=next_question_category,
             )
         # Commit BEFORE registering the background task so the bg task's
         # fresh AsyncSession sees the persisted transcript on its first
@@ -1677,6 +1699,7 @@ async def submit_turn(
             next_question=next_q,
             next_question_audio_url=next_audio_url,
             next_question_is_followup=(route == "followup"),
+            next_question_category=next_question_category.value,
             is_final=False,
             evaluation_pending=True,
         )
@@ -1982,6 +2005,7 @@ async def get_session(
             question_text=t.question_text,
             transcript_text=t.transcript_text,
             is_followup=t.is_followup,
+            question_category=t.question_category.value,
             scores=ScoresOut(
                 # `0` is a valid evaluator score, so null must round-trip as
                 # null — not coerced to 0 — otherwise the UI can't tell an

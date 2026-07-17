@@ -34,8 +34,8 @@ from pydantic import (
 )
 
 from app.db.models.enums import ExperienceLevel
-from app.services._field_rubrics import build_system_instruction
-from app.services._field_prompts import FieldCategory
+from app.services._star_evaluator_rubric import build_star_system_instruction
+from app.services._field_categories import FieldCategory
 from app.services._injection import CONTENT_INJECTION_RE
 from app.services.incidents import log_injection_detected
 from app.services._openrouter import (
@@ -1015,7 +1015,7 @@ async def evaluate_turn(
         messages=[
             {
                 "role": "system",
-                "content": build_system_instruction(category, experience_level)
+                "content": build_star_system_instruction(category, experience_level)
                 + _INJECTION_SYSTEM_CLAUSE,
             },
             {

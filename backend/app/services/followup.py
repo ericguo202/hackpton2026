@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 
 from app.db.models.enums import ExperienceLevel
-from app.services._field_prompts import FieldCategory
+from app.services._field_categories import FieldCategory
 from app.services._injection import contains_injection
 from app.services.incidents import log_injection_detected
 from app.services._openrouter import (
@@ -51,6 +51,13 @@ class GeneratedQuestion:
     question: str
     spoken_bridge: str | None = None
 
+# NOTE: The follow-up prompts below (`_SYSTEM_PROMPT`, `_TRANSITION_SYSTEM_PROMPT`,
+# `_DECISION_SYSTEM_PROMPT`) plus the sampled `_STAR_PROBE_ANGLES` /
+# `_STAR_FOLLOWUP_EXAMPLES` pools are STAR-story-shaped: they assume the candidate
+# is telling a single past story ("opening behavioral question", probe the
+# decision/result/conflict). When the four-type taxonomy lands, these get
+# question-category-branched — this module (the orchestrator) keeps its generic
+# name; only its STAR-specific content is renamed today.
 _SYSTEM_PROMPT = """\
 You are a behavioral interviewer conducting a mock interview. The candidate \
 just answered a question. Write ONE follow-up question that probes a specific \
@@ -153,7 +160,8 @@ _USER_PROMPT_HEADER = (
 )
 
 # ── per-call variety pools (break the "fixed attractor" — mirrors the
-#    2-of-N FIELD_EXAMPLES sampling in `_field_prompts.build_field_system_prompt`) ──
+#    2-of-N STAR_FIELD_EXAMPLES sampling in
+#    `_star_opening_prompts.build_star_opening_prompt`) ──
 #
 # A single static prompt with the same exemplars every call made follow-ups
 # cluster on one "You mentioned X — how did you Y?" template. We sample a fresh
@@ -163,7 +171,7 @@ _USER_PROMPT_HEADER = (
 
 # Distinct DIMENSIONS a good interviewer rotates between — what to probe, not how
 # to phrase it. Two are sampled per call and offered as soft suggestions.
-_PROBE_ANGLES: list[str] = [
+_STAR_PROBE_ANGLES: list[str] = [
     "the specific decision they made and the reasoning behind it",
     "a concrete, quantified result or metric from the outcome",
     "an obstacle or setback they hit and how they worked through it",
@@ -180,7 +188,7 @@ _PROBE_ANGLES: list[str] = [
 # brief reframing, contrast, hypothetical, walk-me-through — explicitly NOT all
 # "You mentioned…". Two are sampled per call as style cues (emulate the shape,
 # not the wording). Replaces the old three static exemplars.
-_FOLLOWUP_EXAMPLES: list[str] = [
+_STAR_FOLLOWUP_EXAMPLES: list[str] = [
     "How did you prioritize when everything on that project felt equally urgent?",
     "What would you have changed if you could run that decision again?",
     "Walk me through the first concrete step you took once you realized it was slipping.",
@@ -199,7 +207,7 @@ _FOLLOWUP_EXAMPLES: list[str] = [
 def _sample(pool: list[str], k: int, rng: random.Random | None) -> list[str]:
     """Sample up to `k` items from `pool`. `rng` is injectable for test
     determinism; production passes None for fresh randomness per call (mirrors
-    `_field_prompts.build_field_system_prompt`)."""
+    `_star_opening_prompts.build_star_opening_prompt`)."""
     sampler = rng if rng is not None else random
     return sampler.sample(pool, k) if len(pool) >= k else list(pool)
 
@@ -211,8 +219,8 @@ def _render_variety_block(rng: random.Random | None) -> str:
     it varies per call. The angle nudge is deliberately SOFT ("pick whichever
     the answer invites") so we don't trade one rigid template for another.
     """
-    angles = _sample(_PROBE_ANGLES, 2, rng)
-    examples = _sample(_FOLLOWUP_EXAMPLES, 2, rng)
+    angles = _sample(_STAR_PROBE_ANGLES, 2, rng)
+    examples = _sample(_STAR_FOLLOWUP_EXAMPLES, 2, rng)
     angle_lines = "\n".join(f"  - {a}" for a in angles)
     example_lines = "\n".join(f"  - {e}" for e in examples)
     return (

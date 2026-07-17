@@ -27,7 +27,7 @@ import logging
 from pydantic import ValidationError
 
 from app.db.models.enums import ExperienceLevel
-from app.services._field_prompts import FieldCategory
+from app.services._field_categories import FieldCategory
 from app.services._injection import contains_injection
 from app.services.incidents import log_injection_detected
 from app.services._openrouter import (
