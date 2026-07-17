@@ -15,11 +15,13 @@ import { Link } from 'react-router';
 import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPolicy';
 import type { CustomQuestion } from '../types/customQuestions';
 import SpeechSpeedToggle from './SpeechSpeedToggle';
+import type { SpeechPace } from './SpeechSpeedToggle';
 import VoicePickerGrid from './VoicePickerGrid';
 
 // Re-exported so existing importers (Home) keep their import path; the source
 // of truth lives alongside the shared toggle component.
-export { SPEECH_SPEED_NORMAL, SPEECH_SPEED_SLOWER } from './SpeechSpeedToggle';
+export { SPEECH_PACE_DEFAULT } from './SpeechSpeedToggle';
+export type { SpeechPace } from './SpeechSpeedToggle';
 
 // Mirrors the server-side cap in `SessionCreateIn.job_description`.
 export const MAX_JOB_DESCRIPTION_CHARS = 6000;
@@ -32,8 +34,8 @@ const linkClass =
 type Props = {
   voiceId: string | null;
   onVoiceSelect: (id: string | null) => void;
-  speechSpeed: number;
-  onSpeechSpeedChange: (speed: number) => void;
+  speechPace: SpeechPace;
+  onSpeechPaceChange: (pace: SpeechPace) => void;
   jobDescription: string;
   onJobDescriptionChange: (value: string) => void;
   customQuestions: CustomQuestion[];
@@ -45,8 +47,8 @@ type Props = {
 export default function AdvancedPanel({
   voiceId,
   onVoiceSelect,
-  speechSpeed,
-  onSpeechSpeedChange,
+  speechPace,
+  onSpeechPaceChange,
   jobDescription,
   onJobDescriptionChange,
   customQuestions,
@@ -70,8 +72,8 @@ export default function AdvancedPanel({
           disabled={disabled}
         />
         <SpeedToggle
-          speechSpeed={speechSpeed}
-          onChange={onSpeechSpeedChange}
+          speechPace={speechPace}
+          onChange={onSpeechPaceChange}
           disabled={disabled}
         />
       </Section>
@@ -192,18 +194,18 @@ export default function AdvancedPanel({
  * talk more deliberately.
  */
 function SpeedToggle({
-  speechSpeed,
+  speechPace,
   onChange,
   disabled,
 }: {
-  speechSpeed: number;
-  onChange: (speed: number) => void;
+  speechPace: SpeechPace;
+  onChange: (pace: SpeechPace) => void;
   disabled: boolean;
 }) {
   return (
     <div className="space-y-2">
       <SpeechSpeedToggle
-        speechSpeed={speechSpeed}
+        pace={speechPace}
         onChange={onChange}
         disabled={disabled}
       />

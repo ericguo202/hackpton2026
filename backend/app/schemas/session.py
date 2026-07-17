@@ -17,6 +17,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 from app.services._field_prompts import FieldCategory
+from app.services.voice_pool import DEFAULT_PACE, SpeechPace
 
 
 class SessionCreateIn(BaseModel):
@@ -32,12 +33,12 @@ class SessionCreateIn(BaseModel):
     # caller omits it (or sends an unknown ID), so older clients keep
     # working unchanged.
     voice_id: str | None = Field(default=None, max_length=64)
-    # Per-session ElevenLabs speech pace, sent as `voice_settings.speed`. The
-    # setup form offers two choices — "Normal" (1.1, default) and "Slower"
-    # (0.9, aimed at non-native English speakers). Bounded to the
-    # quality-safe range ElevenLabs supports; the TTS layer clamps again, so
-    # an out-of-range direct-API value degrades gracefully rather than 500ing.
-    speech_speed: float = Field(default=1.1, ge=0.7, le=1.2)
+    # Per-session interview-voice pace from the setup toggle: "Normal" (default)
+    # or "Slower" (aimed at non-native English speakers). NOT a raw float — the
+    # actual `voice_settings.speed` is resolved PER VOICE server-side via
+    # `voice_pool.resolve_speed(voice_id, pace)` (a global 1.1/0.9 reads very
+    # differently across accents), then persisted on the session row.
+    speech_pace: SpeechPace = DEFAULT_PACE
     # IANA timezone name from the browser (e.g. "America/New_York"), used
     # by the daily-limit gate to compute "today" in the user's local day.
     # Untrusted: the backend falls back to UTC if missing / unparseable so

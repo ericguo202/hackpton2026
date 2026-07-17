@@ -34,6 +34,7 @@ import FilterFieldMenu, { type FilterField } from '../components/FilterFieldMenu
 import LocalSuggestionField from '../components/LocalSuggestionField';
 import { StrengthsRadarPanel } from '../components/StrengthsRadar';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
+import type { SpeechPace } from '../components/SpeechSpeedToggle';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useMeStats, type MeStatsFilter } from '../hooks/useMeStats';
@@ -566,7 +567,7 @@ export default function History() {
                       }}
                       selected={filterSelected}
                       onSelectedChange={setFilterSelected}
-                      inputClassName="w-full rounded-full border border-border-strong bg-surface-raised px-4 py-1.5 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                      inputClassName="w-full rounded-full border border-border-strong bg-surface-raised px-4 py-1 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                       placeholder={
                         filterField === 'company'
                           ? 'Type a company…'
@@ -873,7 +874,7 @@ function SavedQuestionsSection({
   async function handleRePractice(
     sq: SavedQuestionListItem,
     voiceId: string | null,
-    speechSpeed: number,
+    speechPace: SpeechPace,
   ) {
     setBusyId(sq.id);
     try {
@@ -889,7 +890,7 @@ function SavedQuestionsSection({
         });
         return;
       }
-      const data = await rePractice(sq.id, voiceId, speechSpeed);
+      const data = await rePractice(sq.id, voiceId, speechPace);
       const state: PracticeLocationState = {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
@@ -949,8 +950,8 @@ function SavedQuestionsSection({
         busy={busyId !== null}
         questionText={pendingSq?.question_text}
         onCancel={() => setPendingSq(null)}
-        onStart={(voiceId, speechSpeed) => {
-          if (pendingSq) void handleRePractice(pendingSq, voiceId, speechSpeed);
+        onStart={(voiceId, speechPace) => {
+          if (pendingSq) void handleRePractice(pendingSq, voiceId, speechPace);
         }}
       />
     </section>

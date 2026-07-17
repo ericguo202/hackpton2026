@@ -7,16 +7,19 @@
 
 import { useEffect, useRef } from 'react';
 
-import { getFaceLandmarker } from '../lib/faceLandmarker';
+import { getOverlayFaceLandmarker } from '../lib/faceLandmarker';
 
 interface Props {
   stream: MediaStream | null;
   showLandmarks?: boolean;
+  /** Phones use contain so a portrait camera is never center-cropped down to
+   *  only the candidate's face inside a landscape-shaped surface. */
+  fit?: 'cover' | 'contain';
 }
 
 const DRAW_MIN_MS = 1000 / 10;
 
-export function CameraPreview({ stream, showLandmarks = false }: Props) {
+export function CameraPreview({ stream, showLandmarks = false, fit = 'cover' }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -64,7 +67,7 @@ export function CameraPreview({ stream, showLandmarks = false }: Props) {
       overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
       try {
-        const landmarker = await getFaceLandmarker();
+        const landmarker = await getOverlayFaceLandmarker();
         const result = landmarker.detectForVideo(video, tMs);
         const face = result.faceLandmarks[0];
         if (!face?.length) return;
@@ -102,18 +105,18 @@ export function CameraPreview({ stream, showLandmarks = false }: Props) {
   if (!stream) return null;
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-surface-sunken">
+    <div className="relative h-full w-full overflow-hidden rounded-lg bg-surface-sunken">
       <video
         ref={videoRef}
         autoPlay
         muted
         playsInline
-        className="h-full w-full object-cover"
+        className={fit === 'contain' ? 'h-full w-full object-contain' : 'h-full w-full object-cover'}
         style={{ transform: 'scaleX(-1)' }}
       />
       <canvas
         ref={canvasRef}
-        className={`pointer-events-none absolute inset-0 h-full w-full object-cover ${showLandmarks ? 'opacity-100' : 'opacity-0'}`}
+        className={`pointer-events-none absolute inset-0 h-full w-full ${fit === 'contain' ? 'object-contain' : 'object-cover'} ${showLandmarks ? 'opacity-100' : 'opacity-0'}`}
       />
     </div>
   );

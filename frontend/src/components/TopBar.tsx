@@ -10,7 +10,7 @@
  * it reveals a stacked dropdown of the same nav nodes so mobile users
  * can still reach History without starting a session. The 900px cutoff
  * (vs. Tailwind's stock `md` at 768px) keeps the user-profile icon from
- * being pushed off-screen once the inline nav has three entries.
+ * being pushed off-screen once the inline nav has several entries.
  */
 
 import { useState, type ReactNode } from 'react';
@@ -109,9 +109,9 @@ export default function TopBar({ rightSlot, nav, legalMenu }: Props) {
             </nav>
           )}
           {/*
-            Legal-policy links live in the desktop footer (ScoreDimensions),
-            which is hidden below 900px. Surface them here so mobile users
-            still have a path to /legal/* without typing the URL. On a surface
+            Legal-policy links also live in the site footer (SiteFooter), but
+            a surface without a footer (or a user who never scrolls to it) still
+            needs a path to /legal/* — so surface them here too. On a surface
             with page nav they sit under a divider; on the legal-only menu
             (signed-out Hero) they're the whole dropdown, so the divider/margin
             is dropped.

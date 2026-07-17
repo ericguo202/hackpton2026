@@ -28,7 +28,8 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 
 import AccountButton from '../components/AccountButton';
-import AdvancedPanel, { SPEECH_SPEED_NORMAL } from '../components/AdvancedPanel';
+import AdvancedPanel, { SPEECH_PACE_DEFAULT } from '../components/AdvancedPanel';
+import type { SpeechPace } from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
 import SessionLengthField, {
   MIN_SESSION_TURNS,
@@ -41,7 +42,7 @@ import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
 import RoleSwitcher from '../components/RoleSwitcher';
-import ScoreDimensions from '../components/ScoreDimensions';
+import SiteFooter from '../components/SiteFooter';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
@@ -204,8 +205,9 @@ export default function Home() {
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [numTurns, setNumTurns] = useState(MIN_SESSION_TURNS);
-  // Interview-voice pace (→ backend `speech_speed`). Defaults to "Normal" (1.1).
-  const [speechSpeed, setSpeechSpeed] = useState<number>(SPEECH_SPEED_NORMAL);
+  // Interview-voice pace (→ backend `speech_pace`, resolved per-voice server
+  // side). Defaults to "Normal".
+  const [speechPace, setSpeechPace] = useState<SpeechPace>(SPEECH_PACE_DEFAULT);
   const [jobDescription, setJobDescription] = useState('');
   // The caller's custom questions + which one (if any) is selected for this
   // session. When selected, the backend skips the opening-question LLM call and
@@ -284,8 +286,8 @@ export default function Home() {
           // user's "today" for the free-tier daily-limit reset. Untrusted
           // on the server side (UTC fallback on parse failure).
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          speech_speed: speechSpeed,
           num_turns: numTurns,
+          speech_pace: speechPace,
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
           ...(acknowledgeMismatch ? { acknowledge_mismatch: true } : {}),
@@ -610,8 +612,8 @@ export default function Home() {
             onClose={() => setSurface('basic')}
             voiceId={voiceId}
             onVoiceSelect={setVoiceId}
-            speechSpeed={speechSpeed}
-            onSpeechSpeedChange={setSpeechSpeed}
+            speechPace={speechPace}
+            onSpeechPaceChange={setSpeechPace}
             jobDescription={jobDescription}
             onJobDescriptionChange={setJobDescription}
             customQuestions={customQuestions ?? []}
@@ -642,8 +644,8 @@ export default function Home() {
             <AdvancedPanel
               voiceId={voiceId}
               onVoiceSelect={setVoiceId}
-              speechSpeed={speechSpeed}
-              onSpeechSpeedChange={setSpeechSpeed}
+              speechPace={speechPace}
+              onSpeechPaceChange={setSpeechPace}
               jobDescription={jobDescription}
               onJobDescriptionChange={setJobDescription}
               customQuestions={customQuestions ?? []}
@@ -696,7 +698,7 @@ export default function Home() {
         document.body,
       )}
 
-      <ScoreDimensions legal />
+      <SiteFooter showAbout />
 
       <DeliveryConsentDialog
         open={consentModalOpen}

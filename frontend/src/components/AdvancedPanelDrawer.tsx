@@ -17,6 +17,7 @@ import { X } from 'lucide-react';
 import { useEffect } from 'react';
 
 import AdvancedPanel from './AdvancedPanel';
+import type { SpeechPace } from './AdvancedPanel';
 import { Button } from './ui/button';
 import type { CustomQuestion } from '../types/customQuestions';
 
@@ -25,8 +26,8 @@ type Props = {
   onClose: () => void;
   voiceId: string | null;
   onVoiceSelect: (id: string | null) => void;
-  speechSpeed: number;
-  onSpeechSpeedChange: (speed: number) => void;
+  speechPace: SpeechPace;
+  onSpeechPaceChange: (pace: SpeechPace) => void;
   jobDescription: string;
   onJobDescriptionChange: (value: string) => void;
   customQuestions: CustomQuestion[];
@@ -40,8 +41,8 @@ export default function AdvancedPanelDrawer({
   onClose,
   voiceId,
   onVoiceSelect,
-  speechSpeed,
-  onSpeechSpeedChange,
+  speechPace,
+  onSpeechPaceChange,
   jobDescription,
   onJobDescriptionChange,
   customQuestions,
@@ -96,8 +97,8 @@ export default function AdvancedPanelDrawer({
         <AdvancedPanel
           voiceId={voiceId}
           onVoiceSelect={onVoiceSelect}
-          speechSpeed={speechSpeed}
-          onSpeechSpeedChange={onSpeechSpeedChange}
+          speechPace={speechPace}
+          onSpeechPaceChange={onSpeechPaceChange}
           jobDescription={jobDescription}
           onJobDescriptionChange={onJobDescriptionChange}
           customQuestions={customQuestions}

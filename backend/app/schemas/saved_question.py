@@ -16,6 +16,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.session import CompanyBriefOut, ScoresOut
+from app.services.voice_pool import DEFAULT_PACE, SpeechPace
 
 
 class SavedQuestionCreateIn(BaseModel):
@@ -41,10 +42,10 @@ class RePracticeIn(BaseModel):
     """
 
     voice_id: str | None = Field(default=None, max_length=64)
-    # Per-session ElevenLabs speech pace (→ `voice_settings.speed`), same
-    # "Normal" (1.1, default) / "Slower" (0.9) choice as `SessionCreateIn`.
-    # Bounded to the quality-safe range; the TTS layer clamps again.
-    speech_speed: float = Field(default=1.1, ge=0.7, le=1.2)
+    # Per-session interview-voice pace, same "Normal" (default) / "Slower"
+    # choice as `SessionCreateIn`. Resolved to a per-voice `voice_settings.speed`
+    # server-side via `voice_pool.resolve_speed`.
+    speech_pace: SpeechPace = DEFAULT_PACE
     timezone: str | None = Field(default=None, max_length=64)
 
 

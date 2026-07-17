@@ -49,7 +49,7 @@ from app.services.incidents import (
     log_save_question,
 )
 from app.services.tts import synthesize_speech
-from app.services.voice_pool import resolve_voice
+from app.services.voice_pool import resolve_speed, resolve_voice
 
 logger = logging.getLogger(__name__)
 
@@ -416,9 +416,11 @@ async def practice_saved_question(
 
     session_id = uuid.uuid4()
     voice_id = resolve_voice(body.voice_id, session_id)
+    # Resolve the toggle to this voice's tuned speed (see sessions.py).
+    speech_speed = resolve_speed(voice_id, body.speech_pace)
 
     audio_url = await synthesize_speech(
-        opening_q, voice_id=voice_id, speed=body.speech_speed
+        opening_q, voice_id=voice_id, speed=speech_speed
     )
     await _persist_session_and_turn(
         db,
@@ -437,8 +439,8 @@ async def practice_saved_question(
         # Re-practice WANTS the repeat — don't add it to the avoid-list.
         roll_recent=False,
         saved_question_id=sq.id,
-        # Persist the chosen pace so turn 2's follow-up TTS matches turn 1.
-        speech_speed=body.speech_speed,
+        # Persist the resolved pace so turn 2's follow-up TTS matches turn 1.
+        speech_speed=speech_speed,
     )
     await log_interview_session_started(
         db,

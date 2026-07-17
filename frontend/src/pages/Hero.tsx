@@ -12,9 +12,9 @@
 
 import { useNavigate } from 'react-router';
 import HowItWorks from '../components/landing/HowItWorks';
-import LandingFooter from '../components/landing/LandingFooter';
 import Methodology from '../components/landing/Methodology';
 import ScorePieChart from '../components/landing/ScorePieChart';
+import SiteFooter from '../components/SiteFooter';
 import TopBar from '../components/TopBar';
 import { GetStartedButton } from '../components/ui/get-started-button';
 
@@ -102,7 +102,7 @@ export default function Hero() {
         </section>
       </main>
 
-      <LandingFooter />
+      <SiteFooter />
     </div>
   );
 }
