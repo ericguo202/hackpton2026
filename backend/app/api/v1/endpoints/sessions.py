@@ -739,16 +739,21 @@ def _current_block_history(
 ) -> list[dict[str, str]]:
     """Q&A pairs for the current story block, oldest-first.
 
-    The trailing opening in `prior_turns` plus every follow-up after it, then
-    the just-answered `current_turn` (whose transcript isn't persisted into
-    `prior_turns` yet). Shape matches the evaluator's `history`.
+    When `current_turn` is a follow-up: the trailing opening in `prior_turns`
+    plus every follow-up after it, then the just-answered `current_turn`
+    (whose transcript isn't persisted into `prior_turns` yet). When
+    `current_turn` is an OPENING it *starts* a new block, so the block is just
+    the current pair — walking `prior_turns` here would mislabel the PREVIOUS
+    block's Q/As as "this story" and steer the next follow-up back onto the
+    prior story's content. Shape matches the evaluator's `history`.
     """
     block: list[InterviewTurn] = []
-    for turn in reversed(prior_turns):
-        block.append(turn)
-        if not turn.is_followup:
-            break
-    block.reverse()
+    if current_turn.is_followup:
+        for turn in reversed(prior_turns):
+            block.append(turn)
+            if not turn.is_followup:
+                break
+        block.reverse()
     history = [
         {"question": t.question_text, "transcript": t.transcript_text or ""}
         for t in block

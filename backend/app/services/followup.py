@@ -664,7 +664,11 @@ async def should_continue_followup(
                 },
             ],
             temperature=0.0,
-            max_tokens=32,
+            # 128, not a tight 32: OpenRouter providers occasionally ignore the
+            # reasoning-disable flag, and reasoning tokens count against
+            # max_tokens — a 32-token budget can be consumed entirely by leaked
+            # reasoning, truncating `content` to "" (finish_reason=length).
+            max_tokens=128,
             response_format={"type": "json_object"},
             timeout=15.0,
             extra_body={"reasoning": {"enabled": False}},
