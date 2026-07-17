@@ -456,25 +456,58 @@ _AUDIO_CHUNK_SIZE = 1024 * 1024
 _FALLBACK_CLARIFICATION_QUESTION = (
     "Tell me about one specific work or school situation, what you did, and what happened."
 )
+# Matched at the START of the utterance (after leading filler is stripped), so
+# these are clarification *openers*, not substrings. The modal branch is
+# compositional — "(can|could|would|will) [you] [please] <verb>" — so an
+# interposed "you"/"please" ("can you please clarify that") doesn't break the
+# match the way a fixed "can you clarify" literal would.
 _CLARIFICATION_RE = re.compile(
-    r"\b(?:"
-    r"can you clarify|could you clarify|please clarify|"
-    r"what do you mean|what did you mean|"
-    r"can you be more explicit|could you be more explicit|"
-    r"be more specific|can you explain the question|"
-    r"could you explain the question|what are you asking|"
-    r"challenge regarding what|clarify the question"
+    r"(?:"
+    r"(?:can|could|would|will) (?:you )?(?:please )?"
+    r"(?:clarify|be more (?:explicit|specific)|"
+    r"explain (?:the |that |your )?question|repeat (?:the |that )?question)"
+    r"|please clarify"
+    r"|clarify (?:the question|that)"
+    r"|what (?:do|did) you mean"
+    r"|what are you asking"
+    r"|be more (?:explicit|specific)"
+    r"|challenge regarding what"
     r")\b",
+    re.IGNORECASE,
+)
+# Politeness/filler the candidate might utter *before* the clarification
+# proper ("uh, sorry. can you clarify that, please?"). Stripped from the front
+# so the anchored match below still fires, without opening the door to
+# mid-sentence matches. The trailing separator class swallows any run of
+# whitespace/punctuation between filler tokens — including the sentence period
+# in "sorry. can you..." — so a filler word ending a clause doesn't block the
+# next token from being recognized.
+_CLARIFICATION_LEADING_FILLER_RE = re.compile(
+    r"^(?:"
+    r"sorry|please|excuse me|um+|uh+|uhm+|er+|erm+|hmm+|hey|hi|wait|so|yeah|"
+    r"yep|well|oh|okay|ok|like|but|and|i'?m sorry|my bad"
+    r")\b[\s,.;:!?\-]*",
     re.IGNORECASE,
 )
 
 
 def _is_clarification_request(transcript: str) -> bool:
-    """Conservative detector for explicit clarification requests only."""
+    """Conservative detector for explicit clarification requests only.
+
+    The clarification phrase must *lead* the utterance (after stripping any
+    leading politeness/filler), not merely appear somewhere inside it. This is
+    what separates a real "What do you mean?" from a genuine — if short — answer
+    that narrates one ("I asked my manager what do you mean by scalable, then I
+    built it."), which should be scored normally, not silently re-asked.
+    """
     cleaned = " ".join((transcript or "").strip().lower().split())
     if not cleaned or len(cleaned) > 180:
         return False
-    return bool(_CLARIFICATION_RE.search(cleaned))
+    prev = None
+    while prev != cleaned:
+        prev = cleaned
+        cleaned = _CLARIFICATION_LEADING_FILLER_RE.sub("", cleaned, count=1)
+    return bool(_CLARIFICATION_RE.match(cleaned))
 
 
 def _clarified_question(question: str) -> str:

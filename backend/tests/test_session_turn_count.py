@@ -48,6 +48,15 @@ def test_session_create_rejects_out_of_range_turn_counts(num_turns):
         "What do you mean by challenge?",
         "Can you be more explicit?",
         "Challenge regarding what?",
+        # Leading politeness/filler is stripped before the anchored match,
+        # including sentence punctuation between filler tokens.
+        "Sorry, what do you mean?",
+        "Um, can you clarify the question?",
+        "Uh, sorry. Can you clarify that, please?",
+        "Wait. What are you asking?",
+        # Interposed "you"/"please" between the modal and the verb.
+        "Wait, sorry. Can you please clarify that?",
+        "Could you please be more specific?",
     ],
 )
 def test_clarification_detector_accepts_explicit_requests(transcript):
@@ -61,6 +70,15 @@ def test_clarification_detector_accepts_explicit_requests(transcript):
         "I don't have an example.",
         "We clarified the requirements with the designer and shipped it.",
         "This is a long partial answer about a real project where I needed more information before deciding what to do next.",
+        # Genuine — if short — answers that *narrate* a clarification. The
+        # phrase is mid-utterance, not leading, so it must NOT be treated as a
+        # clarification request (the detector anchors on the whole utterance).
+        "I asked my manager what do you mean by scalable, and then I built it.",
+        "I told the designer to be more specific about the mockups.",
+        "She kept asking me to clarify the question so I rephrased it.",
+        # "can you <non-clarify-verb>" openers stay out — only clarification
+        # verbs match the compositional modal branch.
+        "Can you imagine how hard that project was for the whole team?",
     ],
 )
 def test_clarification_detector_rejects_weak_or_real_answers(transcript):

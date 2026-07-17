@@ -573,10 +573,16 @@ async def generate_followup_transition(
     except ValueError:
         logger.warning("Followup transition fallback triggered (raw=%r)", raw)
         result = GeneratedQuestion(question=_FALLBACK)
+    # Surface the actual generated text so the spoken bridge (audio-only) and the
+    # visible follow-up question can be inspected side by side in the console.
     logger.info(
-        "Followup transition generated: question=%d chars bridge=%s",
-        len(result.question),
-        "yes" if result.spoken_bridge else "no",
+        "Followup transition generated:\n"
+        "  spoken_bridge (audio-only): %s\n"
+        "  question (visible)        : %s\n"
+        "  TTS text (bridge+question): %s",
+        result.spoken_bridge if result.spoken_bridge else "(none)",
+        result.question,
+        _tts_text(result),
     )
     return result
 
