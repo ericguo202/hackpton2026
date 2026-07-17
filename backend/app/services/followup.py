@@ -25,6 +25,7 @@ import json
 import logging
 import random
 import re
+from dataclasses import dataclass
 
 from app.db.models.enums import ExperienceLevel
 from app.services._field_prompts import FieldCategory
@@ -43,6 +44,12 @@ FOLLOWUP_MODEL = "deepseek/deepseek-v4-flash"
 FOLLOWUP_FALLBACK_MODEL = "deepseek/deepseek-v3.2"
 
 _FALLBACK = "Can you walk me through a specific challenge you faced and how you resolved it?"
+
+
+@dataclass(frozen=True)
+class GeneratedQuestion:
+    question: str
+    spoken_bridge: str | None = None
 
 _SYSTEM_PROMPT = """\
 You are a behavioral interviewer conducting a mock interview. The candidate \
@@ -88,6 +95,46 @@ Bad examples (do not do these):
   Can you tell me more?
   That's interesting, tell me more about that.
   The user seems confused. Let me ask: what are you trying to test?"""
+
+_TRANSITION_SYSTEM_PROMPT = """\
+You are a behavioral interviewer conducting a mock interview. The candidate \
+just answered a question. Return a JSON object with:
+{"spoken_bridge": string|null, "question": string}
+
+The spoken_bridge is optional and will be heard only in audio. Use it only \
+when it makes the transition feel attentive.
+
+Bridge rules:
+- One sentence maximum.
+- Around 5-12 words.
+- Grounded in something the candidate actually said.
+- Non-evaluative: do not praise, score, coach, thank, or diagnose.
+- No stock transitions like "Okay", "Got it", "Thanks", or "Let's switch".
+- No model reasoning or comments about the candidate's state.
+
+Question rules:
+- The question is the only visible text.
+- One sentence, preferably 12-24 words.
+- Self-contained: it must not depend on the spoken bridge.
+- Specific enough that the candidate knows what to answer.
+- Prefer concrete personal execution: what they personally did; how they \
+diagnosed, implemented, decided, or validated; why they chose that approach; \
+what evidence showed it worked.
+- Trade-offs or rejected alternatives are appropriate only if the candidate \
+already raised a real scope decision.
+- Avoid low-signal defaults like "Can you tell me more?", "What would you do \
+differently next time?", and "What would you have cut first?"
+- End with "?" unless it is a natural imperative such as "Tell me about...".
+- No preamble, lesson, praise, recap paragraph, markdown, or labels.
+
+Good output:
+{"spoken_bridge":"The Clerk mismatch thread is worth digging into.","question":"In the Clerk data-mismatch bug, how did you personally trace the root cause?"}
+
+Bad output:
+{"spoken_bridge":null,"question":"You mentioned cleaning up user data during testing caused a mismatch with Clerk. Who caught that bug?"}
+
+Bad output:
+{"spoken_bridge":null,"question":"It is fascinating how shifting from passive criticism to active, constructive examples can transform the user experience. Tell me about a time..."}"""
 
 # Recall layer behind the deterministic `contains_injection` gate in
 # `generate_followup`: tells the model the tagged question/answer are untrusted
@@ -292,6 +339,25 @@ def _build_user_prompt(
 _LABEL_PREFIX_RE = re.compile(
     r"^(?:question|follow[\s\-]?up|q)\s*:\s*", re.IGNORECASE
 )
+_SENTENCE_END_RE = re.compile(r"[.!?]\s+")
+_IMPERATIVE_PROMPT_RE = re.compile(
+    r"^(?:tell me about|describe|walk me through)\b", re.IGNORECASE
+)
+_BAD_BRIDGE_RE = re.compile(
+    r"\b(?:"
+    r"thanks?|thank you|okay|ok|got it|great answer|good answer|excellent|"
+    r"interesting|fascinating|let'?s switch|switch to|the user|candidate seems|"
+    r"i will|i'll|i would|my reasoning|as an interviewer"
+    r")\b",
+    re.IGNORECASE,
+)
+_BAD_QUESTION_RE = re.compile(
+    r"\b(?:"
+    r"it is fascinating|the user seems|i will|i'll|my reasoning|great answer|"
+    r"good answer|thanks?|okay|got it|can you tell me more"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def _sanitize_followup(raw: str) -> str:
@@ -315,6 +381,64 @@ def _sanitize_followup(raw: str) -> str:
     return result.strip()
 
 
+def _sentence_count(text: str) -> int:
+    stripped = text.strip()
+    if not stripped:
+        return 0
+    return len(_SENTENCE_END_RE.split(stripped))
+
+
+def _valid_visible_question(text: str) -> bool:
+    stripped = text.strip()
+    if len(stripped) < 15 or _BAD_QUESTION_RE.search(stripped):
+        return False
+    if _sentence_count(stripped) != 1:
+        return False
+    return stripped.endswith("?") or bool(_IMPERATIVE_PROMPT_RE.match(stripped))
+
+
+def _sanitize_bridge(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    bridge = _sanitize_followup(raw).rstrip()
+    if not bridge:
+        return None
+    if _BAD_BRIDGE_RE.search(bridge):
+        return None
+    if _sentence_count(bridge) != 1:
+        return None
+    words = re.findall(r"\b[\w'-]+\b", bridge)
+    if len(words) < 4 or len(words) > 14:
+        return None
+    if bridge.endswith("?"):
+        return None
+    if not bridge.endswith((".", "!")):
+        bridge += "."
+    return bridge
+
+
+def _tts_text(generated: GeneratedQuestion) -> str:
+    if generated.spoken_bridge:
+        return f"{generated.spoken_bridge} {generated.question}"
+    return generated.question
+
+
+def _parse_transition_payload(raw: str) -> GeneratedQuestion:
+    try:
+        payload = json.loads(extract_json_object(raw))
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"transition response was not valid JSON: {raw!r}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("transition response root must be an object")
+    question = _sanitize_followup(str(payload.get("question") or ""))
+    if not _valid_visible_question(question):
+        raise ValueError(f"transition question was invalid: {question!r}")
+    return GeneratedQuestion(
+        question=question,
+        spoken_bridge=_sanitize_bridge(payload.get("spoken_bridge")),
+    )
+
+# IMPORTANT: UNUSED DORMANT FALLBACK FOR DOCUMENTATION PURPOSES
 async def generate_followup(
     question: str,
     transcript: str,
@@ -396,6 +520,73 @@ async def generate_followup(
     return result
 
 
+async def generate_followup_transition(
+    question: str,
+    transcript: str,
+    category: FieldCategory | None = None,
+    role_signals: list[str] | None = None,
+    sample_question_themes: list[str] | None = None,
+    experience_level: ExperienceLevel | None = None,
+    jd_summary: list[str] | None = None,
+    already_asked: list[str] | None = None,
+    block_history: list[dict[str, str]] | None = None,
+    rng: random.Random | None = None,
+) -> GeneratedQuestion:
+    """Return a visible question plus optional spoken-only bridge.
+
+    The visible `question` is the durable artifact stored in the DB and returned
+    to the client. `spoken_bridge`, when present, is only prepended to the TTS
+    text so the interviewer can sound attentive without polluting history.
+    """
+    if contains_injection(transcript):
+        logger.warning(
+            "Prompt-injection pattern in transcript; returning generic "
+            "follow-up transition without an LLM call (transcript_len=%d)",
+            len(transcript or ""),
+        )
+        await log_injection_detected(source="followup.transcript", text=transcript)
+        return GeneratedQuestion(question=_FALLBACK)
+
+    client = get_client()
+    user_prompt = _build_user_prompt(
+        question, transcript, category, role_signals, sample_question_themes,
+        experience_level, jd_summary, already_asked, block_history, rng,
+    )
+    response = await create_chat_with_fallback(
+        client,
+        models=(FOLLOWUP_MODEL, FOLLOWUP_FALLBACK_MODEL),
+        messages=[
+            {"role": "system", "content": _TRANSITION_SYSTEM_PROMPT + _SECURITY_CLAUSE},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.7,
+        max_tokens=256,
+        response_format={"type": "json_object"},
+        timeout=30.0,
+        extra_body={"reasoning": {"enabled": False}},
+        label="followup_transition",
+    )
+    raw = response.choices[0].message.content or ""
+    logger.debug("Followup transition raw response: %r", raw)
+    try:
+        result = _parse_transition_payload(raw)
+    except ValueError:
+        logger.warning("Followup transition fallback triggered (raw=%r)", raw)
+        result = GeneratedQuestion(question=_FALLBACK)
+    # Surface the actual generated text so the spoken bridge (audio-only) and the
+    # visible follow-up question can be inspected side by side in the console.
+    logger.info(
+        "Followup transition generated:\n"
+        "  spoken_bridge (audio-only): %s\n"
+        "  question (visible)        : %s\n"
+        "  TTS text (bridge+question): %s",
+        result.spoken_bridge if result.spoken_bridge else "(none)",
+        result.question,
+        _tts_text(result),
+    )
+    return result
+
+
 # ── story-block pacing decision ──────────────────────────────────────────────
 
 _DECISION_SYSTEM_PROMPT = """\
@@ -473,7 +664,11 @@ async def should_continue_followup(
                 },
             ],
             temperature=0.0,
-            max_tokens=32,
+            # 128, not a tight 32: OpenRouter providers occasionally ignore the
+            # reasoning-disable flag, and reasoning tokens count against
+            # max_tokens — a 32-token budget can be consumed entirely by leaked
+            # reasoning, truncating `content` to "" (finish_reason=length).
+            max_tokens=128,
             response_format={"type": "json_object"},
             timeout=15.0,
             extra_body={"reasoning": {"enabled": False}},

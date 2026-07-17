@@ -337,6 +337,16 @@ async def generate_opening_question(
         ],
         temperature=0.7,
         timeout=60.0,
+        # Bound a derailed generation (e.g. leaked reasoning free-associating
+        # past the question) instead of letting it run unbounded into the DB
+        # and TTS. NOT a tight ~128: on OpenRouter, Gemini's thinking tokens
+        # count against max_tokens (finish_reason=MAX_TOKENS when thoughts +
+        # output exceed it) and effort-derived thinking budgets floor at 1024,
+        # so a small cap risks truncating `content` to empty. 1024 leaves
+        # headroom for minimal-effort thinking plus the ≤30-word question;
+        # `create_chat_with_fallback` retries the fallback model on empty
+        # content if a provider still eats the whole budget.
+        max_tokens=1024,
         # gemini-3.5-flash reasons by default; this is a single short generation
         # that doesn't need a reasoning trace, so keep it minimal for latency/cost.
         # The deepseek-v3.2 fallback doesn't accept the OpenAI-style "minimal"

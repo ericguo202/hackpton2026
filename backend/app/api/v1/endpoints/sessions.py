@@ -10,6 +10,7 @@ GET  /api/v1/sessions/{id}        — full session detail (session + turns).
 import asyncio
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -56,7 +57,11 @@ from app.services.coaching import generate_next_take
 from app.services.delivery_consent import has_active_delivery_analytics_consent
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
-from app.services.followup import generate_followup, should_continue_followup
+from app.services.followup import (
+    generate_followup_transition,
+    should_continue_followup,
+    _tts_text,
+)
 from app.services.incidents import (
     log_error,
     log_injection_detected,
@@ -448,6 +453,78 @@ async def create_session(
 # résumé read (`_read_pdf_bounded`).
 _MAX_AUDIO_BYTES = 50 * 1024 * 1024
 _AUDIO_CHUNK_SIZE = 1024 * 1024
+_FALLBACK_CLARIFICATION_QUESTION = (
+    "Tell me about one specific work or school situation, what you did, and what happened."
+)
+# Matched at the START of the utterance (after leading filler is stripped), so
+# these are clarification *openers*, not substrings. The modal branch is
+# compositional — "(can|could|would|will) [you] [please] <verb>" — so an
+# interposed "you"/"please" ("can you please clarify that") doesn't break the
+# match the way a fixed "can you clarify" literal would.
+_CLARIFICATION_RE = re.compile(
+    r"(?:"
+    r"(?:can|could|would|will) (?:you )?(?:please )?"
+    r"(?:clarify|be more (?:explicit|specific)|"
+    r"explain (?:the |that |your )?question|repeat (?:the |that )?question)"
+    r"|please clarify"
+    r"|clarify (?:the question|that)"
+    r"|what (?:do|did) you mean"
+    r"|what are you asking"
+    r"|be more (?:explicit|specific)"
+    r"|challenge regarding what"
+    r")\b",
+    re.IGNORECASE,
+)
+# Politeness/filler the candidate might utter *before* the clarification
+# proper ("uh, sorry. can you clarify that, please?"). Stripped from the front
+# so the anchored match below still fires, without opening the door to
+# mid-sentence matches. The trailing separator class swallows any run of
+# whitespace/punctuation between filler tokens — including the sentence period
+# in "sorry. can you..." — so a filler word ending a clause doesn't block the
+# next token from being recognized.
+_CLARIFICATION_LEADING_FILLER_RE = re.compile(
+    r"^(?:"
+    r"sorry|please|excuse me|um+|uh+|uhm+|er+|erm+|hmm+|hey|hi|wait|so|yeah|"
+    r"yep|well|oh|okay|ok|like|but|and|i'?m sorry|my bad"
+    r")\b[\s,.;:!?\-]*",
+    re.IGNORECASE,
+)
+
+
+def _is_clarification_request(transcript: str) -> bool:
+    """Conservative detector for explicit clarification requests only.
+
+    The clarification phrase must *lead* the utterance (after stripping any
+    leading politeness/filler), not merely appear somewhere inside it. This is
+    what separates a real "What do you mean?" from a genuine — if short — answer
+    that narrates one ("I asked my manager what do you mean by scalable, then I
+    built it."), which should be scored normally, not silently re-asked.
+    """
+    cleaned = " ".join((transcript or "").strip().lower().split())
+    if not cleaned or len(cleaned) > 180:
+        return False
+    prev = None
+    while prev != cleaned:
+        prev = cleaned
+        cleaned = _CLARIFICATION_LEADING_FILLER_RE.sub("", cleaned, count=1)
+    return bool(_CLARIFICATION_RE.match(cleaned))
+
+
+def _clarified_question(question: str) -> str:
+    """Re-ask the same prompt with a concrete-answer frame."""
+    q = " ".join((question or "").strip().split())
+    if not q:
+        return _FALLBACK_CLARIFICATION_QUESTION
+    stripped = q.rstrip("?.!")
+    lower = stripped.lower()
+    if lower.startswith("tell me about"):
+        return f"{stripped} using one specific work or school example."
+    if lower.startswith("describe"):
+        return (
+            f"{stripped} using one specific situation and what you personally did."
+        )
+    topic = stripped[0].lower() + stripped[1:] if stripped else "the situation"
+    return f"Using one specific work or school example, {topic}?"
 
 
 async def _read_audio_bounded(audio: UploadFile) -> bytes:
@@ -548,7 +625,7 @@ async def _followup_and_tts(
     or re-treading earlier questions — the anti-repetition half of the
     variety fix.
     """
-    next_q = await generate_followup(
+    generated = await generate_followup_transition(
         question,
         transcript,
         category=category,
@@ -560,9 +637,9 @@ async def _followup_and_tts(
         block_history=block_history,
     )
     audio_url = await synthesize_speech(
-        next_q, voice_id=voice_id, speed=speech_speed
+        _tts_text(generated), voice_id=voice_id, speed=speech_speed
     )
-    return next_q, audio_url
+    return generated.question, audio_url
 
 
 async def _opening_and_tts(
@@ -662,16 +739,21 @@ def _current_block_history(
 ) -> list[dict[str, str]]:
     """Q&A pairs for the current story block, oldest-first.
 
-    The trailing opening in `prior_turns` plus every follow-up after it, then
-    the just-answered `current_turn` (whose transcript isn't persisted into
-    `prior_turns` yet). Shape matches the evaluator's `history`.
+    When `current_turn` is a follow-up: the trailing opening in `prior_turns`
+    plus every follow-up after it, then the just-answered `current_turn`
+    (whose transcript isn't persisted into `prior_turns` yet). When
+    `current_turn` is an OPENING it *starts* a new block, so the block is just
+    the current pair — walking `prior_turns` here would mislabel the PREVIOUS
+    block's Q/As as "this story" and steer the next follow-up back onto the
+    prior story's content. Shape matches the evaluator's `history`.
     """
     block: list[InterviewTurn] = []
-    for turn in reversed(prior_turns):
-        block.append(turn)
-        if not turn.is_followup:
-            break
-    block.reverse()
+    if current_turn.is_followup:
+        for turn in reversed(prior_turns):
+            block.append(turn)
+            if not turn.is_followup:
+                break
+        block.reverse()
     history = [
         {"question": t.question_text, "transcript": t.transcript_text or ""}
         for t in block
@@ -1385,6 +1467,39 @@ async def submit_turn(
                 "Your answer contains content that violates our usage "
                 "policy. Please re-record and try again."
             ),
+        )
+
+    if (
+        not session.clarification_retry_used
+        and _is_clarification_request(transcript)
+    ):
+        clarified = _clarified_question(current_turn.question_text)
+        turn_voice_id = session.voice_id or voice_for_session(session.id)
+        turn_speech_speed = (
+            float(session.speech_speed)
+            if session.speech_speed is not None
+            else None
+        )
+        audio_url = await synthesize_speech(
+            clarified, voice_id=turn_voice_id, speed=turn_speech_speed
+        )
+        current_turn.question_text = clarified
+        session.clarification_retry_used = True
+        await db.commit()
+        filler_count, filler_breakdown = count_filler_words(transcript)
+        return TurnSubmitOut(
+            transcript=transcript,
+            scores=None,
+            feedback=None,
+            feedback_detail=None,
+            filler_word_count=filler_count,
+            filler_word_breakdown=filler_breakdown,
+            next_question=clarified,
+            next_question_audio_url=audio_url,
+            next_question_is_followup=current_turn.is_followup,
+            clarification_retry=True,
+            is_final=False,
+            evaluation_pending=False,
         )
 
     # 4. Filler words (regex ground truth per CLAUDE.md) + total word count

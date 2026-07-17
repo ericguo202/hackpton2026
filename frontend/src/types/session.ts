@@ -58,6 +58,9 @@ export type TurnResult = {
   // rather than a fresh opening. Drives the "Follow-up question" label during
   // recording. False on the final turn and for mid-session opening pivots.
   next_question_is_followup: boolean;
+  // True when this submission was only a clarification request. The backend
+  // re-asks the same turn and does not score or advance it.
+  clarification_retry: boolean;
   is_final: boolean;
   // True when scores are still being computed in the background.
   evaluation_pending: boolean;

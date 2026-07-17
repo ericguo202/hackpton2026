@@ -202,6 +202,22 @@ def test_current_block_history_is_block_scoped():
     ]
 
 
+def test_current_block_history_new_block_when_current_is_opening():
+    # Current turn is a mid-session OPENING (streak 0 — it starts a fresh
+    # block). The previous block (turns 1-2) must NOT leak in as "this story",
+    # or the next follow-up gets steered back onto the prior story's content.
+    prior = [
+        _turn(1, is_followup=False, question="A-open", transcript="a1"),
+        _turn(2, is_followup=True, question="A-fu", transcript="a2"),
+    ]
+    current = _turn(3, is_followup=False, question="B-open")
+    history = sessions_module._current_block_history(prior, current, "b1")
+    assert history == [{"question": "B-open", "transcript": "b1"}]
+    # The follow-up call site passes history[:-1] as block context — for a
+    # brand-new block that must be empty (empty-omission in the prompt).
+    assert history[:-1] == []
+
+
 # ── _roll_session_openings_into_recent ───────────────────────────────────────
 
 def test_roll_adds_mid_session_openings_newest_first():

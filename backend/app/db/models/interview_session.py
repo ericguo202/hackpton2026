@@ -12,7 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer, Numeric, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -91,6 +91,10 @@ class InterviewSession(Base):
     experience_level: Mapped[ExperienceLevel | None] = mapped_column(
         Enum(ExperienceLevel, name="experience_level", create_type=False),
         nullable=True,
+    )
+
+    clarification_retry_used: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
     )
 
     # Links this session to the saved question it was a practice attempt of.
