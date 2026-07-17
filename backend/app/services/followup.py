@@ -438,7 +438,7 @@ def _parse_transition_payload(raw: str) -> GeneratedQuestion:
         spoken_bridge=_sanitize_bridge(payload.get("spoken_bridge")),
     )
 
-
+# IMPORTANT: UNUSED DORMANT FALLBACK FOR DOCUMENTATION PURPOSES
 async def generate_followup(
     question: str,
     transcript: str,
