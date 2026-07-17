@@ -12,7 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Numeric, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -27,6 +27,7 @@ class InterviewSession(Base):
         CheckConstraint(
             "overall_score BETWEEN 0 AND 100", name="ck_sessions_overall_score"
         ),
+        CheckConstraint("num_turns BETWEEN 2 AND 8", name="ck_sessions_num_turns"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -48,6 +49,9 @@ class InterviewSession(Base):
     # Snapshot of the start-form inputs at session-create time.
     company: Mapped[str] = mapped_column(Text, nullable=False)
     job_title: Mapped[str] = mapped_column(Text, nullable=False)
+    num_turns: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("2")
+    )
 
     # Gemini's per-session company-research output (architecture step 1).
     company_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -87,6 +91,10 @@ class InterviewSession(Base):
     experience_level: Mapped[ExperienceLevel | None] = mapped_column(
         Enum(ExperienceLevel, name="experience_level", create_type=False),
         nullable=True,
+    )
+
+    clarification_retry_used: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
     )
 
     # Links this session to the saved question it was a practice attempt of.

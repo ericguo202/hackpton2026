@@ -54,7 +54,6 @@ type Props = {
   sessionCompleted: boolean;
   /** Present once the session is persisted (final-turn refetch). Enables Save. */
   sessionId?: string;
-  savedQuestionId?: string | null;
 };
 
 export function PracticeTurnPanel({
@@ -63,11 +62,11 @@ export function PracticeTurnPanel({
   replay,
   sessionCompleted,
   sessionId,
-  savedQuestionId,
 }: Props) {
   const evaluationFailed = turn.scores.structure === null;
   const evaluationPending = evaluationFailed && !sessionCompleted;
-  const isOpeningTurn = turnNum === 1 && !turn.is_followup;
+  // Every opening is saveable (turn 1 + mid-session openings); not follow-ups.
+  const isOpeningTurn = !turn.is_followup;
   const flash = useProvideMomentFlash(turn.id);
   const askTutor = useProvideAskTutor();
 
@@ -81,7 +80,8 @@ export function PracticeTurnPanel({
         {isOpeningTurn && sessionId && (
           <SaveQuestionButton
             sessionId={sessionId}
-            alreadySaved={savedQuestionId != null}
+            turnId={turn.id}
+            questionText={turn.question_text}
             evaluated={!evaluationFailed}
             sessionCompleted={sessionCompleted}
           />

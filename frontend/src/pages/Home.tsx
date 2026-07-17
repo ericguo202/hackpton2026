@@ -31,6 +31,9 @@ import AccountButton from '../components/AccountButton';
 import AdvancedPanel, { SPEECH_PACE_DEFAULT } from '../components/AdvancedPanel';
 import type { SpeechPace } from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
+import SessionLengthField, {
+  MIN_SESSION_TURNS,
+} from '../components/SessionLengthField';
 import DeliveryConsentDialog from '../components/DeliveryConsentDialog';
 import FlashBanner from '../components/FlashBanner';
 import HomeTutorial from '../components/home-tutorial/HomeTutorial';
@@ -76,6 +79,7 @@ type SessionStart = {
   summary: { description: string; headlines: string[]; values: string[] };
   first_question: string;
   first_question_audio_url: string;
+  num_turns: number;
 };
 
 function timeOfDay(): 'morning' | 'afternoon' | 'evening' {
@@ -200,6 +204,7 @@ export default function Home() {
 
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [numTurns, setNumTurns] = useState(MIN_SESSION_TURNS);
   // Interview-voice pace (→ backend `speech_pace`, resolved per-voice server
   // side). Defaults to "Normal".
   const [speechPace, setSpeechPace] = useState<SpeechPace>(SPEECH_PACE_DEFAULT);
@@ -281,6 +286,7 @@ export default function Home() {
           // user's "today" for the free-tier daily-limit reset. Untrusted
           // on the server side (UTC fallback on parse failure).
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          num_turns: numTurns,
           speech_pace: speechPace,
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
@@ -292,6 +298,7 @@ export default function Home() {
       });
       trackEvent('practice_session_started', {
         has_custom_voice: Boolean(voiceId),
+        num_turns: data.num_turns,
         auto_submit_enabled: autoSubmit,
         delivery_analytics_enabled: deliveryAnalyticsWillBeEnabled,
         user_tier: me?.tier ?? 'unknown',
@@ -301,6 +308,7 @@ export default function Home() {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        numTurns: data.num_turns,
         company: trimmed,
         jobTitle: me?.target_role ?? 'Software Engineer',
       };
@@ -484,6 +492,13 @@ export default function Home() {
                       disabled={submitting}
                     />
                   </span>
+                  <SessionLengthField
+                    id="session-turns-desktop"
+                    tourId="length-slider"
+                    numTurns={numTurns}
+                    onChange={setNumTurns}
+                    disabled={submitting}
+                  />
                   <RefineTrigger
                     label="Advanced"
                     active={surface === 'advanced'}
@@ -548,7 +563,7 @@ export default function Home() {
                   />
                 </label>
 
-                <div className="mt-8 flex flex-wrap items-center gap-2">
+                <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2">
                   <AutoSubmitPill
                     autoSubmit={autoSubmit}
                     onToggle={() => setAutoSubmit((v) => !v)}
@@ -557,6 +572,12 @@ export default function Home() {
                   <ShowQuestionTextPill
                     showQuestionText={showQuestionText}
                     onToggle={() => setShowQuestionText((v) => !v)}
+                    disabled={submitting}
+                  />
+                  <SessionLengthField
+                    id="session-turns-mobile"
+                    numTurns={numTurns}
+                    onChange={setNumTurns}
                     disabled={submitting}
                   />
                 </div>

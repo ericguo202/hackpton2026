@@ -1,7 +1,7 @@
 /**
  * Folder-tab navigation for SessionDetail.
  *
- * Three tabs (Overview · Turn 1 · Turn 2) keep the binder/file-folder
+ * Folder tabs (Overview · Turn N) keep the binder/file-folder
  * silhouette on top of the session card, on the theme-following neutrals
  * (DESIGN.md §5 Folder Tabs): inactive tabs sit in the sunken tone, the
  * active tab shares the card fill so it fuses seamlessly with the panel
@@ -63,7 +63,7 @@ export function FolderTabs({ tabs, activeIndex, onChange }: FolderTabsProps) {
     <div
       role="tablist"
       aria-label="Session sections"
-      className="relative z-10 -mb-px hidden min-[900px]:flex items-end gap-1"
+      className="relative z-10 -mb-px hidden max-w-full items-end gap-1 overflow-x-auto overflow-y-hidden min-[900px]:flex"
     >
       {tabs.map((tab, idx) => {
         const active = idx === activeIndex;
@@ -80,7 +80,8 @@ export function FolderTabs({ tabs, activeIndex, onChange }: FolderTabsProps) {
             onClick={() => onChange(idx)}
             onKeyDown={(e) => handleKeyDown(e, idx)}
             className={
-              'min-w-[7rem] cursor-pointer rounded-t-lg border border-b-0 px-5 py-2.5 ' +
+              'min-w-[5.75rem] shrink-0 cursor-pointer rounded-t-lg border border-b-0 px-3 py-2.5 ' +
+              'min-[1200px]:min-w-[6.5rem] min-[1200px]:px-4 ' +
               'font-display text-sm font-semibold transition-colors ' +
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ' +
               'focus-visible:ring-offset-2 focus-visible:ring-offset-surface ' +

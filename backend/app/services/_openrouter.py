@@ -62,9 +62,14 @@ async def create_chat_with_fallback(
     """Call OpenRouter chat completions, trying each model in `models` order.
 
     On any exception from a non-final model, logs and advances to the next
-    (e.g. a primary model outage → `deepseek/deepseek-v3.2` fallback). The
-    LAST model's exception propagates unchanged, so every caller keeps its
-    existing fail-soft policy (canned default / null scores / re-raise).
+    (e.g. a primary model outage → `deepseek/deepseek-v3.2` fallback). An
+    HTTP-200 response with EMPTY message content is treated the same way —
+    it happens when a provider ignores a reasoning-disable flag and leaked
+    reasoning tokens consume the whole `max_tokens` budget
+    (finish_reason=length, content=""), and no caller can use an empty
+    completion. The LAST model's exception propagates unchanged, and the
+    last model's response is returned even if empty, so every caller keeps
+    its existing fail-soft policy (canned default / null scores / re-raise).
 
     Reasoning params differ across providers, so `extra_body_by_model` supplies
     a per-model `extra_body`; a model absent from the map uses the shared
@@ -78,20 +83,42 @@ async def create_chat_with_fallback(
         call_kwargs["model"] = model
         if model in extra_body_by_model:
             call_kwargs["extra_body"] = dict(extra_body_by_model[model])
+        is_last = i + 1 == len(models)
         try:
-            return await client.chat.completions.create(**call_kwargs)
+            response = await client.chat.completions.create(**call_kwargs)
         except Exception as exc:  # noqa: BLE001 — any SDK/provider error rolls to fallback
             last_exc = exc
-            if i + 1 < len(models):
+            if not is_last:
                 logger.warning(
                     "%s model %s failed; falling back to %s: %s",
                     label, model, models[i + 1], exc,
                 )
                 continue
             raise
+        if not is_last and _has_empty_content(response):
+            logger.warning(
+                "%s model %s returned empty content; falling back to %s",
+                label, model, models[i + 1],
+            )
+            continue
+        return response
     # `models` is always non-empty at call sites; guard for the empty case.
     assert last_exc is not None
     raise last_exc
+
+
+def _has_empty_content(response: Any) -> bool:
+    """True when a chat completion carries no usable message content.
+
+    Defensive on shape: anything unexpected (mock objects in tests, future
+    SDK changes) counts as NON-empty so the response flows to the caller's
+    own parsing/fail-soft instead of being silently swallowed here.
+    """
+    try:
+        content = response.choices[0].message.content
+    except (AttributeError, IndexError, TypeError):
+        return False
+    return not (content or "").strip()
 
 
 def extract_json_object(text: str) -> str:

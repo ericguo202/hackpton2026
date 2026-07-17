@@ -32,7 +32,8 @@ class Settings(BaseSettings):
         "http://localhost:5174",
         "http://localhost:8080",
         "https://hackpton2026.vercel.app",
-        "https://interviewpie.com"
+        "https://interviewpie.com",
+        "https://www.interviewpie.com",
     ]
 
     # Regex matched against the request Origin header. Vercel mints a unique

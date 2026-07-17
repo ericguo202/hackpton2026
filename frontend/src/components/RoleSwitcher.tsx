@@ -102,7 +102,7 @@ export default function RoleSwitcher({ me, refetch }: Props) {
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-label="Change target role"
-          className="rounded-sm text-link underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          className="rounded-sm text-link underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface cursor-pointer"
         >
           (Change)
         </button>

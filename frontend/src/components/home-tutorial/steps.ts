@@ -40,8 +40,12 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     body: 'Toggle auto-submit and question text display on-off during your session.',
   },
   {
+    selector: '[data-tour="length-slider"]',
+    body: 'Click to change the number of questions during the interview session. Two by default, can be up to 8.',
+  },
+  {
     selector: '[data-tour="advanced-trigger"]',
-    body: 'Choose interview accent, add a job description for the target company, or choose a custom question to practice.',
+    body: 'Choose interviewer accent and speed, add a job description for the target company, or choose a custom question to practice.',
   },
   {
     selector: '[data-tour="privacy-trigger"]',

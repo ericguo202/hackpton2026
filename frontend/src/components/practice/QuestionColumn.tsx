@@ -6,6 +6,9 @@ import { cn } from '../../lib/utils';
 
 interface Props {
   questionText: string;
+  /** True when this question drills into the current story (a follow-up), so
+   *  the label reads "Follow-up question" instead of "Question". */
+  isFollowup: boolean;
   audioUrl: string;
   showQuestionText: boolean;
   replayKey: number;
@@ -19,6 +22,7 @@ interface Props {
 
 export function QuestionColumn({
   questionText,
+  isFollowup,
   audioUrl,
   showQuestionText,
   replayKey,
@@ -81,7 +85,7 @@ export function QuestionColumn({
       )}
     >
       <p className="mb-4 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-        Question
+        {isFollowup ? 'Follow-up question' : 'Question'}
       </p>
       {/* Invisible underlay holds the real question's wrapped height; the
           visible overlay swaps between the real text and a placeholder so

@@ -20,9 +20,17 @@ from app.services.voice_pool import DEFAULT_PACE, SpeechPace
 
 
 class SavedQuestionCreateIn(BaseModel):
-    """Save the opening question of an existing completed session."""
+    """Save an opening question of an existing completed session.
+
+    `turn_id` targets a specific opening turn — story-block interviews have
+    more than one opening (turn 1 plus a fresh opening at each block pivot),
+    and any of them is savable. Omitted → the session's first opening (turn 1),
+    preserving the pre-story-block behavior. Follow-up turns are rejected
+    server-side (only openings are savable).
+    """
 
     session_id: UUID
+    turn_id: UUID | None = None
 
 
 class RePracticeIn(BaseModel):

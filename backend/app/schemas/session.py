@@ -59,6 +59,9 @@ class SessionCreateIn(BaseModel):
     # text becomes turn 1 verbatim (it was screened at creation time). 404 if it
     # isn't the caller's.
     custom_question_id: UUID | None = Field(default=None)
+    # Total interview turns, including the opening question. Default preserves
+    # the original 1 opening + 1 follow-up flow for older clients.
+    num_turns: int = Field(default=2, ge=2, le=8)
 
 
 class CompanyBriefOut(BaseModel):
@@ -94,6 +97,7 @@ class SessionCreateOut(BaseModel):
     session_id: UUID
     summary: CompanyBriefOut
     first_question: str
+    num_turns: int
     # `data:audio/mpeg;base64,...` — ready to drop into `<audio src>`.
     # Not persisted; regenerated on demand per CLAUDE.md (audio inline in
     # JSON, no S3).
@@ -182,6 +186,15 @@ class TurnSubmitOut(BaseModel):
     filler_word_breakdown: dict[str, int]
     next_question: str | None
     next_question_audio_url: str | None
+    # True when the next question drills into the current story (a follow-up)
+    # rather than opening a fresh story block. Lets Practice label the upcoming
+    # question as a follow-up during recording. False on the final turn (no
+    # next question) and whenever the next turn is a fresh opening.
+    next_question_is_followup: bool = False
+    # True when the submitted audio was only a clarification request. The
+    # backend re-asks the same turn more concretely and does not persist the
+    # transcript, score the turn, or advance the turn count.
+    clarification_retry: bool = False
     is_final: bool
     # True when the evaluator is still running in the background. The
     # frontend uses this to (a) avoid showing 0/10 placeholder bars on
@@ -262,6 +275,7 @@ class SessionDetailOut(BaseModel):
     id: UUID
     company: str
     job_title: str
+    num_turns: int
     status: str
     overall_score: Decimal | None
     started_at: datetime | None
@@ -284,6 +298,21 @@ class SessionDetailOut(BaseModel):
     # re-practice attempt). Drives the Save button's "already saved" state so
     # the frontend doesn't need a separate lookup.
     saved_question_id: UUID | None = None
+
+
+class SessionEndOut(BaseModel):
+    """Response for `POST /sessions/{id}/end` (early finalize).
+
+    The status is still `in_progress` here: the endpoint spawns the same
+    detached finalizer the final-turn path uses and returns immediately, so
+    the client navigates to the detail screen and polls until the background
+    task flips the session to `completed`. `graded_turns` is the number of
+    completed (transcript-bearing) turns the session will be scored on.
+    """
+
+    session_id: UUID
+    status: str
+    graded_turns: int
 
 
 class FillerWordStat(BaseModel):

@@ -111,6 +111,7 @@ export type SessionDetail = {
   id: string;
   company: string;
   job_title: string;
+  num_turns: number;
   status: SessionStatus;
   overall_score: string | null;
   started_at: string | null;
