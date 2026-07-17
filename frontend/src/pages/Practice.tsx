@@ -515,7 +515,10 @@ function PracticeSession({
         completed_turns: turnResults.length,
         total_turns: totalTurns,
       });
-      clearPracticeReplays(sessionId);
+      // Deliberately do NOT clearPracticeReplays here — SessionDetail's
+      // per-turn replay cards consume the store on the very navigation below
+      // (mirrors the normal final-turn path). Only the zero-turn abandon
+      // branch clears.
       navigate(`/sessions/${sessionId}?from=practice`, { replace: true });
     } catch (err) {
       console.error('[Practice] end session early failed', err);
