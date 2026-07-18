@@ -14,9 +14,10 @@
 
 import type { ReactNode } from 'react';
 
+import { scoreDimensionsFor, type ScoreKey } from '../../lib/scoreDimensions';
 import type { DimensionAverages, SessionDetail } from '../../types/history';
 import FillerRateBar from './FillerRateBar';
-import { SCORE_COLOR_MAP, SCORE_KEYS, num, type ScoreKey } from './_helpers';
+import { num } from './_helpers';
 
 type Props = {
   session: SessionDetail;
@@ -30,6 +31,9 @@ export default function OverviewPanel({ session, sessionCompleted }: Props) {
     <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-6 min-[900px]:gap-8 p-6 min-[900px]:p-8">
       <CaseFileColumn session={session} />
       <ScoresOverviewColumn
+        // A session is single-category, so label the aggregate tiles from any
+        // turn's category (the opening turn). Falls back to STAR for legacy rows.
+        category={session.turns[0]?.question_category}
         averages={session.averages}
         fillerRate={num(session.filler_word_rate)}
         caption={
@@ -108,6 +112,7 @@ export function ScoresOverviewColumn({
   averages,
   caption,
   fillerRate,
+  category,
 }: {
   averages: DimensionAverages;
   caption?: ReactNode;
@@ -117,6 +122,11 @@ export function ScoresOverviewColumn({
    * (lower is better), so deliberately not a 7th tile. Omitted when null.
    */
   fillerRate?: number | null;
+  /**
+   * The session's question category (single-category per session). Resolves the
+   * per-position tile labels (STAR vs Motivation & Fit). Omitted/unknown → STAR.
+   */
+  category?: string | null;
 }) {
   return (
     <section className="flex flex-col">
@@ -128,12 +138,13 @@ export function ScoresOverviewColumn({
       )}
 
       <div className="grid grid-cols-2 min-[900px]:grid-cols-3 gap-3">
-        {SCORE_KEYS.map(([key, label]) => (
+        {scoreDimensionsFor(category).map((d) => (
           <ScoreTile
-            key={key}
-            scoreKey={key}
-            label={label}
-            value={num(averages[key])}
+            key={d.key}
+            scoreKey={d.key}
+            label={d.label}
+            color={d.color}
+            value={num(averages[d.key])}
           />
         ))}
       </div>
@@ -150,13 +161,14 @@ export function ScoresOverviewColumn({
 function ScoreTile({
   scoreKey,
   label,
+  color,
   value,
 }: {
   scoreKey: ScoreKey;
   label: string;
+  color: string;
   value: number | null;
 }) {
-  const color = SCORE_COLOR_MAP[scoreKey];
   const isDelivery = scoreKey === 'delivery';
   return (
     <div className="rounded-lg bg-surface-sunken p-4 flex flex-col gap-3">

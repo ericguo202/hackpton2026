@@ -68,11 +68,11 @@ type ChartPoint = {
   sessionId: string;
   created_at: string;
   overall: number | null;
-  structure: number | null;
-  problem_solving: number | null;
-  impact: number | null;
-  initiative: number | null;
-  depth: number | null;
+  dimension_1: number | null;
+  dimension_2: number | null;
+  dimension_3: number | null;
+  dimension_4: number | null;
+  dimension_5: number | null;
   delivery: number | null;
 };
 
@@ -85,7 +85,7 @@ type ChartPoint = {
  * excluded so a missing dimension doesn't drag the average down.
  */
 function openingOverall(s: NonNullable<SavedQuestionAttempt['turn1_scores']>): number | null {
-  const dims = [s.structure, s.problem_solving, s.impact, s.initiative, s.depth, s.delivery];
+  const dims = [s.dimension_1, s.dimension_2, s.dimension_3, s.dimension_4, s.dimension_5, s.delivery];
   const present = dims.filter((v): v is number => v !== null && v !== undefined);
   if (present.length === 0) return null;
   return present.reduce((a, b) => a + b, 0) / present.length;
@@ -103,11 +103,11 @@ function buildChartData(attempts: SavedQuestionAttempt[]): ChartPoint[] {
         sessionId: a.session_id,
         created_at: a.created_at,
         overall: openingOverall(s),
-        structure: s.structure,
-        problem_solving: s.problem_solving,
-        impact: s.impact,
-        initiative: s.initiative,
-        depth: s.depth,
+        dimension_1: s.dimension_1,
+        dimension_2: s.dimension_2,
+        dimension_3: s.dimension_3,
+        dimension_4: s.dimension_4,
+        dimension_5: s.dimension_5,
         delivery: s.delivery,
       };
     });
@@ -152,11 +152,11 @@ export default function SavedQuestionDetail() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const [activeDims, setActiveDims] = useState<Record<DimensionKey, boolean>>({
-    structure: true,
-    problem_solving: true,
-    impact: true,
-    initiative: true,
-    depth: true,
+    dimension_1: true,
+    dimension_2: true,
+    dimension_3: true,
+    dimension_4: true,
+    dimension_5: true,
     delivery: true,
   });
   const [showOverall, setShowOverall] = useState(true);

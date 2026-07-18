@@ -8,14 +8,19 @@
  * so the raw payload stays inspectable in DevTools.
  */
 
-/** Per-dimension averages — every value is null on rows with no data. */
+/**
+ * Per-dimension averages — every value is null on rows with no data. The five
+ * content slots are GENERIC (`dimension_1..5`); the human label per position is
+ * resolved from the question category (see `lib/scoreDimensions.ts`). Aggregate
+ * surfaces render the STAR label set today (all live turns are STAR).
+ */
 export type DimensionAverages = {
-  structure:       string | null;
-  problem_solving: string | null;
-  impact:          string | null;
-  initiative:      string | null;
-  depth:           string | null;
-  delivery:        string | null;
+  dimension_1: string | null;
+  dimension_2: string | null;
+  dimension_3: string | null;
+  dimension_4: string | null;
+  dimension_5: string | null;
+  delivery:    string | null;
 };
 
 export type SessionStatus =
@@ -91,13 +96,14 @@ export type TurnDetail = {
    *  values; drives the per-turn category badge. Optional for legacy payloads. */
   question_category?: string;
   scores: {
-    // Null when the turn's evaluation never completed. Renders as an
-    // "Evaluation Failed" placeholder, NOT as 0/10.
-    structure: number | null;
-    problem_solving: number | null;
-    impact: number | null;
-    initiative: number | null;
-    depth: number | null;
+    // Five GENERIC content slots + delivery. Null when the turn's evaluation
+    // never completed (renders as "Evaluation Failed", NOT 0/10). The label per
+    // position is resolved from `question_category` (see `lib/scoreDimensions.ts`).
+    dimension_1: number | null;
+    dimension_2: number | null;
+    dimension_3: number | null;
+    dimension_4: number | null;
+    dimension_5: number | null;
     delivery: number | null;
   };
   feedback: string | null;

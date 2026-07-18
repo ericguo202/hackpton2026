@@ -14,10 +14,23 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.db.models.enums import QuestionCategory
 from app.services._field_categories import FieldCategory
 from app.services.voice_pool import DEFAULT_PACE, SpeechPace
+
+# Question types with a real prompt stack today. The Setup picker only offers
+# these; a hand-crafted request naming an unbuilt type (self_assessment_growth)
+# would generate STAR prompts mislabeled as that type, so the request layer
+# rejects it. Extend this set as new types ship.
+BUILT_QUESTION_CATEGORIES = frozenset(
+    {
+        QuestionCategory.experience_star,
+        QuestionCategory.motivation_fit,
+        QuestionCategory.situational,
+    }
+)
 
 
 class SessionCreateIn(BaseModel):
@@ -62,6 +75,18 @@ class SessionCreateIn(BaseModel):
     # Total interview turns, including the opening question. Default preserves
     # the original 1 opening + 1 follow-up flow for older clients.
     num_turns: int = Field(default=2, ge=2, le=8)
+    # Question FORM for this whole session (single-category per session). Chosen
+    # in the Setup picker; stamped on turn 1 and inherited by every later turn.
+    # Default keeps older clients (and re-practice / custom-question flows, which
+    # never send it) on Experience/STAR. Only built types are accepted.
+    question_category: QuestionCategory = QuestionCategory.experience_star
+
+    @field_validator("question_category")
+    @classmethod
+    def _only_built_categories(cls, v: QuestionCategory) -> QuestionCategory:
+        if v not in BUILT_QUESTION_CATEGORIES:
+            raise ValueError(f"question_category {v.value!r} is not available yet")
+        return v
 
 
 class CompanyBriefOut(BaseModel):
@@ -97,9 +122,10 @@ class SessionCreateOut(BaseModel):
     session_id: UUID
     summary: CompanyBriefOut
     first_question: str
-    # Question FORM of turn 1. Always "experience_star" today (every question is
-    # Experience/STAR); carried so the Practice recording view can badge turn 1
-    # by category. Defaulted so create + re-practice call sites need no change.
+    # Question FORM of turn 1 — the session's chosen category (single-category
+    # per session). Carried so the Practice recording view can badge turn 1 by
+    # category. Defaulted so re-practice / custom-question call sites (always
+    # STAR) need no change.
     first_question_category: str = "experience_star"
     num_turns: int
     # `data:audio/mpeg;base64,...` — ready to drop into `<audio src>`.
@@ -109,15 +135,17 @@ class SessionCreateOut(BaseModel):
 
 
 class ScoresOut(BaseModel):
-    # All five base scores are nullable: the route returns null for any turn
-    # whose evaluation never completed (background + inline-fallback both
-    # raised). The frontend renders an "Evaluation Failed" placeholder in
+    # Five GENERIC content score slots; the human label per position is resolved
+    # client-side from the turn's `question_category` (see frontend
+    # `SCORE_DIMENSIONS_BY_CATEGORY`). All are nullable: the route returns null
+    # for any turn whose evaluation never completed (background + inline-fallback
+    # both raised). The frontend renders an "Evaluation Failed" placeholder in
     # that case rather than displaying 0s that would drag the average down.
-    structure: int | None = None
-    problem_solving: int | None = None
-    impact: int | None = None
-    initiative: int | None = None
-    depth: int | None = None
+    dimension_1: int | None = None
+    dimension_2: int | None = None
+    dimension_3: int | None = None
+    dimension_4: int | None = None
+    dimension_5: int | None = None
     # 6th dimension from browser webcam analytics. Null when the candidate
     # declined camera access; the UI hides the row in that case.
     delivery: int | None = None
@@ -217,11 +245,14 @@ class TurnSubmitOut(BaseModel):
 # is null whenever the candidate kept the camera off for every turn. The
 # frontend trend chart drops null points instead of plotting them as zeros.
 class DimensionAverages(BaseModel):
-    structure: Decimal | None = None
-    problem_solving: Decimal | None = None
-    impact: Decimal | None = None
-    initiative: Decimal | None = None
-    depth: Decimal | None = None
+    # Generic per-dimension averages; label per position resolved client-side
+    # from question_category. Aggregate surfaces (history trend, radar, stats)
+    # currently render the STAR label set since all live turns are STAR.
+    dimension_1: Decimal | None = None
+    dimension_2: Decimal | None = None
+    dimension_3: Decimal | None = None
+    dimension_4: Decimal | None = None
+    dimension_5: Decimal | None = None
     delivery: Decimal | None = None
 
 

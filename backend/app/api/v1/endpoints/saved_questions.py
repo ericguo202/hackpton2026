@@ -152,12 +152,12 @@ async def save_question(
         )
 
     # 3. Resolve the target opening turn (a specific one via `turn_id`, or
-    #    turn 1). It must be evaluated — `structure_score` non-null is the
+    #    turn 1). It must be evaluated — `dimension_1_score` non-null is the
     #    codebase's canonical "evaluated" check. Gate on the SAVED turn, not the
     #    session aggregate: a session whose overall_score is non-null (a later
     #    turn scored) is no proof this particular opening got a real attempt.
     target = await _resolve_savable_turn(db, session, body.turn_id)
-    if target is None or target.structure_score is None:
+    if target is None or target.dimension_1_score is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
@@ -342,14 +342,14 @@ async def get_saved_question(
     attempts: list[SavedQuestionAttempt] = []
     for s in sessions:
         t1 = _pick_attempt_turn(openings_by_session.get(s.id, []), sq.question_text)
-        evaluated = t1 is not None and t1.structure_score is not None
+        evaluated = t1 is not None and t1.dimension_1_score is not None
         turn1_scores = (
             ScoresOut(
-                structure=t1.structure_score,
-                problem_solving=t1.problem_solving_score,
-                impact=t1.impact_score,
-                initiative=t1.initiative_score,
-                depth=t1.depth_score,
+                dimension_1=t1.dimension_1_score,
+                dimension_2=t1.dimension_2_score,
+                dimension_3=t1.dimension_3_score,
+                dimension_4=t1.dimension_4_score,
+                dimension_5=t1.dimension_5_score,
                 delivery=t1.delivery_score,
             )
             if evaluated

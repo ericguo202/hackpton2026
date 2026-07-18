@@ -150,6 +150,7 @@ async def _persist_session_and_turn(
     roll_recent: bool = True,
     saved_question_id: UUID | None = None,
     speech_speed: float = DEFAULT_SPEED,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
 ) -> UUID:
     """INSERT the session row + turn 1 atomically; return session.id.
 
@@ -192,9 +193,10 @@ async def _persist_session_and_turn(
         turn_number=1,
         question_text=opening_q,
         is_followup=False,
-        # Every question is Experience (STAR) today; the column exists so the
-        # four-type taxonomy can label turns without another migration.
-        question_category=QuestionCategory.experience_star,
+        # The session's chosen question FORM (single-category per session).
+        # Defaults to Experience/STAR for callers that don't pass it (re-practice,
+        # custom questions). Every later turn inherits this in submit_turn.
+        question_category=question_category,
     )
     db.add(turn)
 
@@ -371,12 +373,25 @@ async def create_session(
             db=db,
         )
 
+    # The session's chosen question FORM (single-category per session), stamped
+    # on turn 1 and inherited by every later turn. A custom question is verbatim
+    # user text — not a generated M&F/situational opening — so a custom-question
+    # session is always graded as Experience/STAR regardless of the picker.
+    # Resolved BEFORE research so the situational research variant (accurate
+    # company principles + situational themes) is selected on the research call.
+    question_category = (
+        QuestionCategory.experience_star
+        if custom_question is not None
+        else body.question_category
+    )
+
     try:
         brief = await research_company(
             body.company,
             body.job_title,
             user.experience_level,
             job_description=job_description or None,
+            question_category=question_category,
         )
     except CompanyNotFoundError:
         raise HTTPException(
@@ -387,6 +402,7 @@ async def create_session(
         "Session research complete: company=%r job_title=%r category=%r",
         body.company, body.job_title, brief.category,
     )
+
     if custom_question is not None:
         # The candidate picked their own question — skip the opening-question
         # LLM call entirely and use the (already-screened) custom text verbatim.
@@ -398,6 +414,7 @@ async def create_session(
         opening_q = await generate_opening_question(
             user, brief, body.job_title,
             recent_questions=user.recent_opening_questions,
+            question_category=question_category,
         )
 
     # Generate the session UUID up front so the voice can be resolved
@@ -433,6 +450,8 @@ async def create_session(
             roll_recent=custom_question is None,
             # Persist the resolved pace so turn 2's TTS matches turn 1.
             speech_speed=speech_speed,
+            # Stamp turn 1 with the session's chosen category (STAR for custom).
+            question_category=question_category,
         ),
     )
     await log_interview_session_started(
@@ -451,6 +470,7 @@ async def create_session(
         session_id=session_id,
         summary=CompanyBriefOut(**brief.model_dump()),
         first_question=opening_q,
+        first_question_category=question_category.value,
         num_turns=body.num_turns,
         first_question_audio_url=audio_url,
     )
@@ -624,6 +644,7 @@ async def _followup_and_tts(
     already_asked: list[str] | None = None,
     block_history: list[dict[str, str]] | None = None,
     speech_speed: float | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
 ) -> tuple[str, str]:
     """Generate follow-up via Flash then TTS — runs before background eval.
 
@@ -654,6 +675,7 @@ async def _followup_and_tts(
         jd_summary=jd_summary,
         already_asked=already_asked,
         block_history=block_history,
+        question_category=question_category,
     )
     audio_url = await synthesize_speech(
         _tts_text(generated), voice_id=voice_id, speed=speech_speed
@@ -668,6 +690,7 @@ async def _opening_and_tts(
     recent_questions: list[str],
     voice_id: str,
     speech_speed: float | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
 ) -> tuple[str, str]:
     """Generate a fresh opening question mid-session, then TTS.
 
@@ -678,9 +701,14 @@ async def _opening_and_tts(
     the session's persisted voice so a mid-session opening sounds like the same
     interviewer, and the session's persisted `speech_speed` so it plays at the
     pace the candidate chose at create time.
+
+    `question_category` selects the opening's FORM (STAR vs Motivation & Fit),
+    threaded from the routing decision; every mid-session opening is
+    `experience_star` today.
     """
     next_q = await generate_opening_question(
-        user, brief, job_title, recent_questions=recent_questions
+        user, brief, job_title, recent_questions=recent_questions,
+        question_category=question_category,
     )
     audio_url = await synthesize_speech(
         next_q, voice_id=voice_id, speed=speech_speed
@@ -872,21 +900,20 @@ def _log_eval_scores(
     new sessions are running the new rubric."""
     logger.info(
         "Eval scored: session=%s turn=%s category=%r "
-        "structure=%s problem_solving=%s impact=%s "
-        "initiative=%s depth=%s delivery=%s",
+        "d1=%s d2=%s d3=%s d4=%s d5=%s delivery=%s",
         session_id, turn_id, category,
-        eval_out.structure, eval_out.problem_solving, eval_out.impact,
-        eval_out.initiative, eval_out.depth, eval_out.delivery,
+        eval_out.dimension_1, eval_out.dimension_2, eval_out.dimension_3,
+        eval_out.dimension_4, eval_out.dimension_5, eval_out.delivery,
     )
 
 
 def _apply_eval_to_turn(turn: InterviewTurn, eval_out: EvaluatorOutput) -> None:
     """Copy evaluator output onto an InterviewTurn row (no commit)."""
-    turn.structure_score       = eval_out.structure
-    turn.problem_solving_score = eval_out.problem_solving
-    turn.impact_score          = eval_out.impact
-    turn.initiative_score      = eval_out.initiative
-    turn.depth_score           = eval_out.depth
+    turn.dimension_1_score     = eval_out.dimension_1
+    turn.dimension_2_score     = eval_out.dimension_2
+    turn.dimension_3_score     = eval_out.dimension_3
+    turn.dimension_4_score     = eval_out.dimension_4
+    turn.dimension_5_score     = eval_out.dimension_5
     turn.delivery_score        = eval_out.delivery
     turn.feedback              = eval_out.notes
     turn.feedback_detail       = eval_out.feedback_detail.model_dump()
@@ -930,6 +957,7 @@ async def _run_background_eval(
     category: FieldCategory | None,
     experience_level: ExperienceLevel | None = None,
     jd_summary: list[str] | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
 ) -> None:
     """Evaluate a turn after the request has already returned, then persist.
 
@@ -956,6 +984,7 @@ async def _run_background_eval(
                     cv_summary=cv_summary, category=category,
                     experience_level=experience_level,
                     jd_summary=jd_summary,
+                    question_category=question_category,
                 )
                 _log_eval_scores(session_id, turn_id, category, eval_out)
                 await _attach_next_take(
@@ -1055,12 +1084,12 @@ def _per_dimension_averages(turns: list[_TurnScores]) -> dict[str, float | None]
         return round(sum(non_null) / len(non_null), 2) if non_null else None
 
     return {
-        "structure":       _avg([t[0] for t in turns]),
-        "problem_solving": _avg([t[1] for t in turns]),
-        "impact":          _avg([t[2] for t in turns]),
-        "initiative":      _avg([t[3] for t in turns]),
-        "depth":           _avg([t[4] for t in turns]),
-        "delivery":        _avg([t[5] for t in turns]),
+        "dimension_1": _avg([t[0] for t in turns]),
+        "dimension_2": _avg([t[1] for t in turns]),
+        "dimension_3": _avg([t[2] for t in turns]),
+        "dimension_4": _avg([t[3] for t in turns]),
+        "dimension_5": _avg([t[4] for t in turns]),
+        "delivery":    _avg([t[5] for t in turns]),
     }
 
 
@@ -1090,11 +1119,11 @@ async def _upsert_session_metrics(
 
     db.add(SessionMetrics(
         session_id=session_id,
-        avg_structure=averages["structure"],
-        avg_problem_solving=averages["problem_solving"],
-        avg_impact=averages["impact"],
-        avg_initiative=averages["initiative"],
-        avg_depth=averages["depth"],
+        avg_dimension_1=averages["dimension_1"],
+        avg_dimension_2=averages["dimension_2"],
+        avg_dimension_3=averages["dimension_3"],
+        avg_dimension_4=averages["dimension_4"],
+        avg_dimension_5=averages["dimension_5"],
         avg_delivery=averages["delivery"],
         total_filler_word_count=total_filler_word_count,
         total_word_count=total_word_count,
@@ -1122,12 +1151,12 @@ async def _complete_session_from_turns(
     """
     all_turn_scores: list[_TurnScores] = [
         (
-            float(t.structure_score)       if t.structure_score       is not None else None,
-            float(t.problem_solving_score) if t.problem_solving_score is not None else None,
-            float(t.impact_score)          if t.impact_score          is not None else None,
-            float(t.initiative_score)      if t.initiative_score      is not None else None,
-            float(t.depth_score)           if t.depth_score           is not None else None,
-            float(t.delivery_score)        if t.delivery_score        is not None else None,
+            float(t.dimension_1_score) if t.dimension_1_score is not None else None,
+            float(t.dimension_2_score) if t.dimension_2_score is not None else None,
+            float(t.dimension_3_score) if t.dimension_3_score is not None else None,
+            float(t.dimension_4_score) if t.dimension_4_score is not None else None,
+            float(t.dimension_5_score) if t.dimension_5_score is not None else None,
+            float(t.delivery_score)    if t.delivery_score    is not None else None,
             int(t.filler_word_count or 0),
         )
         for t in turns
@@ -1249,7 +1278,7 @@ async def _run_background_finalize(
             turns = list(turns_result.scalars().all())
 
             for turn in turns:
-                if turn.transcript_text is None or turn.structure_score is not None:
+                if turn.transcript_text is None or turn.dimension_1_score is not None:
                     continue
 
                 if turn.id != final_turn_id:
@@ -1279,6 +1308,7 @@ async def _run_background_finalize(
                         category=category,
                         experience_level=experience_level,
                         jd_summary=jd_summary,
+                        question_category=turn.question_category,
                     )
                     _log_eval_scores(session_id, turn.id, category, eval_out)
                     await _attach_next_take(
@@ -1609,15 +1639,15 @@ async def submit_turn(
                 if await should_continue_followup(
                     _current_block_history(prior_turns, current_turn, transcript),
                     experience_level=experience_level,
+                    question_category=current_turn.question_category,
                 )
                 else "opening"
             )
 
-        # The next question's FORM. Every question is Experience (STAR) today —
-        # both routes generate STAR openings/follow-ups — so this is constant;
-        # it's threaded explicitly so the future question-type routing sets it
-        # per generated question in one place.
-        next_question_category = QuestionCategory.experience_star
+        # The next question's FORM. A session is single-category (chosen at
+        # create, stamped on turn 1), so every routed opening/follow-up inherits
+        # the just-answered turn's category — no separate routing decision.
+        next_question_category = current_turn.question_category
 
         if route == "opening":
             next_q, next_audio_url = await _opening_and_tts(
@@ -1627,6 +1657,7 @@ async def submit_turn(
                 _session_opening_avoid_list(prior_turns, current_turn, user),
                 turn_voice_id,
                 speech_speed=turn_speech_speed,
+                question_category=next_question_category,
             )
             await _insert_next_turn(
                 db,
@@ -1657,6 +1688,7 @@ async def submit_turn(
                     prior_turns, current_turn, transcript
                 )[:-1],
                 speech_speed=turn_speech_speed,
+                question_category=next_question_category,
             )
             await _insert_next_turn(
                 db,
@@ -1684,6 +1716,7 @@ async def submit_turn(
                 category=category,
                 experience_level=experience_level,
                 jd_summary=jd_summary,
+                question_category=current_turn.question_category,
             ),
             name=f"eval-session-{session_id}-turn-{current_turn.turn_number}",
         )
@@ -1828,11 +1861,11 @@ def _averages_from_metrics(m: SessionMetrics | None) -> DimensionAverages:
     if m is None:
         return DimensionAverages()
     return DimensionAverages(
-        structure=m.avg_structure,
-        problem_solving=m.avg_problem_solving,
-        impact=m.avg_impact,
-        initiative=m.avg_initiative,
-        depth=m.avg_depth,
+        dimension_1=m.avg_dimension_1,
+        dimension_2=m.avg_dimension_2,
+        dimension_3=m.avg_dimension_3,
+        dimension_4=m.avg_dimension_4,
+        dimension_5=m.avg_dimension_5,
         delivery=m.avg_delivery,
     )
 
@@ -2012,11 +2045,11 @@ async def get_session(
                 # unevaluated turn from a 0/10 score, and the per-session
                 # average gets dragged down by phantom zeros. The frontend
                 # renders an "Evaluation Failed" placeholder for null rows.
-                structure=int(t.structure_score) if t.structure_score is not None else None,
-                problem_solving=int(t.problem_solving_score) if t.problem_solving_score is not None else None,
-                impact=int(t.impact_score) if t.impact_score is not None else None,
-                initiative=int(t.initiative_score) if t.initiative_score is not None else None,
-                depth=int(t.depth_score) if t.depth_score is not None else None,
+                dimension_1=int(t.dimension_1_score) if t.dimension_1_score is not None else None,
+                dimension_2=int(t.dimension_2_score) if t.dimension_2_score is not None else None,
+                dimension_3=int(t.dimension_3_score) if t.dimension_3_score is not None else None,
+                dimension_4=int(t.dimension_4_score) if t.dimension_4_score is not None else None,
+                dimension_5=int(t.dimension_5_score) if t.dimension_5_score is not None else None,
                 delivery=int(t.delivery_score) if t.delivery_score is not None else None,
             ),
             feedback=t.feedback,

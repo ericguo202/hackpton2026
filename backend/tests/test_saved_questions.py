@@ -17,14 +17,14 @@ from fastapi import HTTPException
 from app.api.v1.endpoints import saved_questions as sq_module
 
 
-def _turn(turn_number, *, is_followup, question_text="q", session_id=None, structure_score=5):
+def _turn(turn_number, *, is_followup, question_text="q", session_id=None, dimension_1_score=5):
     return SimpleNamespace(
         id=uuid.uuid4(),
         session_id=session_id or uuid.uuid4(),
         turn_number=turn_number,
         is_followup=is_followup,
         question_text=question_text,
-        structure_score=structure_score,
+        dimension_1_score=dimension_1_score,
     )
 
 

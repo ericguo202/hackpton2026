@@ -35,21 +35,25 @@ class InterviewTurn(Base):
     __table_args__ = (
         UniqueConstraint("session_id", "turn_number", name="uq_turns_session_turn"),
         CheckConstraint("turn_number >= 1", name="ck_turns_turn_number"),
-        # Mirror the live schema after migration 0005 renamed the rubric
-        # dimensions. Names/expressions must match the constraints in
-        # alembic 0005_rubric_rename + 0002 (delivery).
+        # Mirror the live schema after migration 0026 renamed the five content
+        # score columns to generic `dimension_1..5_score` (their human label is
+        # resolved per `question_category`; see `_score_dimensions`). Names/
+        # expressions must match the constraints in alembic 0026 + 0002 (delivery).
         CheckConstraint(
-            "structure_score BETWEEN 0 AND 10", name="ck_turns_structure"
+            "dimension_1_score BETWEEN 0 AND 10", name="ck_turns_dimension_1"
         ),
         CheckConstraint(
-            "problem_solving_score BETWEEN 0 AND 10",
-            name="ck_turns_problem_solving",
+            "dimension_2_score BETWEEN 0 AND 10", name="ck_turns_dimension_2"
         ),
-        CheckConstraint("impact_score BETWEEN 0 AND 10", name="ck_turns_impact"),
         CheckConstraint(
-            "initiative_score BETWEEN 0 AND 10", name="ck_turns_initiative"
+            "dimension_3_score BETWEEN 0 AND 10", name="ck_turns_dimension_3"
         ),
-        CheckConstraint("depth_score BETWEEN 0 AND 10", name="ck_turns_depth"),
+        CheckConstraint(
+            "dimension_4_score BETWEEN 0 AND 10", name="ck_turns_dimension_4"
+        ),
+        CheckConstraint(
+            "dimension_5_score BETWEEN 0 AND 10", name="ck_turns_dimension_5"
+        ),
         CheckConstraint(
             "delivery_score BETWEEN 0 AND 10", name="ck_turns_delivery"
         ),
@@ -87,14 +91,19 @@ class InterviewTurn(Base):
         server_default=text("'experience_star'"),
     )
 
-    # Per-turn scores (0-10, nullable until evaluated). The rubric is
-    # field-tailored: the evaluator selects industry-specific guidance for
-    # these five dimensions based on `brief.category`.
-    structure_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    problem_solving_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    impact_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    initiative_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    depth_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    # Per-turn content scores (0-10, nullable until evaluated). GENERIC: the
+    # five slots hold whatever five content dimensions the turn's
+    # `question_category` defines — STAR = structure/problem_solving/impact/
+    # initiative/depth; Motivation & Fit = structure/relevance/company_insight/
+    # career_narrative/conviction. The human label per position is resolved from
+    # `question_category` (backend `_score_dimensions.CONTENT_DIMENSION_LABELS`,
+    # frontend `SCORE_DIMENSIONS_BY_CATEGORY`). Position 1 is Structure for every
+    # type. The evaluator additionally selects field/level-tailored guidance.
+    dimension_1_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    dimension_2_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    dimension_3_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    dimension_4_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    dimension_5_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     # 6th rubric dimension: delivery / on-camera presence, derived by the
     # evaluator LLM from the browser-computed `cv_summary` below. Null when
     # the candidate declined camera access (evaluator omits the field too).

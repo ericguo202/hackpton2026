@@ -56,15 +56,6 @@ _MAX_TOOL_ROUNDS = 4
 # 3-page resume can't blow the context back open after we worked to keep it lean.
 _RESUME_EXCERPT_CHARS = 1500
 
-# Score dimensions in display order. Keys match the labels the model sees.
-_SCORE_LABELS = (
-    "Structure",
-    "Problem-solving",
-    "Impact",
-    "Initiative",
-    "Depth",
-    "Delivery",
-)
 
 # Tool name → the human label shown live in the chat ("Retrieving company
 # brief…"). Kept here so the UI copy and the tool wiring can't drift apart.
@@ -200,8 +191,11 @@ def _fmt_score(value: Decimal | None) -> str:
 
 
 def _render_scores(scores: dict[str, Decimal | None]) -> str:
+    # `scores` is an ordered {label: value} dict built by the endpoint from the
+    # turn's question_category (STAR vs Motivation & Fit label the five generic
+    # dimensions differently), so render its own keys rather than a fixed list.
     return " · ".join(
-        f"{label} {_fmt_score(scores.get(label))}" for label in _SCORE_LABELS
+        f"{label} {_fmt_score(value)}" for label, value in scores.items()
     )
 
 

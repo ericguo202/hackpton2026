@@ -1,34 +1,18 @@
 /**
  * Shared utilities for the SessionDetail folder-tab redesign.
  *
- * Centralized so the orchestrator, OverviewPanel, and TurnPanel pull from
- * a single source — keeps the per-dimension color mapping consistent with
- * History.tsx (same chart-1..6 assignments) and avoids re-defining
- * num() / turnAverage in two places.
+ * Centralized so the orchestrator, OverviewPanel, and TurnPanel pull from a
+ * single source — avoids re-defining num() / turnAverage / the feedback-moment
+ * helpers in two places. Per-dimension keys/labels/colors now come straight from
+ * `lib/scoreDimensions.ts` (`scoreDimensionsFor(category)`), so the tiles label
+ * by the session's question category rather than a fixed STAR list.
  */
 
-import { SCORE_DIMENSIONS, type ScoreKey } from '../../lib/scoreDimensions';
 import type {
   ImprovementMoment,
   PositiveMoment,
   TurnDetail,
 } from '../../types/history';
-
-export type { ScoreKey };
-
-/** Score dimension keys in display order, paired with their UI labels. */
-export const SCORE_KEYS = SCORE_DIMENSIONS.map(
-  (d) => [d.key, d.label] as const,
-);
-
-/**
- * Per-dimension chart colors, keyed by dimension. Derived from the canonical
- * `SCORE_DIMENSIONS` so the trend chart and the per-session tiles share one
- * visual language with zero hand-mirroring.
- */
-export const SCORE_COLOR_MAP = Object.fromEntries(
-  SCORE_DIMENSIONS.map((d) => [d.key, d.color]),
-) as Record<ScoreKey, string>;
 
 /** Wire-format Decimal-as-string → number, with null passthrough. */
 export function num(v: string | null | undefined): number | null {
@@ -40,7 +24,7 @@ export function num(v: string | null | undefined): number | null {
 /**
  * Average of a turn's populated score dimensions (delivery is excluded when
  * null on camera-declined turns; failed-evaluation turns return 0 here but
- * callers should check `scores.structure === null` first to render the
+ * callers should check `scores.dimension_1 === null` first to render the
  * "Evaluation failed" notice instead.)
  */
 export function turnAverage(t: TurnDetail): number {

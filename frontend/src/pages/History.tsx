@@ -84,12 +84,12 @@ function buildChartData(sessions: SessionListItem[]) {
       // Overall is 0-100; per-dim averages are 0-10. Rescale overall to
       // 0-10 here so a single Y axis works for both.
       overall: overall === null ? null : overall / 10,
-      structure:       num(s.averages.structure),
-      problem_solving: num(s.averages.problem_solving),
-      impact:          num(s.averages.impact),
-      initiative:      num(s.averages.initiative),
-      depth:           num(s.averages.depth),
-      delivery:        num(s.averages.delivery),
+      dimension_1: num(s.averages.dimension_1),
+      dimension_2: num(s.averages.dimension_2),
+      dimension_3: num(s.averages.dimension_3),
+      dimension_4: num(s.averages.dimension_4),
+      dimension_5: num(s.averages.dimension_5),
+      delivery:    num(s.averages.delivery),
       // Filler words as a percent of words for this session. Plotted on its
       // own chart (different axis/scale from the 0-10 scores). Null on legacy
       // rows with no cached word total — dropped from the line.
@@ -188,13 +188,13 @@ type ChartPoint = {
   sessionId: string;
   company: string;
   overall: number | null;
-  structure:       number | null;
-  problem_solving: number | null;
-  impact:          number | null;
-  initiative:      number | null;
-  depth:           number | null;
-  delivery:        number | null;
-  filler_rate:     number | null;
+  dimension_1: number | null;
+  dimension_2: number | null;
+  dimension_3: number | null;
+  dimension_4: number | null;
+  dimension_5: number | null;
+  delivery:    number | null;
+  filler_rate: number | null;
   created_at: string;
 };
 
@@ -365,12 +365,12 @@ export default function History() {
   // Per-dimension toggles. All on by default; clicking the chip toggles
   // individual dimensions so the chart can isolate one at a time.
   const [activeDims, setActiveDims] = useState<Record<DimensionKey, boolean>>({
-    structure:       true,
-    problem_solving: true,
-    impact:          true,
-    initiative:      true,
-    depth:           true,
-    delivery:        true,
+    dimension_1: true,
+    dimension_2: true,
+    dimension_3: true,
+    dimension_4: true,
+    dimension_5: true,
+    delivery:    true,
   });
   const [showOverall, setShowOverall] = useState(true);
 

@@ -34,13 +34,15 @@ export type SavedQuestionAttempt = {
   status: SessionStatus;
   /** 0-100 scale. Null when the session's evaluation never completed. */
   overall_score: string | null;
-  /** Opening-turn per-dimension scores — the same-question comparison line. */
+  /** Opening-turn per-dimension scores — the same-question comparison line.
+   *  Generic slots; a saved question is always a STAR opening today, so the
+   *  detail page labels them with the STAR set. */
   turn1_scores: {
-    structure: number | null;
-    problem_solving: number | null;
-    impact: number | null;
-    initiative: number | null;
-    depth: number | null;
+    dimension_1: number | null;
+    dimension_2: number | null;
+    dimension_3: number | null;
+    dimension_4: number | null;
+    dimension_5: number | null;
     delivery: number | null;
   } | null;
   /** True when turn 1's eval failed; shown with a marker, dropped from trend. */

@@ -9,7 +9,7 @@
  * the shorter row). Cards inside each row share height via grid
  * `items-stretch` + `InnerCard`'s `h-full`.
  *
- * Evaluation-failed turns (turn.scores.structure === null) collapse the
+ * Evaluation-failed turns (turn.scores.dimension_1 === null) collapse the
  * Scores section to a one-line "Evaluation failed" notice — the rest of
  * the card still renders the transcript, takeaway, and any moments that
  * were persisted.
@@ -50,7 +50,7 @@ export default function TurnPanel({
   sessionCompleted,
   sessionId,
 }: Props) {
-  const evaluationFailed = turn.scores.structure === null;
+  const evaluationFailed = turn.scores.dimension_1 === null;
   const evaluationPending = evaluationFailed && !sessionCompleted;
   // Every opening question is saveable (turn 1 + mid-session story-block
   // openings); follow-ups are not.

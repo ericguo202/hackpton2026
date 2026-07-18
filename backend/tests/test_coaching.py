@@ -52,7 +52,7 @@ def _eval_out(
         improvement_moments=improvement_moments or [],
     )
     return EvaluatorOutput(
-        structure=6, problem_solving=6, impact=4, initiative=6, depth=6,
+        dimension_1=6, dimension_2=6, dimension_3=4, dimension_4=6, dimension_5=6,
         delivery=None, feedback_detail=detail, notes="ok",
     )
 

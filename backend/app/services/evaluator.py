@@ -19,6 +19,7 @@ the route handler composes them. It also does NOT generate
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -33,9 +34,16 @@ from pydantic import (
     model_validator,
 )
 
-from app.db.models.enums import ExperienceLevel
+from app.db.models.enums import ExperienceLevel, QuestionCategory
 from app.services._star_evaluator_rubric import build_star_system_instruction
+from app.services._motivation_fit_evaluator_rubric import (
+    build_motivation_fit_system_instruction,
+)
+from app.services._situational_evaluator_rubric import (
+    build_situational_system_instruction,
+)
 from app.services._field_categories import FieldCategory
+from app.services._score_dimensions import evaluator_json_keys
 from app.services._injection import CONTENT_INJECTION_RE
 from app.services.incidents import log_injection_detected
 from app.services._openrouter import (
@@ -166,6 +174,7 @@ class PositiveMoment(BaseModel):
 class ImprovementMoment(BaseModel):
     transcript_snippet: SnippetStr = Field(min_length=1, max_length=270)
     issue_type: Literal[
+        # STAR issue types.
         "missing_detail",
         "missing_result",
         "missing_reasoning",
@@ -173,6 +182,21 @@ class ImprovementMoment(BaseModel):
         "unprofessional",
         "does_not_answer_question",
         "weak_wording",
+        # Motivation & Fit issue types (additive — STAR never emits these; the
+        # M&F rubric reuses rambling / unprofessional / does_not_answer_question /
+        # weak_wording plus these four). Frontend `formatIssueType` renders any
+        # member generically, so no client change is required.
+        "generic_pitch",
+        "no_company_specifics",
+        "incoherent_narrative",
+        "mercenary_framing",
+        # Situational issue types (additive — only the situational rubric emits
+        # these; it reuses rambling / unprofessional / does_not_answer_question /
+        # weak_wording plus these four). Rendered generically by the frontend.
+        "no_decision",
+        "unrealistic_plan",
+        "invented_facts",
+        "no_experience_tie",
     ]
     why_this_weakened: ProseStr390 = Field(min_length=1, max_length=390)
     how_to_strengthen: ProseStr390 = Field(min_length=1, max_length=390)
@@ -308,6 +332,38 @@ def _cap(value: int, maximum: int) -> int:
     return max(0, min(value, maximum))
 
 
+def _build_system_instruction(
+    question_category: QuestionCategory,
+    category: FieldCategory | None,
+    experience_level: ExperienceLevel | None,
+) -> str:
+    """Select the FORM-specific evaluator rubric (STAR / Motivation & Fit / Situational)."""
+    if question_category == QuestionCategory.motivation_fit:
+        return build_motivation_fit_system_instruction(category, experience_level)
+    if question_category == QuestionCategory.situational:
+        return build_situational_system_instruction(category, experience_level)
+    return build_star_system_instruction(category, experience_level)
+
+
+def _remap_dimension_keys(payload: Any, question_category: QuestionCategory) -> Any:
+    """Rename the evaluator's SEMANTIC score keys to generic `dimension_1..5`.
+
+    The evaluator prompt emits per-category semantic keys (structure/
+    problem_solving/… for STAR; structure/relevance/… for M&F) so the model
+    scores accurately, but `EvaluatorOutput` stores the five slots generically.
+    Map each category's ordered keys onto `dimension_{i+1}`, leaving
+    `feedback_detail` / `notes` / `delivery` untouched. Non-dict payloads pass
+    through so the downstream `model_validate` raises the same way it did before.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    remapped = dict(payload)
+    for i, key in enumerate(evaluator_json_keys(question_category), start=1):
+        if key in remapped:
+            remapped[f"dimension_{i}"] = remapped.pop(key)
+    return remapped
+
+
 def _calibrate_content_scores(
     result: "EvaluatorOutput",
     transcript: str,
@@ -317,11 +373,19 @@ def _calibrate_content_scores(
     The model still does the semantic evaluation. These caps only fire when a
     transcript lacks basic evidence for a dimension, which keeps "sounds
     fluent, but gave no proof" answers from clustering around 5.
+
+    STAR-ONLY: the per-dimension caps encode STAR evidence (metrics → impact,
+    "I" ownership → initiative, etc.) and are keyed to the STAR dimension
+    positions (d1=structure, d2=problem_solving, d3=impact, d4=initiative,
+    d5=depth). `evaluate_turn` skips this entirely for question types whose
+    dimensions carry different evidence (e.g. Motivation & Fit), so a good
+    "why this company" answer is not unfairly depressed for lacking metrics.
     """
+    fields = ("dimension_1", "dimension_2", "dimension_3", "dimension_4", "dimension_5")
     words = _WORD_RE.findall(transcript)
     word_count = len(words)
     if word_count == 0:
-        for field in ("structure", "problem_solving", "impact", "initiative", "depth"):
+        for field in fields:
             setattr(result, field, 0)
         return result
 
@@ -332,7 +396,7 @@ def _calibrate_content_scores(
     else:
         broad_cap = 10
 
-    for field in ("structure", "problem_solving", "impact", "initiative", "depth"):
+    for field in fields:
         setattr(result, field, _cap(getattr(result, field), broad_cap))
 
     has_number = bool(_NUMBER_RE.search(transcript))
@@ -341,16 +405,16 @@ def _calibrate_content_scores(
     has_result = bool(_RESULT_RE.search(transcript))
     has_ownership = bool(_OWNERSHIP_RE.search(transcript))
 
-    if not has_structure:
-        result.structure = _cap(result.structure, 8)
-    if not has_reasoning:
-        result.problem_solving = _cap(result.problem_solving, 8)
-    if not has_result and not has_number:
-        result.impact = _cap(result.impact, 6)
+    if not has_structure:  # d1 = structure
+        result.dimension_1 = _cap(result.dimension_1, 8)
+    if not has_reasoning:  # d2 = problem_solving
+        result.dimension_2 = _cap(result.dimension_2, 8)
+    if not has_result and not has_number:  # d3 = impact
+        result.dimension_3 = _cap(result.dimension_3, 6)
     elif not has_number:
-        result.impact = _cap(result.impact, 8)
-    if not has_ownership:
-        result.initiative = _cap(result.initiative, 8)
+        result.dimension_3 = _cap(result.dimension_3, 8)
+    if not has_ownership:  # d4 = initiative
+        result.dimension_4 = _cap(result.dimension_4, 8)
 
     return result
 
@@ -373,11 +437,11 @@ def _injection_nonanswer() -> "EvaluatorOutput":
     injection was attempting (a zeroed turn, not an inflated one).
     """
     return EvaluatorOutput(
-        structure=0,
-        problem_solving=0,
-        impact=0,
-        initiative=0,
-        depth=0,
+        dimension_1=0,
+        dimension_2=0,
+        dimension_3=0,
+        dimension_4=0,
+        dimension_5=0,
         delivery=None,
         feedback_detail=FeedbackDetail(
             main_takeaway=_INJECTION_NONANSWER_TEXT,
@@ -405,13 +469,20 @@ class EvaluatorOutput(BaseModel):
     the model for it. `evaluate_turn` fills it from `_compute_delivery_score`
     when `cv_summary` is present and forces it to None otherwise, preserving
     the 5-score shape for camera-declined turns.
+
+    The five content dimensions are GENERIC (`dimension_1..5`) — what each
+    position means depends on the turn's `question_category`. The evaluator LLM
+    emits SEMANTIC keys (structure/problem_solving/… for STAR; structure/
+    relevance/… for M&F); `evaluate_turn` remaps them onto these fields via
+    `_score_dimensions.evaluator_json_keys` before validation. Position 1 is
+    Structure for every type.
     """
 
-    structure: int
-    problem_solving: int
-    impact: int
-    initiative: int
-    depth: int
+    dimension_1: int
+    dimension_2: int
+    dimension_3: int
+    dimension_4: int
+    dimension_5: int
     delivery: int | None = None
     feedback_detail: FeedbackDetail
     # Legacy flat summary. No longer requested in the prompt — the model omits
@@ -421,7 +492,8 @@ class EvaluatorOutput(BaseModel):
     notes: str = ""
 
     @field_validator(
-        "structure", "problem_solving", "impact", "initiative", "depth", "delivery",
+        "dimension_1", "dimension_2", "dimension_3", "dimension_4", "dimension_5",
+        "delivery",
         mode="before",
     )
     @classmethod
@@ -957,6 +1029,7 @@ async def evaluate_turn(
     category: FieldCategory | None = None,
     experience_level: ExperienceLevel | None = None,
     jd_summary: list[str] | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
 ) -> EvaluatorOutput:
     """Score one interview turn and return structured JSON.
 
@@ -976,6 +1049,12 @@ async def evaluate_turn(
     the user prompt as calibration-only context so the evaluator doesn't
     mischaracterize the role (e.g. faulting a solo-role answer for lacking
     collaboration). It does NOT change the scoring rubric or add a dimension.
+
+    `question_category` selects the FORM-specific rubric + the semantic score
+    keys the model emits, which are remapped onto `dimension_1..5`. The
+    STAR-specific `_calibrate_content_scores` (which encodes STAR evidence) is
+    applied ONLY for `experience_star`; other types skip it so their different
+    evidence base isn't unfairly depressed.
     """
     # Deterministic prompt-injection gate (initial gate, before any LLM spend).
     # A transcript that tries to hijack the evaluator is not a genuine answer —
@@ -1015,7 +1094,9 @@ async def evaluate_turn(
         messages=[
             {
                 "role": "system",
-                "content": build_star_system_instruction(category, experience_level)
+                "content": _build_system_instruction(
+                    question_category, category, experience_level
+                )
                 + _INJECTION_SYSTEM_CLAUSE,
             },
             {
@@ -1032,8 +1113,15 @@ async def evaluate_turn(
         label="evaluator",
     )
     text = response.choices[0].message.content or ""
-    result = EvaluatorOutput.model_validate_json(extract_json_object(text))
-    result = _calibrate_content_scores(result, transcript)
+    payload = _remap_dimension_keys(
+        json.loads(extract_json_object(text)), question_category
+    )
+    result = EvaluatorOutput.model_validate(payload)
+    # STAR evidence caps only — other question types (e.g. Motivation & Fit)
+    # legitimately lack metrics / "I"-ownership language, so applying the STAR
+    # caps would unfairly depress them.
+    if question_category == QuestionCategory.experience_star:
+        result = _calibrate_content_scores(result, transcript)
     if cv_summary is not None:
         result.delivery = _compute_delivery_score(cv_summary)
         _add_delivery_feedback(result.feedback_detail, cv_summary, result.delivery)

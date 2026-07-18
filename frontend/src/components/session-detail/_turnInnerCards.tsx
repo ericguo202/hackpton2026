@@ -30,13 +30,12 @@ import { useMomentFlash } from './_momentFlash';
 import { useAskTutor } from './ask-tutor/_askTutor';
 import AskAboutThisButton from './ask-tutor/AskAboutThisButton';
 import {
-  SCORE_COLOR_MAP,
-  SCORE_KEYS,
   formatIssueType,
   improvementMomentsOf,
   num,
   positiveMomentsOf,
 } from './_helpers';
+import { scoreDimensionsFor } from '../../lib/scoreDimensions';
 
 /* ------------------------------------------------------------------ */
 /* Primitives                                                         */
@@ -409,12 +408,12 @@ export function ScoresSection({
         <EvalStatusNotice pending={evaluationPending} />
       ) : (
         <div className="mt-3 flex flex-col gap-2">
-          {SCORE_KEYS.map(([key, label]) => {
+          {/* Labels are resolved from THIS turn's question category (STAR vs
+              Motivation & Fit name the five generic slots differently). */}
+          {scoreDimensionsFor(turn.question_category).map(({ key, label, color }) => {
             const value = turn.scores[key];
             if (value == null) return null;
-            return (
-              <ScoreRow key={key} label={label} value={value} color={SCORE_COLOR_MAP[key]} />
-            );
+            return <ScoreRow key={key} label={label} value={value} color={color} />;
           })}
         </div>
       )}

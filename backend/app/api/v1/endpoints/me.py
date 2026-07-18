@@ -282,15 +282,15 @@ _EXPORT_SESSION_FIELDS = (
 )
 _EXPORT_TURN_FIELDS = (
     "id", "session_id", "turn_number", "question_text", "transcript_text",
-    "is_followup", "structure_score", "problem_solving_score", "impact_score",
-    "initiative_score", "depth_score", "delivery_score", "cv_summary",
+    "is_followup", "dimension_1_score", "dimension_2_score", "dimension_3_score",
+    "dimension_4_score", "dimension_5_score", "delivery_score", "cv_summary",
     "filler_word_count", "filler_word_breakdown", "word_count", "feedback",
     "feedback_detail", "ai_model_used", "evaluated_at", "created_at",
 )
 _EXPORT_METRICS_FIELDS = (
-    "avg_structure", "avg_problem_solving", "avg_initiative", "avg_impact",
-    "avg_depth", "avg_delivery", "total_filler_word_count", "total_word_count",
-    "overall_score", "turns_evaluated", "generated_at",
+    "avg_dimension_1", "avg_dimension_2", "avg_dimension_3", "avg_dimension_4",
+    "avg_dimension_5", "avg_delivery", "total_filler_word_count",
+    "total_word_count", "overall_score", "turns_evaluated", "generated_at",
 )
 _EXPORT_SAVED_QUESTION_FIELDS = (
     "id", "question_text", "company", "job_title", "category",
@@ -440,11 +440,11 @@ async def get_me_stats(
     # rows for the user's COMPLETED sessions only.
     metrics_row = (await db.execute(
         select(
-            func.avg(SessionMetrics.avg_structure).label("st"),
-            func.avg(SessionMetrics.avg_problem_solving).label("ps"),
-            func.avg(SessionMetrics.avg_impact).label("im"),
-            func.avg(SessionMetrics.avg_initiative).label("ini"),
-            func.avg(SessionMetrics.avg_depth).label("dp"),
+            func.avg(SessionMetrics.avg_dimension_1).label("st"),
+            func.avg(SessionMetrics.avg_dimension_2).label("ps"),
+            func.avg(SessionMetrics.avg_dimension_3).label("im"),
+            func.avg(SessionMetrics.avg_dimension_4).label("ini"),
+            func.avg(SessionMetrics.avg_dimension_5).label("dp"),
             func.avg(SessionMetrics.avg_delivery).label("dl"),
             func.coalesce(
                 func.sum(SessionMetrics.total_filler_word_count), 0
@@ -510,11 +510,11 @@ async def get_me_stats(
         # 20-word one.
         filler_word_rate=filler_rate_pct(total_fillers, total_words),
         averages=DimensionAverages(
-            structure=_to_decimal(metrics_row.st),
-            problem_solving=_to_decimal(metrics_row.ps),
-            impact=_to_decimal(metrics_row.im),
-            initiative=_to_decimal(metrics_row.ini),
-            depth=_to_decimal(metrics_row.dp),
+            dimension_1=_to_decimal(metrics_row.st),
+            dimension_2=_to_decimal(metrics_row.ps),
+            dimension_3=_to_decimal(metrics_row.im),
+            dimension_4=_to_decimal(metrics_row.ini),
+            dimension_5=_to_decimal(metrics_row.dp),
             delivery=_to_decimal(metrics_row.dl),
         ),
         average_overall_score=_to_decimal(metrics_row.overall),

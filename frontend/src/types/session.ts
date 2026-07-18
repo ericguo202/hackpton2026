@@ -16,15 +16,29 @@ export function questionCategoryLabel(category: string | null | undefined): stri
   );
 }
 
+// The question types offered in the Setup picker — only those with a real
+// prompt stack today (mirrors the backend `BUILT_QUESTION_CATEGORIES` allowlist
+// in schemas/session.py). Add a slug here when its type ships. Order is the
+// display order in the picker.
+export const SELECTABLE_QUESTION_CATEGORIES: readonly {
+  value: string;
+  label: string;
+}[] = [
+  { value: 'experience_star', label: QUESTION_CATEGORY_LABELS.experience_star },
+  { value: 'motivation_fit', label: QUESTION_CATEGORY_LABELS.motivation_fit },
+  { value: 'situational', label: QUESTION_CATEGORY_LABELS.situational },
+];
+
 export type Scores = {
-  // All five base scores are nullable: the backend returns null for any
-  // turn whose evaluation never completed. UIs render an "Evaluation
-  // Failed" placeholder for those rows instead of 0s.
-  structure: number | null;
-  problem_solving: number | null;
-  impact: number | null;
-  initiative: number | null;
-  depth: number | null;
+  // Five GENERIC content slots; the label per position is resolved from the
+  // turn's question_category (see `lib/scoreDimensions.ts`). All nullable: the
+  // backend returns null for any turn whose evaluation never completed. UIs
+  // render an "Evaluation Failed" placeholder for those rows instead of 0s.
+  dimension_1: number | null;
+  dimension_2: number | null;
+  dimension_3: number | null;
+  dimension_4: number | null;
+  dimension_5: number | null;
   // Null when the candidate declined camera access — the card hides
   // the row in that case.
   delivery: number | null;

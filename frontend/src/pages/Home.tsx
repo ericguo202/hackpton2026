@@ -41,6 +41,7 @@ import MobileSheet from '../components/MobileSheet';
 import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
+import QuestionTypeField from '../components/QuestionTypeField';
 import RoleSwitcher from '../components/RoleSwitcher';
 import SiteFooter from '../components/SiteFooter';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
@@ -206,6 +207,9 @@ export default function Home() {
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [numTurns, setNumTurns] = useState(MIN_SESSION_TURNS);
+  // Question FORM for the whole session (single-category). Only built types are
+  // offered (see SELECTABLE_QUESTION_CATEGORIES); the backend rejects the rest.
+  const [questionCategory, setQuestionCategory] = useState('experience_star');
   // Interview-voice pace (→ backend `speech_pace`, resolved per-voice server
   // side). Defaults to "Normal".
   const [speechPace, setSpeechPace] = useState<SpeechPace>(SPEECH_PACE_DEFAULT);
@@ -288,6 +292,7 @@ export default function Home() {
           // on the server side (UTC fallback on parse failure).
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           num_turns: numTurns,
+          question_category: questionCategory,
           speech_pace: speechPace,
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
@@ -501,6 +506,11 @@ export default function Home() {
                     onChange={setNumTurns}
                     disabled={submitting}
                   />
+                  <QuestionTypeField
+                    value={questionCategory}
+                    onChange={setQuestionCategory}
+                    disabled={submitting}
+                  />
                   <RefineTrigger
                     label="Advanced"
                     active={surface === 'advanced'}
@@ -580,6 +590,11 @@ export default function Home() {
                     id="session-turns-mobile"
                     numTurns={numTurns}
                     onChange={setNumTurns}
+                    disabled={submitting}
+                  />
+                  <QuestionTypeField
+                    value={questionCategory}
+                    onChange={setQuestionCategory}
                     disabled={submitting}
                   />
                 </div>

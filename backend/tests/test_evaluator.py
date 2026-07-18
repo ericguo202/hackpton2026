@@ -84,7 +84,11 @@ _DEFAULT_PAYLOAD = {
     "notes": "Good structure, but quantify the impact to strengthen it.",
 }
 
-_RUBRIC_FIELDS = ("structure", "problem_solving", "impact", "initiative", "depth")
+# The evaluator's five generic content-score fields (STAR maps them to
+# structure/problem_solving/impact/initiative/depth by position).
+_RUBRIC_FIELDS = (
+    "dimension_1", "dimension_2", "dimension_3", "dimension_4", "dimension_5",
+)
 
 
 async def test_evaluate_turn_returns_valid_output(monkeypatch):
@@ -157,11 +161,11 @@ async def test_scores_clamped_to_range(monkeypatch):
         "and shared what we learned with the team."
     )
     result = await evaluate_turn(question="q", transcript=transcript)
-    assert result.structure == 10
-    assert result.problem_solving == 0
-    assert result.impact == 10
-    assert result.initiative == 4
-    assert result.depth == 7
+    assert result.dimension_1 == 10   # structure 15 → clamped 10
+    assert result.dimension_2 == 0    # problem_solving -3 → clamped 0
+    assert result.dimension_3 == 10   # impact 100 → clamped 10
+    assert result.dimension_4 == 4    # initiative
+    assert result.dimension_5 == 7    # depth
 
 
 def test_history_included_in_prompt():
@@ -430,11 +434,11 @@ def test_feedback_detail_accepts_legacy_coaching_moments():
 
     detail = EvaluatorOutput.model_validate(
         {
-            "structure": 5,
-            "problem_solving": 5,
-            "impact": 4,
-            "initiative": 5,
-            "depth": 5,
+            "dimension_1": 5,
+            "dimension_2": 5,
+            "dimension_3": 4,
+            "dimension_4": 5,
+            "dimension_5": 5,
             "feedback_detail": legacy,
             "notes": "Add a result.",
         }
@@ -849,8 +853,8 @@ async def test_content_calibration_prevents_unsupported_neutral_fives(monkeypatc
         transcript="Stuff happened and it was fine.",
     )
 
-    assert result.impact < 5
-    assert result.depth < 5
+    assert result.dimension_3 < 5   # impact
+    assert result.dimension_5 < 5   # depth
 
 
 async def test_injection_transcript_scored_as_nonanswer_without_llm(monkeypatch):
