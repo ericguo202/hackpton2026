@@ -1,13 +1,21 @@
 /**
- * Hero brand visual: "Explore the six." The pie that names what a session
- * measures, turned from a static rainbow into an interactive legend.
+ * Hero brand visual: "Explore the four." The pie that names the kinds of
+ * question a session asks, turned from a static rainbow into an interactive
+ * legend. (It used to enumerate the six SCORE dimensions; those now live on the
+ * `/scoring` transparency page, per-category, where they're labelled correctly
+ * for each question type.)
  *
- * At rest it is an outlined pie — an amber scallop crust over six unfilled
- * wedges with the dimension names in the page text color. Hovering, tapping, or
+ * At rest it is an outlined pie — an amber scallop crust over four unfilled
+ * wedges with the category names in the page text color. Hovering, tapping, or
  * keyboard-focusing a wedge fills THAT ONE wedge amber, lifts it outward along
- * its bisector, and swaps the caption below to that dimension's plain-language
+ * its bisector, and swaps the caption below to that category's plain-language
  * definition. Only ever one hue is on screen at a time, which is the point: it
  * answers "too colorful" while staying honestly a pie (the slogan's echo).
+ *
+ * The wedge carries the SHORT label (it has to fit the rotated radial run); the
+ * caption below shows the full `name`. Wedge count is data-driven off
+ * DIMENSIONS via `SEG` — the crust's 12 scallops still land a valley on every
+ * cut line and a peak on every wedge center at both 6 and 4 wedges.
  *
  * Doctrine (DESIGN.md): strict two-color — amber identity, warm neutrals, zero
  * cherry (cherry is reserved for the page's one CTA). The active wedge wears
@@ -30,30 +38,29 @@ import { useRef, useState, type KeyboardEvent } from 'react';
 
 const DIMENSIONS = [
   {
-    name: 'Structure',
-    definition: 'A clear arc: the situation, what you did, and how it ended.',
+    name: 'Experience (STAR)',
+    short: 'Experience',
+    definition: 'Tell me about a time you… — what you actually did, and what came of it.',
   },
   {
-    name: 'Problem solving',
-    definition: 'The reasoning and the trade-offs behind your decisions.',
+    name: 'Motivation & Fit',
+    short: 'Motivation',
+    definition: 'Why this role, why this company, and how your story adds up.',
   },
   {
-    name: 'Impact',
-    definition: 'The result, ideally with a number that shows it mattered.',
+    name: 'Situational',
+    short: 'Situational',
+    definition: 'What would you do if… — judgment when the answer is not obvious.',
   },
   {
-    name: 'Initiative',
-    definition: 'Where you owned the call instead of waiting to be told.',
-  },
-  {
-    name: 'Depth',
-    definition: 'Specific detail that proves you were actually there.',
-  },
-  {
-    name: 'Delivery',
-    definition: 'How you came across on camera: eye contact, pace, presence.',
+    name: 'Self-Assessment & Growth',
+    short: 'Self-Assess',
+    definition: 'Strengths, weaknesses, and what you have done to improve.',
   },
 ] as const;
+
+/** Degrees per wedge — derived, so the geometry follows DIMENSIONS' length. */
+const SEG = 360 / DIMENSIONS.length;
 
 const R_FILL = 84; // filling radius (the pie itself)
 const R_VALLEY = 88.5; // scallop valleys; the thin amber band sits between fill and valley
@@ -69,13 +76,13 @@ function point(angleFromTop: number, r: number): [number, number] {
 }
 
 const SLICES = DIMENSIONS.map((d, i) => {
-  const [x0, y0] = point(i * 60, R_FILL);
-  const [x1, y1] = point((i + 1) * 60, R_FILL);
+  const [x0, y0] = point(i * SEG, R_FILL);
+  const [x1, y1] = point((i + 1) * SEG, R_FILL);
   const path = `M100 100 L${x0.toFixed(2)} ${y0.toFixed(2)} A${R_FILL} ${R_FILL} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z`;
 
   // Label on the slice bisector, rotated to the radial axis. Flip the lower
   // half (|rot| > 90) by 180° so every label stays upright.
-  const mid = i * 60 + 30;
+  const mid = i * SEG + SEG / 2;
   const [lx, ly] = point(mid, R_LABEL);
   let rot = ((mid - 90 + 180) % 360) - 180; // normalize to (-180, 180]
   if (rot > 90) rot -= 180;
@@ -146,7 +153,7 @@ export default function ScorePieChart({ className = '' }: { className?: string }
     <div
       ref={groupRef}
       role="group"
-      aria-label="What each answer is scored on, across six dimensions"
+      aria-label="The four kinds of question a session asks"
       className={`mx-auto w-full max-w-[26rem] ${className}`}
     >
       <svg viewBox="0 0 200 200" className="block w-full overflow-visible">
@@ -221,7 +228,7 @@ export default function ScorePieChart({ className = '' }: { className?: string }
                   pointerEvents: 'none',
                 }}
               >
-                {s.name}
+                {s.short}
               </text>
             </g>
           );
@@ -235,7 +242,7 @@ export default function ScorePieChart({ className = '' }: { className?: string }
         <div key={active ?? 'rest'} className="anim-crossfade">
           {activeDim === null ? (
             <p className="text-pretty text-sm leading-relaxed text-text-subtle">
-              Hover a slice to see what each answer is scored on.
+              Hover a slice to see what each kind of question asks.
             </p>
           ) : (
             <>

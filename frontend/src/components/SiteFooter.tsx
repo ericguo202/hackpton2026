@@ -15,6 +15,7 @@ import { Link } from 'react-router';
 import { LEGAL_LINKS } from '../lib/legalLinks';
 
 const ABOUT_LINKS = [
+  { to: '/scoring', label: 'Scoring' },
   { to: '/delivery-playground', label: 'Delivery Playground' },
 ] as const;
 

@@ -36,9 +36,16 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
+  /** `data-tour` hook for the Home tutorial (desktop instance only). */
+  tourId?: string;
 };
 
-export default function QuestionTypeField({ value, onChange, disabled }: Props) {
+export default function QuestionTypeField({
+  value,
+  onChange,
+  disabled,
+  tourId,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(
     null,
@@ -99,7 +106,7 @@ export default function QuestionTypeField({ value, onChange, disabled }: Props) 
   }
 
   return (
-    <span className="inline-block">
+    <span className="inline-block" data-tour={tourId}>
       <span className="text-sm text-text-subtle">
         Question type:{' '}
         <button

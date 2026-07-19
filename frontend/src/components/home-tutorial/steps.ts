@@ -10,7 +10,11 @@
 export type TutorialStep = {
   /** CSS selector for the target element (a `[data-tour="..."]` hook). */
   selector: string;
-  /** One-line explanation shown in the coach card. */
+  /**
+   * One-line explanation shown in the coach card. Supports inline
+   * `[text](href)` links, rendered by `TutorialCoachCard` (opened in a new tab
+   * so following one doesn't tear down the tour). Plain text otherwise.
+   */
   body: string;
 };
 
@@ -42,6 +46,10 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     selector: '[data-tour="length-slider"]',
     body: 'Click to change the number of questions during the interview session. Two by default, can be up to 8.',
+  },
+  {
+    selector: '[data-tour="question-type"]',
+    body: 'Choose the [question type](/scoring) asked during the session. The default is a mix calibrated to your industry and experience level.',
   },
   {
     selector: '[data-tour="advanced-trigger"]',

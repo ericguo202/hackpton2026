@@ -516,6 +516,7 @@ export default function Home() {
                     value={questionCategory}
                     onChange={setQuestionCategory}
                     disabled={submitting}
+                    tourId="question-type"
                   />
                 </div>
 

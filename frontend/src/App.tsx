@@ -58,6 +58,7 @@ const SavedQuestionDetail = lazyWithRetry(
   () => import('./pages/SavedQuestionDetail'),
   'SavedQuestionDetail',
 );
+const Scoring = lazyWithRetry(() => import('./pages/Scoring'), 'Scoring');
 const Settings = lazyWithRetry(() => import('./pages/Settings'), 'Settings');
 const SessionDetail = lazyWithRetry(
   () => import('./pages/SessionDetail'),
@@ -142,6 +143,7 @@ function App() {
           <Route path="/practice" element={<Practice />} />
           <Route path="/history" element={<History />} />
           <Route path="/delivery-playground" element={<DeliveryPlayground />} />
+          <Route path="/scoring" element={<Scoring />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
           <Route path="/saved-question/:id" element={<SavedQuestionDetail />} />
           <Route path="/personalize" element={<Personalize />} />

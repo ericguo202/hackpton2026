@@ -6,7 +6,44 @@
  * (`HomeTutorial`); this component only draws the card + pointer.
  */
 
+import { type ReactNode } from 'react';
+
 import { Button } from '../ui/button';
+
+const LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
+
+/**
+ * Render a step body, turning inline `[text](href)` markdown into links. Opened
+ * in a new tab on purpose: the tour lives in a portal over Home, so navigating
+ * in-place would unmount it mid-walkthrough. Bodies with no link render as
+ * plain text (every pre-existing step).
+ */
+function renderBody(body: string): ReactNode {
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  LINK_RE.lastIndex = 0;
+  while ((match = LINK_RE.exec(body)) !== null) {
+    const [full, text, href] = match;
+    if (match.index > cursor) parts.push(body.slice(cursor, match.index));
+    parts.push(
+      <a
+        key={`${href}-${match.index}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="rounded-xs text-link underline underline-offset-2 transition-colors hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+      >
+        {text}
+      </a>,
+    );
+    cursor = match.index + full.length;
+  }
+  if (cursor < body.length) parts.push(body.slice(cursor));
+
+  return parts.length > 0 ? parts : body;
+}
 
 type Props = {
   body: string;
@@ -54,7 +91,7 @@ export default function TutorialCoachCard({
         />
       )}
 
-      <p className="text-sm leading-relaxed text-text">{body}</p>
+      <p className="text-sm leading-relaxed text-text">{renderBody(body)}</p>
 
       <div className="mt-5 flex items-center justify-between gap-3">
         <span className="text-xs text-text-subtle">
