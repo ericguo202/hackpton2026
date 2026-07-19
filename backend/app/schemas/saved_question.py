@@ -75,6 +75,11 @@ class SavedQuestionListItem(BaseModel):
     attempt_count: int
     last_practiced_at: datetime | None
     avg_overall_score: Decimal | None
+    # The FORM axis of the frozen opening (a `QuestionCategory` value, stamped
+    # from the saved turn). Lets the History page's saved-questions section
+    # honor the question-category filter. Defaults to "experience_star" for
+    # legacy rows saved before the column existed.
+    question_category: str = "experience_star"
 
 
 class SavedQuestionAttempt(BaseModel):
@@ -112,3 +117,7 @@ class SavedQuestionDetailOut(BaseModel):
     created_at: datetime
     summary: CompanyBriefOut | None
     attempts: list[SavedQuestionAttempt]
+    # The FORM axis of the frozen opening (a `QuestionCategory` value). Labels
+    # the detail page's trend chart + radar with the right rubric's dimensions.
+    # Defaults to "experience_star" for legacy rows saved before the column.
+    question_category: str = "experience_star"

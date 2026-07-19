@@ -83,6 +83,10 @@ export type SessionListItem = {
   /** Filler words ÷ total words, percent (Decimal-as-string). Null on legacy rows. */
   filler_word_rate: string | null;
   averages: DimensionAverages;
+  /** Session-level question category (FORM axis), derived from the session's
+   *  turns: the single category, or "mixed" for a Recommended-Mix session.
+   *  Null on a session with no turns. Drives the History category filter. */
+  question_category?: string | null;
 };
 
 /** One scored turn inside `SessionDetail`. Mirrors backend `TurnOut`. */
@@ -156,6 +160,19 @@ export type FillerWordStat = {
   count: number;
 };
 
+/**
+ * Per-question-category rollup for the History strengths radar. `average_score`
+ * is the mean of the five content dimensions (0-10, Decimal-as-string), null
+ * when the category has no scored turns; `turns_evaluated` is that turn count.
+ * Only categories with ≥1 scored turn appear — the frontend plots absent
+ * categories as 0.
+ */
+export type CategoryStat = {
+  question_category: string;
+  average_score: string | null;
+  turns_evaluated: number;
+};
+
 export type MeStats = {
   total_sessions: number;
   completed_sessions: number;
@@ -170,4 +187,7 @@ export type MeStats = {
   average_overall_score: string | null;
   /** Top-5 filler words, count-desc. Empty until the user logs a filler word. */
   top_filler_words: FillerWordStat[];
+  /** Per-category rollup for the strengths-radar category-comparison view.
+   *  Always spans all categories (honors company/role, not the category filter). */
+  by_category: CategoryStat[];
 };

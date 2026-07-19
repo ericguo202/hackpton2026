@@ -104,6 +104,21 @@ export function positiveMomentsOf(turn: TurnDetail): PositiveMoment[] {
 }
 
 /**
+ * True when a session's turns span MORE THAN ONE question category — i.e. a
+ * "Recommended Mix" session that actually drew different types across its story
+ * blocks. Follow-ups inherit their opening's category, so distinct across all
+ * turns equals distinct across openings. A mix that happened to draw a single
+ * category (e.g. a 2-turn mix) reads as single-category — correctly, since its
+ * aggregate tiles are then meaningful. Drives the reduced overview tile set.
+ */
+export function isMixedCategorySession(turns: TurnDetail[]): boolean {
+  const categories = new Set(
+    turns.map((t) => t.question_category ?? 'experience_star'),
+  );
+  return categories.size > 1;
+}
+
+/**
  * Convert backend snake_case issue types (off_track, missing_result, …)
  * into title-cased English. Generic title-case — works for any value the
  * backend returns, including legacy / unknown types.

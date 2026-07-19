@@ -11,9 +11,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.db.models.enums import QuestionCategory
 from app.services.evaluator import (
     EvaluatorOutput,
     _compute_delivery_score,
+    _normalize_score_key,
+    _remap_dimension_keys,
     _summary_quality_score,
     evaluate_turn,
 )
@@ -1045,3 +1048,120 @@ async def test_category_threads_into_system_prompt(monkeypatch):
     )
     assert "deal sizes" not in captured["system"]
     assert "user problem" in captured["system"]  # phrase unique to Tech appendix
+
+
+# ---------------------------------------------------------------------------
+# Malformed-DeepSeek-output resilience: tolerant key normalization (#2) +
+# parse/validation retry (#1). See evaluator._normalize_score_key and the
+# retry loop in evaluate_turn.
+# ---------------------------------------------------------------------------
+
+
+def _make_raw_client(contents):
+    """Client whose create() serves successive RAW string bodies (not dicts).
+
+    Lets a test hand back a malformed HTTP-200 body (unterminated JSON, non-JSON
+    prose) that the evaluator must retry past, and count how many calls it took.
+    Returns (client, calls) where calls["n"] is the create() invocation count.
+    """
+    it = iter(contents)
+    calls = {"n": 0}
+
+    async def _create(**_kwargs):
+        calls["n"] += 1
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=next(it)))]
+        )
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    return client, calls
+
+
+def test_normalize_score_key_strips_stray_chars():
+    # The observed DeepSeek glitch: a stray '}' glued onto the first key.
+    assert _normalize_score_key("}structure") == "structure"
+    assert _normalize_score_key('"structure') == "structure"
+    assert _normalize_score_key(" Structure ") == "structure"
+    # A clean key is returned unchanged (identity for the common case).
+    assert _normalize_score_key("self_awareness") == "self_awareness"
+
+
+def test_remap_recovers_stray_brace_first_key():
+    # Reproduces the production failure: the model emitted "}structure" as the
+    # first key, so `structure` -> dimension_1 was never mapped and validation
+    # failed. Normalized-key fallback now recovers it without a re-request.
+    payload = {
+        "}structure": 6,
+        "self_awareness": 7,
+        "growth": 8,
+        "candor": 5,
+        "evidence": 9,
+        "notes": "x",
+    }
+    out = _remap_dimension_keys(payload, QuestionCategory.self_assessment_growth)
+    assert out["dimension_1"] == 6
+    assert out["dimension_2"] == 7
+    assert out["dimension_3"] == 8
+    assert out["dimension_4"] == 5
+    assert out["dimension_5"] == 9
+    assert "}structure" not in out
+    assert out["notes"] == "x"  # non-score keys untouched
+
+
+def test_remap_prefers_exact_keys_for_star():
+    # Clean payload: exact matches map by position, no normalization needed.
+    payload = {
+        "structure": 1,
+        "problem_solving": 2,
+        "impact": 3,
+        "initiative": 4,
+        "depth": 5,
+    }
+    out = _remap_dimension_keys(payload, QuestionCategory.experience_star)
+    assert [out[f"dimension_{i}"] for i in range(1, 6)] == [1, 2, 3, 4, 5]
+
+
+def test_remap_no_false_recovery_when_key_truly_missing():
+    # `growth` is genuinely absent — nothing should be invented for dimension_3,
+    # and a valid neighboring key (`candor`) must not be stolen to fill it.
+    payload = {
+        "structure": 1,
+        "self_awareness": 2,
+        "candor": 4,
+        "evidence": 5,
+    }
+    out = _remap_dimension_keys(payload, QuestionCategory.self_assessment_growth)
+    assert "dimension_3" not in out
+    assert out["dimension_4"] == 4  # candor kept its slot, not consumed by growth
+
+
+async def test_evaluate_turn_retries_past_malformed_body(monkeypatch):
+    # First body is unterminated JSON (extract_json_object raises ValueError);
+    # the retry re-requests and the second body parses cleanly.
+    client, calls = _make_raw_client(
+        ['{"structure": 6', json.dumps(_DEFAULT_PAYLOAD)]
+    )
+    monkeypatch.setattr("app.services.evaluator.get_client", lambda: client)
+
+    result = await evaluate_turn(
+        question="Tell me about a project you led.",
+        transcript="I led the migration and we shipped two days early.",
+    )
+    assert isinstance(result, EvaluatorOutput)
+    assert calls["n"] == 2  # one failed attempt, one success
+
+
+async def test_evaluate_turn_raises_after_exhausting_retries(monkeypatch):
+    # Every attempt returns non-JSON prose. After _EVAL_PARSE_ATTEMPTS tries the
+    # last parse error propagates so the caller's fail-soft (null scores) runs.
+    client, calls = _make_raw_client(["I'm sorry, I can't do that."] * 3)
+    monkeypatch.setattr("app.services.evaluator.get_client", lambda: client)
+
+    with pytest.raises(ValueError):
+        await evaluate_turn(
+            question="Tell me about a project you led.",
+            transcript="I led the migration.",
+        )
+    assert calls["n"] == 3  # _EVAL_PARSE_ATTEMPTS

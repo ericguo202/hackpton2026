@@ -24,9 +24,11 @@
  * Per-turn surfaces label from the turn's `question_category` via
  * `scoreDimensionsFor(category)`. PER-SESSION aggregate surfaces (SessionDetail +
  * Practice Results overview tiles) also label by the session's category — a
- * session is single-category, so they pass the opening turn's category. Truly
- * CROSS-session surfaces (History trend/radar, /me/stats) and SavedQuestionDetail
- * (STAR openings only) render the STAR label set via `SCORE_DIMENSIONS`.
+ * session is single-category, so they pass the opening turn's category.
+ * SavedQuestionDetail is likewise single-category (one frozen opening) and labels
+ * by the saved question's `question_category`. Truly CROSS-session surfaces
+ * (History trend/radar, /me/stats) render the STAR label set via
+ * `SCORE_DIMENSIONS` unless narrowed to one category by the History filter.
  *
  * The landing components (`landing/Methodology`, `landing/ScorePieChart`)
  * deliberately keep their own marketing-shaped lists (numbered, pie-sliced)
@@ -91,12 +93,22 @@ const SITUATIONAL_LABELS: LabelSpec[] = [
   { label: 'Delivery' },
 ];
 
+const SELF_ASSESS_LABELS: LabelSpec[] = [
+  { label: 'Structure' },
+  { label: 'Self-Awareness', short: 'Self-Aware' },
+  { label: 'Growth' },
+  { label: 'Candor' },
+  { label: 'Evidence' },
+  { label: 'Delivery' },
+];
+
 // Keyed by the backend QuestionCategory enum value. Types not yet generated
 // fall back to the STAR set via `scoreDimensionsFor`.
 const LABELS_BY_CATEGORY: Record<string, LabelSpec[]> = {
   experience_star: STAR_LABELS,
   motivation_fit: MOTIVATION_FIT_LABELS,
   situational: SITUATIONAL_LABELS,
+  self_assessment_growth: SELF_ASSESS_LABELS,
 };
 
 function buildDimensions(labels: LabelSpec[]): readonly ScoreDimension[] {

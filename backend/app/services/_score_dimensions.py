@@ -32,6 +32,13 @@ EVALUATOR_JSON_KEYS: dict[QuestionCategory, tuple[str, str, str, str, str]] = {
         "initiative",
         "depth",
     ),
+    QuestionCategory.self_assessment_growth: (
+        "structure",
+        "self_awareness",
+        "growth",
+        "candor",
+        "evidence",
+    ),
     QuestionCategory.motivation_fit: (
         "structure",
         "relevance",
@@ -57,6 +64,13 @@ CONTENT_DIMENSION_LABELS: dict[QuestionCategory, tuple[str, str, str, str, str]]
         "Impact",
         "Initiative",
         "Depth",
+    ),
+    QuestionCategory.self_assessment_growth: (
+        "Structure",
+        "Self-Awareness",
+        "Growth",
+        "Candor",
+        "Evidence",
     ),
     QuestionCategory.motivation_fit: (
         "Structure",

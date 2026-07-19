@@ -38,16 +38,13 @@ import { useSavedQuestionDetail } from '../hooks/useSavedQuestionDetail';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { buildRadarData } from '../lib/radarData';
-import { SCORE_DIMENSIONS, type ScoreKey } from '../lib/scoreDimensions';
+import { scoreDimensionsFor, type ScoreKey } from '../lib/scoreDimensions';
+import { questionCategoryLabel } from '../types/session';
 import type {
   SavedQuestionAttempt,
   SavedQuestionDetail as SavedQuestionDetailType,
 } from '../types/savedQuestions';
 import type { PracticeLocationState } from './Practice';
-
-// Chart series key/label/color = the canonical SCORE_DIMENSIONS (same palette +
-// ordering as History.tsx, sourced from --color-chart-*).
-const DIMENSIONS = SCORE_DIMENSIONS;
 
 type DimensionKey = ScoreKey;
 
@@ -166,6 +163,15 @@ export default function SavedQuestionDetail() {
     [saved],
   );
 
+  // Chart series key/color are fixed by position; the LABELS are the saved
+  // question's rubric (STAR / M&F / Situational / Self-Assess), mirroring the
+  // category-filtered History view. `scoreDimensionsFor` falls back to STAR for
+  // legacy rows / unknown categories.
+  const dimensions = useMemo(
+    () => scoreDimensionsFor(saved?.question_category),
+    [saved],
+  );
+
   // Strengths radar: six dims averaged over the last ≤5 EVALUATED attempts of
   // this question — the same comparable set the line chart plots (failed/pending
   // attempts carry no opening scores and are already dropped from `chartData`).
@@ -173,7 +179,7 @@ export default function SavedQuestionDetail() {
   // ChartPoint already exposes the six dim keys (null when a dim has no score, so
   // a webcam-off attempt doesn't drag Delivery down).
   const radar = useMemo(
-    () => (saved ? buildRadarData(chartData.slice(-5)) : null),
+    () => (saved ? buildRadarData(chartData.slice(-5), saved.question_category) : null),
     [saved, chartData],
   );
 
@@ -274,7 +280,8 @@ export default function SavedQuestionDetail() {
                     {saved.question_text}
                   </h1>
                   <p className="mt-4 text-sm text-text-muted">
-                    {saved.job_title} @ {saved.company} · saved{' '}
+                    {saved.job_title} @ {saved.company} ·{' '}
+                    {questionCategoryLabel(saved.question_category)} · saved{' '}
                     {new Date(saved.created_at).toLocaleDateString(undefined, {
                       month: 'short', day: 'numeric', year: 'numeric',
                     })}
@@ -338,7 +345,7 @@ export default function SavedQuestionDetail() {
                       <DimensionMenu
                         showOverall={showOverall}
                         onToggleOverall={() => setShowOverall((v) => !v)}
-                        dimensions={DIMENSIONS}
+                        dimensions={dimensions}
                         activeDims={activeDims}
                         onToggleDim={(key) =>
                           setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -380,7 +387,7 @@ export default function SavedQuestionDetail() {
                               isAnimationActive={false}
                             />
                           )}
-                          {DIMENSIONS.map((d) =>
+                          {dimensions.map((d) =>
                             activeDims[d.key] ? (
                               <Line
                                 key={d.key}

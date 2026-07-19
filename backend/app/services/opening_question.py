@@ -56,6 +56,9 @@ from app.services._motivation_fit_opening_prompts import (
 from app.services._situational_opening_prompts import (
     build_situational_opening_prompt,
 )
+from app.services._self_assessment_opening_prompts import (
+    build_self_assessment_opening_prompt,
+)
 from app.services._star_opening_prompts import build_star_opening_prompt
 from app.services._injection import contains_injection
 from app.services._openrouter import create_chat_with_fallback, get_client
@@ -351,6 +354,44 @@ def _build_situational_user_prompt(
     )
 
 
+# Self-Assessment & Growth is about the CANDIDATE, not the company, so its user
+# prompt is profile-CENTRIC and deliberately omits the company facts / JD block
+# (unlike M&F and situational). The candidate profile + declared role are enough
+# to keep a weakness/feedback question role-relevant; the field's load-bearing
+# competency lives only in the evaluator (the role-critical-weakness rule).
+_SELF_ASSESSMENT_RESEARCH_USAGE_INSTRUCTIONS = (
+    "This is a self-assessment question about the CANDIDATE — their own strengths, "
+    "weaknesses, failures, feedback, or growth — NOT about the company. Do not quiz "
+    "them on the employer and do not name-drop the company. Use the candidate's "
+    "declared role and background only to keep the question relevant to someone "
+    "aiming for this kind of role."
+)
+
+
+def _build_self_assessment_user_prompt(
+    user: User,
+    job_title: str,
+    recent_questions: list[str] | None,
+) -> str:
+    """User prompt for a Self-Assessment & Growth opening question.
+
+    Profile-CENTRIC (no company facts / JD block): the question is about the
+    candidate, so only the candidate profile, the usage instruction, and the
+    recent-questions avoid-list are included. Reuses the shared empty-omission
+    digests so first-session sessions stay clean.
+    """
+    avoid_block = _recent_questions_block(recent_questions)
+    avoid_section = f"{avoid_block}\n\n" if avoid_block else ""
+    return (
+        f"{_profile_digest(user, job_title)}\n\n"
+        f"{_SELF_ASSESSMENT_RESEARCH_USAGE_INSTRUCTIONS}\n\n"
+        f"{avoid_section}"
+        "Now write the opening Self-Assessment & Growth question — exactly ONE "
+        "sentence, 12-22 words (never exceed 28), conversational, no preamble or "
+        "surrounding quotes. Output only the question text."
+    )
+
+
 async def _run_opening_completion(system_prompt: str, user_prompt: str) -> str:
     """Shared LLM call for both the STAR and Motivation & Fit opening paths.
 
@@ -464,6 +505,21 @@ async def generate_opening_question(
         ) + _PROFILE_SECURITY_CLAUSE
         prompt = _build_situational_user_prompt(
             user, brief, job_title, recent_questions
+        )
+        return await _run_opening_completion(system_prompt, prompt)
+
+    if question_category == QuestionCategory.self_assessment_growth:
+        # Self-Assessment & Growth is level-DOMINANT and field-INDEPENDENT: the
+        # experience level is the PRIMARY driver of the question (coachability →
+        # learning-agility → derailment-aware failure focus) and the field never
+        # enters generation (it lives only in the evaluator's load-bearing-
+        # competency line). The builder also rotates the internal/external
+        # self-awareness probe type per call.
+        system_prompt = build_self_assessment_opening_prompt(
+            experience_level=user.experience_level,
+        ) + _PROFILE_SECURITY_CLAUSE
+        prompt = _build_self_assessment_user_prompt(
+            user, job_title, recent_questions
         )
         return await _run_opening_completion(system_prompt, prompt)
 

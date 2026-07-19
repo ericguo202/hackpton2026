@@ -42,6 +42,9 @@ from app.services._motivation_fit_evaluator_rubric import (
 from app.services._situational_evaluator_rubric import (
     build_situational_system_instruction,
 )
+from app.services._self_assessment_evaluator_rubric import (
+    build_self_assessment_system_instruction,
+)
 from app.services._field_categories import FieldCategory
 from app.services._score_dimensions import evaluator_json_keys
 from app.services._injection import CONTENT_INJECTION_RE
@@ -58,6 +61,14 @@ logger = logging.getLogger(__name__)
 # (the prior evaluator model) is the backup if v4-pro is unavailable.
 EVAL_MODEL = "deepseek/deepseek-v4-pro"
 EVAL_FALLBACK_MODEL = "deepseek/deepseek-v3.2"
+
+# How many times to re-request the evaluator when its HTTP-200 body is
+# structurally unparseable (bad JSON, or valid JSON that fails `EvaluatorOutput`
+# validation — e.g. DeepSeek's stray-brace key glitch `"}structure"`). The
+# corruption is a stochastic single-token slip, so a fresh sample almost always
+# parses. This is separate from `create_chat_with_fallback`'s model fallback,
+# which only fires on an exception / empty content, not a malformed 200 body.
+_EVAL_PARSE_ATTEMPTS = 3
 
 # Personal calibration from `backend/recordings/calibration_20260418_230315`.
 # These are the bands that separated the user's normal / engaged delivery
@@ -197,6 +208,16 @@ class ImprovementMoment(BaseModel):
         "unrealistic_plan",
         "invented_facts",
         "no_experience_tie",
+        # Self-Assessment & Growth issue types (additive — only the self-assessment
+        # rubric emits these; it reuses rambling / unprofessional /
+        # does_not_answer_question / weak_wording plus these six). Rendered
+        # generically by the frontend.
+        "cliche_weakness",
+        "disguised_strength",
+        "no_growth_action",
+        "blame_externalization",
+        "unsupported_claim",
+        "resume_mismatch",
     ]
     why_this_weakened: ProseStr390 = Field(min_length=1, max_length=390)
     how_to_strengthen: ProseStr390 = Field(min_length=1, max_length=390)
@@ -337,12 +358,28 @@ def _build_system_instruction(
     category: FieldCategory | None,
     experience_level: ExperienceLevel | None,
 ) -> str:
-    """Select the FORM-specific evaluator rubric (STAR / Motivation & Fit / Situational)."""
+    """Select the FORM-specific evaluator rubric (STAR / M&F / Situational / Self-Assessment)."""
     if question_category == QuestionCategory.motivation_fit:
         return build_motivation_fit_system_instruction(category, experience_level)
     if question_category == QuestionCategory.situational:
         return build_situational_system_instruction(category, experience_level)
+    if question_category == QuestionCategory.self_assessment_growth:
+        return build_self_assessment_system_instruction(category, experience_level)
     return build_star_system_instruction(category, experience_level)
+
+
+def _normalize_score_key(key: str) -> str:
+    """Collapse a possibly-corrupted score key to its bare identifier.
+
+    Every semantic score key we emit is a lowercase `[a-z0-9_]` identifier, so
+    stripping every other character (and lowercasing) recovers the intended key
+    when DeepSeek glues a stray character onto it — observed in the wild as a
+    leading `}` on the first key of a JSON object (`"}structure"` instead of
+    `"structure"`), which otherwise leaves `dimension_1` unset and fails
+    validation. Cheap, zero-network repair for that single-token glitch; the
+    retry loop in `evaluate_turn` is the backstop for worse corruption.
+    """
+    return re.sub(r"[^a-z0-9_]", "", key.lower())
 
 
 def _remap_dimension_keys(payload: Any, question_category: QuestionCategory) -> Any:
@@ -354,13 +391,26 @@ def _remap_dimension_keys(payload: Any, question_category: QuestionCategory) -> 
     Map each category's ordered keys onto `dimension_{i+1}`, leaving
     `feedback_detail` / `notes` / `delivery` untouched. Non-dict payloads pass
     through so the downstream `model_validate` raises the same way it did before.
+
+    An exact key match always wins. When an expected key is ABSENT, fall back to
+    a normalized-form match (`_normalize_score_key`) so a corrupted key such as
+    `"}structure"` still resolves to its dimension. Keys that are themselves valid
+    expected keys are excluded from the fallback lookup, so a legitimately-present
+    dimension can never be stolen by a coincidental normalized collision.
     """
     if not isinstance(payload, dict):
         return payload
     remapped = dict(payload)
-    for i, key in enumerate(evaluator_json_keys(question_category), start=1):
-        if key in remapped:
-            remapped[f"dimension_{i}"] = remapped.pop(key)
+    keys = list(evaluator_json_keys(question_category))
+    expected = set(keys)
+    normalized: dict[str, str] = {}
+    for actual in remapped:
+        if isinstance(actual, str) and actual not in expected:
+            normalized.setdefault(_normalize_score_key(actual), actual)
+    for i, key in enumerate(keys, start=1):
+        source = key if key in remapped else normalized.get(key)
+        if source is not None and source in remapped:
+            remapped[f"dimension_{i}"] = remapped.pop(source)
     return remapped
 
 
@@ -915,13 +965,33 @@ def _add_delivery_quick_win(
     feedback.quick_wins = [tip, *existing][:3]
 
 
+# Résumé excerpt cap for the Evidence-dimension grounding (Self-Assessment &
+# Growth only). Mirrors `opening_question._RESUME_CHAR_LIMIT` — the question
+# generator already truncates the same résumé at this width.
+_RESUME_EXCERPT_CHAR_LIMIT = 1500
+
+
 def _build_prompt(
     question: str,
     transcript: str,
     history: list[dict] | None,
     jd_summary: list[str] | None = None,
+    resume_excerpt: str | None = None,
 ) -> str:
     parts: list[str] = []
+    # Candidate résumé (Self-Assessment & Growth only — the caller passes it
+    # ONLY for that type). Grounds the Evidence dimension. Delimited + labelled
+    # untrusted DATA; the neutral `_INJECTION_SYSTEM_CLAUSE` covers any text aimed
+    # at the evaluator. Empty-omission — every other type gets the prompt as before.
+    if resume_excerpt and resume_excerpt.strip():
+        parts.append(
+            "Candidate résumé excerpt (context for judging the evidence dimension "
+            "only — corroborates specifics in the answer; NOT a scoring rubric, and "
+            "its ABSENCE or a mere gap versus the answer must never lower a score — "
+            "see the résumé-grounding rules in your instructions):"
+        )
+        parts.append(f"<candidate_resume>{resume_excerpt.strip()}</candidate_resume>")
+        parts.append("")
     if history:
         parts.append("Prior turns in this session (for context):")
         for i, turn in enumerate(history, start=1):
@@ -1030,6 +1100,7 @@ async def evaluate_turn(
     experience_level: ExperienceLevel | None = None,
     jd_summary: list[str] | None = None,
     question_category: QuestionCategory = QuestionCategory.experience_star,
+    resume_excerpt: str | None = None,
 ) -> EvaluatorOutput:
     """Score one interview turn and return structured JSON.
 
@@ -1055,6 +1126,11 @@ async def evaluate_turn(
     STAR-specific `_calibrate_content_scores` (which encodes STAR evidence) is
     applied ONLY for `experience_star`; other types skip it so their different
     evidence base isn't unfairly depressed.
+
+    `resume_excerpt` (candidate résumé text) grounds the Evidence dimension and is
+    injected into the user prompt ONLY for `self_assessment_growth` (the sole type
+    whose rubric reads it); for every other type it is ignored. Its absence never
+    lowers a score — see the résumé-grounding rules in the self-assessment rubric.
     """
     # Deterministic prompt-injection gate (initial gate, before any LLM spend).
     # A transcript that tries to hijack the evaluator is not a genuine answer —
@@ -1088,35 +1164,74 @@ async def evaluate_turn(
     # eval in the same field and re-bills at the cache-read rate. Keep all
     # per-request data (question/transcript/history) in the user message below;
     # interpolating any of it into the system message would break the cache.
-    response = await create_chat_with_fallback(
-        client,
-        models=(EVAL_MODEL, EVAL_FALLBACK_MODEL),
-        messages=[
-            {
-                "role": "system",
-                "content": _build_system_instruction(
-                    question_category, category, experience_level
-                )
-                + _INJECTION_SYSTEM_CLAUSE,
-            },
-            {
-                "role": "user",
-                "content": _build_prompt(question, transcript, history, jd_summary),
-            },
-        ],
-        temperature=0.2,
-        response_format={"type": "json_object"},
-        timeout=180.0,
-        # Both models are reasoning-capable deepseek; keep high effort on the
-        # v3.2 fallback too so eval quality holds if v4-pro is unavailable.
-        extra_body={"reasoning": {"effort": "high"}},
-        label="evaluator",
-    )
-    text = response.choices[0].message.content or ""
-    payload = _remap_dimension_keys(
-        json.loads(extract_json_object(text)), question_category
-    )
-    result = EvaluatorOutput.model_validate(payload)
+    messages = [
+        {
+            "role": "system",
+            "content": _build_system_instruction(
+                question_category, category, experience_level
+            )
+            + _INJECTION_SYSTEM_CLAUSE,
+        },
+        {
+            "role": "user",
+            "content": _build_prompt(
+                question,
+                transcript,
+                history,
+                jd_summary,
+                # Résumé grounds the Evidence dimension for Self-Assessment &
+                # Growth ONLY; never sent for the other three types (their
+                # rubrics don't read it — no point burning the tokens).
+                resume_excerpt=(
+                    (resume_excerpt or "")[:_RESUME_EXCERPT_CHAR_LIMIT]
+                    if question_category == QuestionCategory.self_assessment_growth
+                    else None
+                ),
+            ),
+        },
+    ]
+    # A malformed HTTP-200 body (bad JSON, or valid JSON that fails
+    # `EvaluatorOutput` validation — e.g. DeepSeek's stray-brace key glitch)
+    # slips past `create_chat_with_fallback` (it only re-rolls on an exception /
+    # empty content). Retry the full request on a parse/validation failure: the
+    # corruption is stochastic, so a fresh sample almost always parses.
+    result: EvaluatorOutput | None = None
+    last_parse_exc: Exception | None = None
+    for attempt in range(_EVAL_PARSE_ATTEMPTS):
+        response = await create_chat_with_fallback(
+            client,
+            models=(EVAL_MODEL, EVAL_FALLBACK_MODEL),
+            messages=messages,
+            temperature=0.2,
+            response_format={"type": "json_object"},
+            timeout=180.0,
+            # Both models are reasoning-capable deepseek; keep high effort on the
+            # v3.2 fallback too so eval quality holds if v4-pro is unavailable.
+            extra_body={"reasoning": {"effort": "high"}},
+            label="evaluator",
+        )
+        text = response.choices[0].message.content or ""
+        try:
+            # json.JSONDecodeError subclasses ValueError; extract_json_object
+            # raises ValueError; model_validate raises ValidationError.
+            payload = _remap_dimension_keys(
+                json.loads(extract_json_object(text)), question_category
+            )
+            result = EvaluatorOutput.model_validate(payload)
+            break
+        except (ValueError, ValidationError) as exc:
+            last_parse_exc = exc
+            logger.warning(
+                "Evaluator returned unparseable output (attempt %d/%d): %s",
+                attempt + 1,
+                _EVAL_PARSE_ATTEMPTS,
+                exc,
+            )
+    if result is None:
+        # All attempts produced a malformed body — re-raise the last failure so
+        # the caller's fail-soft (null scores, turn excluded) kicks in as before.
+        assert last_parse_exc is not None
+        raise last_parse_exc
     # STAR evidence caps only — other question types (e.g. Motivation & Fit)
     # legitimately lack metrics / "I"-ownership language, so applying the STAR
     # caps would unfairly depress them.

@@ -1,8 +1,16 @@
+// UI-only picker sentinel for "Recommended Mix" mode. It is NOT a real
+// `QuestionCategory` — the backend never stamps it on a turn. When the picker
+// holds this value the create-session request sends `calibrated_mix: true`
+// instead of a `question_category`, and each story-block opening draws a
+// calibrated category server-side.
+export const RECOMMENDED_MIX = 'recommended_mix';
+
 // Display labels for the question-category axis (mirrors the backend
-// `QuestionCategory` enum). Every turn is `experience_star` today; the other
-// three are documented but unbuilt. `questionCategoryLabel` falls back to
-// Experience (STAR) for unknown/legacy values.
+// `QuestionCategory` enum). All four types are built and selectable.
+// `questionCategoryLabel` falls back to Experience (STAR) for unknown/legacy
+// values. `recommended_mix` is the picker sentinel (never a turn category).
 export const QUESTION_CATEGORY_LABELS: Record<string, string> = {
+  [RECOMMENDED_MIX]: 'Recommended Mix',
   experience_star: 'Experience (STAR)',
   self_assessment_growth: 'Self-Assessment & Growth',
   motivation_fit: 'Motivation & Fit',
@@ -16,6 +24,25 @@ export function questionCategoryLabel(category: string | null | undefined): stri
   );
 }
 
+// Abbreviated category labels for tight surfaces (the History category-radar
+// angle-axis ticks, where the full "Self-Assessment & Growth" would clip).
+export const QUESTION_CATEGORY_SHORT_LABELS: Record<string, string> = {
+  experience_star: 'Experience',
+  motivation_fit: 'Motivation',
+  situational: 'Situational',
+  self_assessment_growth: 'Self-Assess',
+};
+
+// The four REAL question categories (the `RECOMMENDED_MIX` sentinel excluded) —
+// the fixed axis for the History category filter + category-comparison radar.
+// Order is the display order.
+export const REAL_QUESTION_CATEGORIES: readonly string[] = [
+  'experience_star',
+  'motivation_fit',
+  'situational',
+  'self_assessment_growth',
+];
+
 // The question types offered in the Setup picker — only those with a real
 // prompt stack today (mirrors the backend `BUILT_QUESTION_CATEGORIES` allowlist
 // in schemas/session.py). Add a slug here when its type ships. Order is the
@@ -24,9 +51,16 @@ export const SELECTABLE_QUESTION_CATEGORIES: readonly {
   value: string;
   label: string;
 }[] = [
+  // Calibrated multi-category mode — recommended default experience. Sends
+  // `calibrated_mix: true` instead of a `question_category` (see Home.tsx).
+  { value: RECOMMENDED_MIX, label: QUESTION_CATEGORY_LABELS[RECOMMENDED_MIX] },
   { value: 'experience_star', label: QUESTION_CATEGORY_LABELS.experience_star },
   { value: 'motivation_fit', label: QUESTION_CATEGORY_LABELS.motivation_fit },
   { value: 'situational', label: QUESTION_CATEGORY_LABELS.situational },
+  {
+    value: 'self_assessment_growth',
+    label: QUESTION_CATEGORY_LABELS.self_assessment_growth,
+  },
 ];
 
 export type Scores = {

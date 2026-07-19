@@ -78,6 +78,7 @@ from app.services.job_description import (
     looks_like_gibberish,
 )
 from app.services.moderation import check_moderation
+from app.services._category_weights import draw_opening_category
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
 from app.services.tts import DEFAULT_SPEED, synthesize_speech
@@ -151,6 +152,7 @@ async def _persist_session_and_turn(
     saved_question_id: UUID | None = None,
     speech_speed: float = DEFAULT_SPEED,
     question_category: QuestionCategory = QuestionCategory.experience_star,
+    calibrated_mix: bool = False,
 ) -> UUID:
     """INSERT the session row + turn 1 atomically; return session.id.
 
@@ -184,6 +186,7 @@ async def _persist_session_and_turn(
         num_turns=num_turns,
         saved_question_id=saved_question_id,
         speech_speed=speech_speed,
+        calibrated_mix=calibrated_mix,
     )
     db.add(session)
     await db.flush()
@@ -373,15 +376,20 @@ async def create_session(
             db=db,
         )
 
-    # The session's chosen question FORM (single-category per session), stamped
-    # on turn 1 and inherited by every later turn. A custom question is verbatim
-    # user text — not a generated M&F/situational opening — so a custom-question
-    # session is always graded as Experience/STAR regardless of the picker.
-    # Resolved BEFORE research so the situational research variant (accurate
-    # company principles + situational themes) is selected on the research call.
-    question_category = (
+    # "Recommended Mix" mode: each story-block opening draws a calibrated category
+    # from the user's level + researched field. A custom question is verbatim user
+    # text (not a generated opening), so Mix never applies to it.
+    mixed_mode = body.calibrated_mix and custom_question is None
+
+    # The category used to select the RESEARCH variant. The situational research
+    # variant (accurate company principles + situational themes) is picked BEFORE
+    # research, so it needs a category up front. In Mix mode the field category
+    # (which drives the turn-1 draw) only exists AFTER research, so we can't
+    # pre-select the situational variant — Mix uses the standard/behavioral brief
+    # (see plan "Known limitations"). Custom questions are STAR verbatim.
+    research_category = (
         QuestionCategory.experience_star
-        if custom_question is not None
+        if (custom_question is not None or mixed_mode)
         else body.question_category
     )
 
@@ -391,7 +399,7 @@ async def create_session(
             body.job_title,
             user.experience_level,
             job_description=job_description or None,
-            question_category=question_category,
+            question_category=research_category,
         )
     except CompanyNotFoundError:
         raise HTTPException(
@@ -402,6 +410,21 @@ async def create_session(
         "Session research complete: company=%r job_title=%r category=%r",
         body.company, body.job_title, brief.category,
     )
+
+    # The FORM stamped on turn 1. In Mix mode, drawn from the calibrated weights
+    # now that the field category is known (turn 1 of a >2-turn session carries
+    # the "tell me about yourself" M&F bias); otherwise the picker's single
+    # category (STAR for custom questions). Later openings redraw in submit_turn.
+    if mixed_mode:
+        question_category = draw_opening_category(
+            field=brief.category,
+            level=user.experience_level,
+            num_turns=body.num_turns,
+            used=set(),
+            is_first_opening=True,
+        )
+    else:
+        question_category = research_category
 
     if custom_question is not None:
         # The candidate picked their own question — skip the opening-question
@@ -452,6 +475,7 @@ async def create_session(
             speech_speed=speech_speed,
             # Stamp turn 1 with the session's chosen category (STAR for custom).
             question_category=question_category,
+            calibrated_mix=mixed_mode,
         ),
     )
     await log_interview_session_started(
@@ -472,6 +496,7 @@ async def create_session(
         first_question=opening_q,
         first_question_category=question_category.value,
         num_turns=body.num_turns,
+        calibrated_mix=mixed_mode,
         first_question_audio_url=audio_url,
     )
 
@@ -958,6 +983,7 @@ async def _run_background_eval(
     experience_level: ExperienceLevel | None = None,
     jd_summary: list[str] | None = None,
     question_category: QuestionCategory = QuestionCategory.experience_star,
+    resume_excerpt: str | None = None,
 ) -> None:
     """Evaluate a turn after the request has already returned, then persist.
 
@@ -974,7 +1000,10 @@ async def _run_background_eval(
     appendix; both are passed explicitly because this task runs in a detached
     AsyncSession with no access to the request-scoped `user` row. `jd_summary`
     (pasted-JD role facts, `None`/empty otherwise) rides through the same way as
-    calibration-only context for the evaluator.
+    calibration-only context for the evaluator. `resume_excerpt` (the candidate's
+    résumé) is passed from the request path — where the `user` row is live — and
+    grounds the Evidence dimension for Self-Assessment & Growth only (the evaluator
+    ignores it for other types).
     """
     try:
         async with AsyncSessionLocal() as db:
@@ -985,6 +1014,7 @@ async def _run_background_eval(
                     experience_level=experience_level,
                     jd_summary=jd_summary,
                     question_category=question_category,
+                    resume_excerpt=resume_excerpt,
                 )
                 _log_eval_scores(session_id, turn_id, category, eval_out)
                 await _attach_next_take(
@@ -1309,6 +1339,16 @@ async def _run_background_finalize(
                         experience_level=experience_level,
                         jd_summary=jd_summary,
                         question_category=turn.question_category,
+                        # Résumé grounds the Evidence dimension for Self-Assessment
+                        # & Growth only. This task already loaded the `user` row
+                        # above, so read it directly (no threading needed); other
+                        # types get None and the evaluator ignores it.
+                        resume_excerpt=(
+                            user.resume_text
+                            if turn.question_category
+                            == QuestionCategory.self_assessment_growth
+                            else None
+                        ),
                     )
                     _log_eval_scores(session_id, turn.id, category, eval_out)
                     await _attach_next_take(
@@ -1644,10 +1684,20 @@ async def submit_turn(
                 else "opening"
             )
 
-        # The next question's FORM. A session is single-category (chosen at
-        # create, stamped on turn 1), so every routed opening/follow-up inherits
-        # the just-answered turn's category — no separate routing decision.
+        # The next question's FORM. By default it inherits the just-answered
+        # turn's category — a single-category session and every follow-up (a story
+        # block stays one type). In "Recommended Mix" mode a NEW story-block
+        # opening instead draws a fresh calibrated category, without repeating one
+        # already used by this session's openings.
         next_question_category = current_turn.question_category
+        if route == "opening" and session.calibrated_mix:
+            next_question_category = draw_opening_category(
+                field=category,
+                level=experience_level,
+                num_turns=session.num_turns,
+                used={t.question_category for t in ordered_turns if not t.is_followup},
+                is_first_opening=False,
+            )
 
         if route == "opening":
             next_q, next_audio_url = await _opening_and_tts(
@@ -1717,6 +1767,15 @@ async def submit_turn(
                 experience_level=experience_level,
                 jd_summary=jd_summary,
                 question_category=current_turn.question_category,
+                # Résumé grounds the Evidence dimension for Self-Assessment &
+                # Growth only; pass the live user's résumé for that type, else None
+                # (the evaluator re-gates by category, so this is belt-and-braces).
+                resume_excerpt=(
+                    user.resume_text
+                    if current_turn.question_category
+                    == QuestionCategory.self_assessment_growth
+                    else None
+                ),
             ),
             name=f"eval-session-{session_id}-turn-{current_turn.turn_number}",
         )
@@ -1897,12 +1956,33 @@ async def list_sessions(
     that cache existed (legacy rows) come back with all averages = null;
     the frontend chart simply skips them.
     """
+    # Per-session question-category rollup: how many DISTINCT categories the
+    # session's turns span, plus the (arbitrary) min category. One distinct
+    # category → that category; more than one → a "Recommended Mix" session.
+    # Lets the History page filter the trend chart + list by category.
+    cat_subq = (
+        select(
+            InterviewTurn.session_id.label("sid"),
+            func.count(func.distinct(InterviewTurn.question_category)).label(
+                "cat_count"
+            ),
+            func.min(InterviewTurn.question_category).label("cat_min"),
+        )
+        .group_by(InterviewTurn.session_id)
+        .subquery()
+    )
     result = await db.execute(
-        select(InterviewSession, SessionMetrics)
+        select(
+            InterviewSession,
+            SessionMetrics,
+            cat_subq.c.cat_count,
+            cat_subq.c.cat_min,
+        )
         .outerjoin(
             SessionMetrics,
             SessionMetrics.session_id == InterviewSession.id,
         )
+        .outerjoin(cat_subq, cat_subq.c.sid == InterviewSession.id)
         .where(
             InterviewSession.user_id == user.id,
             InterviewSession.status == SessionStatus.completed,
@@ -1911,7 +1991,17 @@ async def list_sessions(
         .limit(_HISTORY_LIMIT)
     )
     rows: list[SessionListItem] = []
-    for session, metrics in result.all():
+    for session, metrics, cat_count, cat_min in result.all():
+        # None when the session has no turns; "mixed" when its turns span more
+        # than one category; else the single category value.
+        if not cat_count:
+            session_category = None
+        elif cat_count > 1:
+            session_category = "mixed"
+        else:
+            session_category = (
+                cat_min.value if hasattr(cat_min, "value") else cat_min
+            )
         rows.append(SessionListItem(
             id=session.id,
             company=session.company,
@@ -1930,6 +2020,7 @@ async def list_sessions(
                 metrics.total_word_count if metrics else None,
             ),
             averages=_averages_from_metrics(metrics),
+            question_category=session_category,
         ))
     return rows
 
@@ -2085,4 +2176,5 @@ async def get_session(
         ),
         turns_evaluated=metrics.turns_evaluated if metrics else 0,
         saved_question_id=session.saved_question_id,
+        calibrated_mix=session.calibrated_mix,
     )

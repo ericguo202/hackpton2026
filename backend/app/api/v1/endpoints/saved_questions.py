@@ -218,6 +218,8 @@ async def save_question(
         role_signals=brief.role_signals if brief else [],
         sample_question_themes=brief.sample_question_themes if brief else [],
         experience_level=session.experience_level,
+        # Freeze the saved opening's question FORM so History can filter by it.
+        question_category=target.question_category,
     )
     db.add(sq)
     await db.flush()
@@ -302,6 +304,7 @@ async def list_saved_questions(
             attempt_count=a.attempts if a else 0,
             last_practiced_at=a.last_practiced_at if a else None,
             avg_overall_score=a.avg_overall if a else None,
+            question_category=s.question_category.value,
         ))
     return rows
 
@@ -373,6 +376,7 @@ async def get_saved_question(
         created_at=sq.created_at,
         summary=_parse_company_summary(sq.company_summary),
         attempts=attempts,
+        question_category=sq.question_category.value,
     )
 
 
@@ -439,6 +443,10 @@ async def practice_saved_question(
         # Re-practice WANTS the repeat — don't add it to the avoid-list.
         roll_recent=False,
         saved_question_id=sq.id,
+        # Stamp the FROZEN question FORM so the re-practice's evaluator + the
+        # inherited follow-up use the saved category's rubric/prompts (not the
+        # STAR default). submit_turn dispatches both off turn.question_category.
+        question_category=sq.question_category,
         # Persist the resolved pace so turn 2's follow-up TTS matches turn 1.
         speech_speed=speech_speed,
     )

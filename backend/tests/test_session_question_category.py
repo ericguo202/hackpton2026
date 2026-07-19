@@ -29,7 +29,13 @@ def test_session_create_defaults_to_star():
 
 
 @pytest.mark.parametrize(
-    "value", ["experience_star", "motivation_fit", "situational"]
+    "value",
+    [
+        "experience_star",
+        "motivation_fit",
+        "situational",
+        "self_assessment_growth",
+    ],
 )
 def test_session_create_accepts_built_categories(value):
     body = SessionCreateIn(
@@ -38,10 +44,11 @@ def test_session_create_accepts_built_categories(value):
     assert body.question_category.value == value
 
 
-@pytest.mark.parametrize("value", ["self_assessment_growth"])
-def test_session_create_rejects_unbuilt_categories(value):
-    # Real QuestionCategory members, but no prompt stack yet — the request layer
-    # rejects them so a hand-crafted call can't serve a mislabeled STAR turn.
+@pytest.mark.parametrize("value", ["totally_made_up", "behavioral", ""])
+def test_session_create_rejects_unknown_categories(value):
+    # All four taxonomy types are built now, so there is no real-but-unbuilt
+    # member to reject; the gate still rejects any value that isn't a known
+    # built category (an unknown string, a typo, etc.).
     with pytest.raises(ValidationError):
         SessionCreateIn(
             company="Acme", job_title="Analyst", question_category=value

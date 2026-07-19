@@ -25,14 +25,19 @@ from sqlalchemy import Integer, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import ClerkClaims, current_user, get_current_user_db
-from app.db.models.enums import SessionStatus, UserTier
+from app.db.models.enums import QuestionCategory, SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
 from app.db.models.saved_question import SavedQuestion
 from app.db.models.session_metrics import SessionMetrics
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.session import DimensionAverages, FillerWordStat, MeStatsOut
+from app.schemas.session import (
+    CategoryStat,
+    DimensionAverages,
+    FillerWordStat,
+    MeStatsOut,
+)
 from app.schemas.user import (
     ActiveTargetRoleIn,
     DeliveryAnalyticsConsentIn,
@@ -393,6 +398,7 @@ async def get_me_stats(
     db: AsyncSession = Depends(get_db),
     company: str | None = Query(None),
     job_title: str | None = Query(None),
+    question_category: str | None = Query(None),
 ) -> MeStatsOut:
     """Roll up the caller's lifetime scoring history.
 
@@ -412,10 +418,20 @@ async def get_me_stats(
     page passes these so the summary tiles and the "Most used filler words"
     bar can honor its Company / Role filter without a separate endpoint.
     Empty/whitespace values are ignored (treated as no filter).
+
+    Optional `question_category` narrows the tiles + filler stats to *pure*
+    single-category sessions of that type (a session ALL of whose turns are
+    that category) — a single-category session's cached metrics ARE that
+    category's dimension averages, so this reuses the metrics cache and simply
+    excludes "Recommended Mix" sessions. Unknown values are ignored.
+    `by_category` is computed independently of this narrowing (it always spans
+    every category), honoring only the company/role filters.
     """
     # Case-insensitive equality filters, applied to EVERY aggregate below so
     # the returned object is internally coherent. Parameterized — no injection
-    # surface.
+    # surface. Company/role filters are built first (they also feed the
+    # `by_category` rollup); the category narrowing is appended AFTER that
+    # rollup so it never restricts the cross-category radar data.
     session_filters = []
     if company and company.strip():
         session_filters.append(
@@ -425,6 +441,67 @@ async def get_me_stats(
         session_filters.append(
             func.lower(InterviewSession.job_title) == job_title.strip().lower()
         )
+
+    # Per-category rollup (avg content score + turns evaluated), grouped from
+    # interview_turns so it correctly spans Recommended-Mix sessions. Honors
+    # the company/role filters but NOT the category narrowing below. Only
+    # scored turns contribute (dimension_1_score non-null is the "evaluated"
+    # check); the mean of the five content dims is the per-category score.
+    content_mean = (
+        InterviewTurn.dimension_1_score
+        + InterviewTurn.dimension_2_score
+        + InterviewTurn.dimension_3_score
+        + InterviewTurn.dimension_4_score
+        + InterviewTurn.dimension_5_score
+    ) / 5.0
+    by_category_rows = (await db.execute(
+        select(
+            InterviewTurn.question_category.label("cat"),
+            func.count(InterviewTurn.id).label("turns"),
+            func.avg(content_mean).label("avg_score"),
+        )
+        .select_from(InterviewTurn)
+        .join(InterviewSession, InterviewSession.id == InterviewTurn.session_id)
+        .where(
+            InterviewSession.user_id == user.id,
+            InterviewSession.status == SessionStatus.completed,
+            InterviewTurn.dimension_1_score.isnot(None),
+            *session_filters,
+        )
+        .group_by(InterviewTurn.question_category)
+    )).all()
+    by_category = [
+        CategoryStat(
+            question_category=(
+                r.cat.value if hasattr(r.cat, "value") else str(r.cat)
+            ),
+            average_score=_to_decimal(r.avg_score),
+            turns_evaluated=int(r.turns or 0),
+        )
+        for r in by_category_rows
+    ]
+
+    # Category narrowing (appended after the rollup): restrict the tiles +
+    # filler stats to sessions ALL of whose turns are the requested category.
+    # `bool_and` over the session's turns is true only for a pure-category
+    # session, so Mix sessions drop out. Unknown category values fail soft.
+    if question_category and question_category.strip():
+        try:
+            qc_enum = QuestionCategory(question_category.strip())
+        except ValueError:
+            qc_enum = None
+        if qc_enum is not None:
+            pure_category_sessions = (
+                select(InterviewTurn.session_id)
+                .group_by(InterviewTurn.session_id)
+                .having(
+                    func.bool_and(InterviewTurn.question_category == qc_enum)
+                )
+                .scalar_subquery()
+            )
+            session_filters.append(
+                InterviewSession.id.in_(pure_category_sessions)
+            )
 
     # Total / completed counts come straight from `interview_sessions`.
     counts_row = (await db.execute(
@@ -519,4 +596,5 @@ async def get_me_stats(
         ),
         average_overall_score=_to_decimal(metrics_row.overall),
         top_filler_words=top_filler_words,
+        by_category=by_category,
     )

@@ -26,7 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.db.base import Base
-from app.db.models.enums import ExperienceLevel
+from app.db.models.enums import ExperienceLevel, QuestionCategory
 
 
 class SavedQuestion(Base):
@@ -75,6 +75,15 @@ class SavedQuestion(Base):
     experience_level: Mapped[ExperienceLevel | None] = mapped_column(
         Enum(ExperienceLevel, name="experience_level", create_type=False),
         nullable=True,
+    )
+
+    # FROZEN question FORM of the saved opening (a `QuestionCategory` value),
+    # stamped from the saved turn. Lets the History saved-questions section be
+    # filtered by question category. Reuses the shared PG enum (create_type=False).
+    question_category: Mapped[QuestionCategory] = mapped_column(
+        Enum(QuestionCategory, name="question_category", create_type=False),
+        nullable=False,
+        server_default=text("'experience_star'"),
     )
 
     created_at: Mapped[datetime] = mapped_column(

@@ -22,6 +22,9 @@ export type SavedQuestionListItem = {
   last_practiced_at: string | null;
   /** 0-100 scale, averaged over linked sessions (null-score ones excluded). */
   avg_overall_score: string | null;
+  /** Frozen question FORM of the saved opening (a QuestionCategory value).
+   *  Drives the History category filter. Defaults to "experience_star". */
+  question_category: string;
 };
 
 /** One practice attempt (a linked session) on the detail page. */
@@ -35,8 +38,8 @@ export type SavedQuestionAttempt = {
   /** 0-100 scale. Null when the session's evaluation never completed. */
   overall_score: string | null;
   /** Opening-turn per-dimension scores — the same-question comparison line.
-   *  Generic slots; a saved question is always a STAR opening today, so the
-   *  detail page labels them with the STAR set. */
+   *  Generic slots; the detail page labels them via the saved question's
+   *  `question_category` (STAR / Motivation & Fit / Situational / Self-Assess). */
   turn1_scores: {
     dimension_1: number | null;
     dimension_2: number | null;
@@ -56,6 +59,9 @@ export type SavedQuestionDetail = {
   job_title: string;
   category: string | null;
   created_at: string;
+  /** Frozen question FORM (a QuestionCategory value) — drives the detail page's
+   *  chart/radar dimension labels. Defaults to "experience_star". */
+  question_category: string;
   summary: {
     description: string;
     headlines: string[];

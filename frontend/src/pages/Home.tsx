@@ -42,6 +42,7 @@ import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
 import QuestionTypeField from '../components/QuestionTypeField';
+import { RECOMMENDED_MIX } from '../types/session';
 import RoleSwitcher from '../components/RoleSwitcher';
 import SiteFooter from '../components/SiteFooter';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
@@ -209,7 +210,7 @@ export default function Home() {
   const [numTurns, setNumTurns] = useState(MIN_SESSION_TURNS);
   // Question FORM for the whole session (single-category). Only built types are
   // offered (see SELECTABLE_QUESTION_CATEGORIES); the backend rejects the rest.
-  const [questionCategory, setQuestionCategory] = useState('experience_star');
+  const [questionCategory, setQuestionCategory] = useState(RECOMMENDED_MIX);
   // Interview-voice pace (→ backend `speech_pace`, resolved per-voice server
   // side). Defaults to "Normal".
   const [speechPace, setSpeechPace] = useState<SpeechPace>(SPEECH_PACE_DEFAULT);
@@ -292,7 +293,12 @@ export default function Home() {
           // on the server side (UTC fallback on parse failure).
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           num_turns: numTurns,
-          question_category: questionCategory,
+          // "Recommended Mix" is a UI-only sentinel: send `calibrated_mix` so the
+          // backend draws a calibrated category per opening. An explicit type
+          // keeps the single-category path (sends `question_category`).
+          ...(questionCategory === RECOMMENDED_MIX
+            ? { calibrated_mix: true }
+            : { question_category: questionCategory }),
           speech_pace: speechPace,
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
@@ -511,6 +517,15 @@ export default function Home() {
                     onChange={setQuestionCategory}
                     disabled={submitting}
                   />
+                </div>
+
+                {/* Advanced / Privacy triggers sit on their own row (like mobile)
+                    so they never get pushed onto a second line by the toggles +
+                    popover launchers above. */}
+                <div
+                  className="anim-reveal mt-6 flex flex-wrap items-center gap-x-6 gap-y-2"
+                  style={{ animationDelay: '240ms' }}
+                >
                   <RefineTrigger
                     label="Advanced"
                     active={surface === 'advanced'}

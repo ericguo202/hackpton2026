@@ -20,15 +20,16 @@ from app.db.models.enums import QuestionCategory
 from app.services._field_categories import FieldCategory
 from app.services.voice_pool import DEFAULT_PACE, SpeechPace
 
-# Question types with a real prompt stack today. The Setup picker only offers
-# these; a hand-crafted request naming an unbuilt type (self_assessment_growth)
-# would generate STAR prompts mislabeled as that type, so the request layer
-# rejects it. Extend this set as new types ship.
+# Question types with a real prompt stack. The Setup picker only offers these;
+# a hand-crafted request naming an unbuilt type would generate STAR prompts
+# mislabeled as that type, so the request layer rejects it. All four taxonomy
+# types are built today; keep this gate (and extend it) if a new type is added.
 BUILT_QUESTION_CATEGORIES = frozenset(
     {
         QuestionCategory.experience_star,
         QuestionCategory.motivation_fit,
         QuestionCategory.situational,
+        QuestionCategory.self_assessment_growth,
     }
 )
 
@@ -80,6 +81,12 @@ class SessionCreateIn(BaseModel):
     # Default keeps older clients (and re-practice / custom-question flows, which
     # never send it) on Experience/STAR. Only built types are accepted.
     question_category: QuestionCategory = QuestionCategory.experience_star
+    # "Recommended Mix" mode. When true, `question_category` is IGNORED and each
+    # story-block opening draws a category from the level+field calibrated weights
+    # (`_category_weights`). Additive/back-compatible: older clients omit it and
+    # keep the single-category behavior. Ignored for custom-question sessions
+    # (forced to STAR verbatim).
+    calibrated_mix: bool = Field(default=False)
 
     @field_validator("question_category")
     @classmethod
@@ -128,6 +135,9 @@ class SessionCreateOut(BaseModel):
     # STAR) need no change.
     first_question_category: str = "experience_star"
     num_turns: int
+    # True when this session runs in "Recommended Mix" mode (each opening draws a
+    # calibrated category). Lets the client render the session-level mix badge.
+    calibrated_mix: bool = False
     # `data:audio/mpeg;base64,...` — ready to drop into `<audio src>`.
     # Not persisted; regenerated on demand per CLAUDE.md (audio inline in
     # JSON, no S3).
@@ -279,6 +289,12 @@ class SessionListItem(BaseModel):
     # trend chart on the history page.
     filler_word_rate: Decimal | None = None
     averages: DimensionAverages
+    # Session-level question category (the FORM axis), derived from the
+    # session's turns: the single distinct turn category, or "mixed" for a
+    # multi-category ("Recommended Mix") session. Null on a session with no
+    # turns. Lets the History page filter the trend chart + list by category —
+    # a single-category session's `averages` ARE that category's dimensions.
+    question_category: str | None = None
 
 
 class TurnOut(BaseModel):
@@ -340,6 +356,11 @@ class SessionDetailOut(BaseModel):
     # re-practice attempt). Drives the Save button's "already saved" state so
     # the frontend doesn't need a separate lookup.
     saved_question_id: UUID | None = None
+    # True when this session ran in "Recommended Mix" mode (openings drew
+    # calibrated categories). The per-turn category badges already reflect each
+    # turn's real category; this flags the session as a whole (e.g. for the
+    # overview to show only the type-invariant tiles).
+    calibrated_mix: bool = False
 
 
 class SessionEndOut(BaseModel):
@@ -362,6 +383,23 @@ class FillerWordStat(BaseModel):
 
     word: str
     count: int
+
+
+class CategoryStat(BaseModel):
+    """Per-question-category rollup for the History strengths radar.
+
+    Aggregated from `interview_turns` grouped by `question_category` (so it
+    correctly spans "Recommended Mix" sessions, which mix categories per turn).
+    `average_score` is the mean of the five content dimensions (0-10) across
+    the category's scored turns — Delivery is excluded since it isn't a
+    category-specific rubric dimension. `turns_evaluated` counts the scored
+    turns (`dimension_1_score IS NOT NULL`). A category with no scored turns is
+    simply absent from the list; the frontend plots it as 0.
+    """
+
+    question_category: str
+    average_score: Decimal | None
+    turns_evaluated: int
 
 
 class MeStatsOut(BaseModel):
@@ -392,3 +430,8 @@ class MeStatsOut(BaseModel):
     # Ordered count-desc, then word-asc for stable ties. Empty until the user
     # logs at least one filler word.
     top_filler_words: list[FillerWordStat] = []
+    # Per-question-category rollup (avg content score + turns evaluated), for the
+    # History strengths-radar's category-comparison view. Always spans ALL
+    # categories the user has scored turns in, honoring only the company/role
+    # filters (NOT the `question_category` filter). Empty until any turn scores.
+    by_category: list[CategoryStat] = []
