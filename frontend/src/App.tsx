@@ -128,6 +128,11 @@ function App() {
       />
       <Route path="/legal/privacy" element={<PrivacyPolicy />} />
       <Route path="/legal/terms" element={<TermsOfService />} />
+      {/* Public like the legal pages: it's the "how we grade you" transparency
+          page, linked from the signed-out footer, so a visitor weighing our
+          methodology can read it before making an account. Static prose — no
+          user data, nothing to gate. */}
+      <Route path="/scoring" element={<Scoring />} />
 
       <Route element={<RedirectIfOnboarded />}>
         <Route path="/sign-in" element={<SignIn />} />
@@ -143,7 +148,6 @@ function App() {
           <Route path="/practice" element={<Practice />} />
           <Route path="/history" element={<History />} />
           <Route path="/delivery-playground" element={<DeliveryPlayground />} />
-          <Route path="/scoring" element={<Scoring />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
           <Route path="/saved-question/:id" element={<SavedQuestionDetail />} />
           <Route path="/personalize" element={<Personalize />} />

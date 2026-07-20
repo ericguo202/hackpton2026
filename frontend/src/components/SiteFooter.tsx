@@ -5,19 +5,24 @@
  *
  * Responsive at every width (no desktop-only gate): mobile stacks the
  * copyright above a two-column link grid; ≥900px it's a single row with the
- * columns pulled to the right. `showAbout` adds the "About" column (the
- * Delivery Playground link) — signed-in surfaces only, since that page
- * requires calibration consent.
+ * columns pulled to the right.
+ *
+ * The "About" column is shown on BOTH surfaces: Scoring is a public
+ * transparency page, and a signed-out visitor questioning our methodology is
+ * exactly who needs it. `signedIn` only adds the Delivery Playground link —
+ * that page is auth-gated (it re-derives a score from your own calibration),
+ * so linking it signed-out would just bounce to /sign-in.
  */
 
 import { Link } from 'react-router';
 
 import { LEGAL_LINKS } from '../lib/legalLinks';
 
-const ABOUT_LINKS = [
-  { to: '/scoring', label: 'Scoring' },
-  { to: '/delivery-playground', label: 'Delivery Playground' },
-] as const;
+const SCORING_LINK = { to: '/scoring', label: 'Scoring' } as const;
+const DELIVERY_PLAYGROUND_LINK = {
+  to: '/delivery-playground',
+  label: 'Delivery Playground',
+} as const;
 
 type FooterLink = { to: string; label: string };
 
@@ -51,14 +56,18 @@ function FooterLinkColumn({
   );
 }
 
-type Props = { showAbout?: boolean };
+type Props = { signedIn?: boolean };
 
-export default function SiteFooter({ showAbout = false }: Props) {
+export default function SiteFooter({ signedIn = false }: Props) {
+  const aboutLinks: FooterLink[] = signedIn
+    ? [SCORING_LINK, DELIVERY_PLAYGROUND_LINK]
+    : [SCORING_LINK];
+
   return (
     <footer className="flex flex-col gap-6 border-t border-border px-8 md:px-16 py-7 min-[900px]:flex-row min-[900px]:items-start min-[900px]:justify-between">
       <p className="text-sm text-text-muted">InterviewPie © 2026</p>
       <div className="grid grid-cols-2 gap-x-8 gap-y-6 min-[900px]:flex min-[900px]:gap-16">
-        {showAbout && <FooterLinkColumn heading="About" links={ABOUT_LINKS} />}
+        <FooterLinkColumn heading="About" links={aboutLinks} />
         <FooterLinkColumn heading="Legal" links={LEGAL_LINKS} />
       </div>
     </footer>

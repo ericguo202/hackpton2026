@@ -6,10 +6,17 @@
  * `scoring_page_implementation.md`; dimension labels/colors come from the
  * canonical `scoreDimensionsFor` so this page can never drift from History /
  * SessionDetail. No data fetching — it's static, research-cited prose.
+ *
+ * PUBLIC route (like the legal pages): a signed-out visitor questioning our
+ * methodology is a target reader, and the footer links here from Hero too. The
+ * chrome is therefore auth-bivalent — signed-in gets the app nav + account
+ * button, signed-out gets the Hero's legal menu + sign-in link — and the one
+ * outbound link to the auth-gated Delivery Playground is signed-in only.
  */
 
+import { useAuth } from '@clerk/react';
 import { type ReactNode } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import AccountButton from '../components/AccountButton';
 import CategoryScoringSection, {
@@ -29,6 +36,20 @@ function ScoringNav() {
       <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
       <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
     </>
+  );
+}
+
+/** Signed-out right slot — mirrors the Hero masthead's sign-in link. */
+function SignInLink() {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/sign-in')}
+      className="relative cursor-pointer rounded-xs text-sm text-text-muted underline decoration-border-strong underline-offset-[6px] transition-colors hover:text-text hover:decoration-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface before:absolute before:-inset-[14px] before:content-['']"
+    >
+      Sign in
+    </button>
   );
 }
 
@@ -200,9 +221,18 @@ const CATEGORY_CONTENT: CategoryContent[] = [
 ];
 
 export default function Scoring() {
+  // `isSignedIn` is false while Clerk loads, so the page paints its signed-out
+  // chrome first and swaps in the app nav a beat later. Acceptable here: the
+  // content is identical either way, and nothing below depends on a user row.
+  const { isSignedIn } = useAuth();
+
   return (
     <div className="min-h-screen bg-surface text-text">
-      <TopBar nav={<ScoringNav />} rightSlot={<AccountButton />} />
+      <TopBar
+        nav={isSignedIn ? <ScoringNav /> : undefined}
+        legalMenu={!isSignedIn}
+        rightSlot={isSignedIn ? <AccountButton /> : <SignInLink />}
+      />
 
       <main className="mx-auto flex w-full max-w-[92rem] flex-col gap-12 px-8 py-8 md:px-16 md:py-12">
         {/* Intro */}
@@ -233,15 +263,27 @@ export default function Scoring() {
             question type, so it&apos;s described under each category below.{' '}
             <span className="font-semibold text-text">Delivery</span> is also
             universal: it&apos;s computed from your webcam (eye contact, framing,
-            posture, expression) only when your camera is on. For more on how
-            Delivery is scored, see the{' '}
-            <Link
-              to="/delivery-playground"
-              className="rounded-xs text-link underline decoration-link/40 underline-offset-2 transition-colors hover:decoration-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-            >
-              Delivery Playground
-            </Link>
-            . Everything else changes with the kind of question you&apos;re
+            posture, expression) only when your camera is on.{' '}
+            {isSignedIn ? (
+              <>
+                For more on how Delivery is scored, see the{' '}
+                <Link
+                  to="/delivery-playground"
+                  className="rounded-xs text-link underline decoration-link/40 underline-offset-2 transition-colors hover:decoration-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                >
+                  Delivery Playground
+                </Link>
+                .
+              </>
+            ) : (
+              // The playground re-derives a score from your own calibration, so
+              // it's auth-gated — name it, but don't link into a sign-in bounce.
+              <>
+                Once you have an account, the Delivery Playground breaks that
+                score down signal by signal.
+              </>
+            )}{' '}
+            Everything else changes with the kind of question you&apos;re
             answering, following the question types university career centers
             consistently teach (<Cite href={REF.princeton}>Princeton</Cite>,{' '}
             <Cite href={REF.columbia}>Columbia</Cite>,{' '}

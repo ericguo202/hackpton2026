@@ -731,7 +731,7 @@ export default function Home() {
         document.body,
       )}
 
-      <SiteFooter showAbout />
+      <SiteFooter signedIn />
 
       <DeliveryConsentDialog
         open={consentModalOpen}
