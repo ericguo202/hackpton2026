@@ -9,6 +9,7 @@ export const RECOMMENDED_MIX = 'recommended_mix';
 // `QuestionCategory` enum). All four types are built and selectable.
 // `questionCategoryLabel` falls back to Experience (STAR) for unknown/legacy
 // values. `recommended_mix` is the picker sentinel (never a turn category).
+// recommended_mix is the default
 export const QUESTION_CATEGORY_LABELS: Record<string, string> = {
   [RECOMMENDED_MIX]: 'Recommended Mix',
   experience_star: 'Experience (STAR)',

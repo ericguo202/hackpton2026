@@ -5,7 +5,7 @@ policy-change notifier compares each policy's `CURRENT_*_VERSION` source constan
 against the stored `notified_version`; when the constant is higher it emails all
 users and bumps the row. This persistence is what lets a version bump be detected
 across deploys / blue-green replicas (the constants alone carry no "already
-notified" memory).
+notified" memory). Email by sending request to Mailgun.
 """
 
 from datetime import datetime
