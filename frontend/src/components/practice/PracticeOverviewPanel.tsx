@@ -16,7 +16,7 @@
 
 import type { DimensionAverages, TurnDetail } from '../../types/history';
 import { ScoresOverviewColumn } from '../session-detail/OverviewPanel';
-import { turnAverage } from '../session-detail/_helpers';
+import { isMixedCategorySession, turnAverage } from '../session-detail/_helpers';
 
 type Props = {
   company: string;
@@ -62,6 +62,11 @@ export function PracticeOverviewPanel({
     <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-6 min-[900px]:gap-8 p-6 min-[900px]:p-8">
       <IntroColumn company={company} jobTitle={jobTitle} />
       <ScoresOverviewColumn
+        // Label the tiles from the opening turn's category (STAR vs Motivation &
+        // Fit). A Recommended Mix session spanning multiple types shows only the
+        // type-invariant tiles (Structure + Delivery) — see ScoresOverviewColumn.
+        category={turns[0]?.question_category}
+        mixed={isMixedCategorySession(turns)}
         averages={effectiveAverages}
         caption={caption}
         fillerRate={sessionFillerRate(turns)}
@@ -71,11 +76,11 @@ export function PracticeOverviewPanel({
 }
 
 const SCORE_DIM_KEYS: ReadonlyArray<keyof DimensionAverages> = [
-  'structure',
-  'problem_solving',
-  'impact',
-  'initiative',
-  'depth',
+  'dimension_1',
+  'dimension_2',
+  'dimension_3',
+  'dimension_4',
+  'dimension_5',
   'delivery',
 ];
 

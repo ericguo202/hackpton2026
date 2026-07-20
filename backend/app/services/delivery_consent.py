@@ -80,11 +80,11 @@ def recompute_session_without_delivery(
         if turn.transcript_text is None:
             continue
         for value in (
-            turn.structure_score,
-            turn.problem_solving_score,
-            turn.impact_score,
-            turn.initiative_score,
-            turn.depth_score,
+            turn.dimension_1_score,
+            turn.dimension_2_score,
+            turn.dimension_3_score,
+            turn.dimension_4_score,
+            turn.dimension_5_score,
         ):
             if value is not None:
                 flat_scores.append(float(value))

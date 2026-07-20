@@ -18,22 +18,28 @@ Expected behaviors for /me:
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import Integer, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import ClerkClaims, current_user, get_current_user_db
-from app.db.models.enums import SessionStatus, UserTier
+from app.db.models.enums import QuestionCategory, SessionStatus, UserTier
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
 from app.db.models.saved_question import SavedQuestion
 from app.db.models.session_metrics import SessionMetrics
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.session import DimensionAverages, FillerWordStat, MeStatsOut
+from app.schemas.session import (
+    CategoryStat,
+    DimensionAverages,
+    FillerWordStat,
+    MeStatsOut,
+)
 from app.schemas.user import (
+    ActiveTargetRoleIn,
     DeliveryAnalyticsConsentIn,
     FaceCalibrationConsentIn,
     PolicyAcceptanceIn,
@@ -225,6 +231,34 @@ async def accept_policies(
     return user
 
 
+@router.put("/target-role", response_model=UserOut)
+async def switch_active_target_role(
+    body: ActiveTargetRoleIn,
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Home role switcher — re-point the active `target_role` at a stored role.
+
+    Only a role already in the caller's `target_roles` set can be activated; that
+    set was injection-gated + moderated at onboarding, so no re-check is needed
+    here. Switching the active role changes the shape of future opening questions,
+    so the recent-questions avoid-list is reset (same contract as onboarding).
+    """
+    if body.target_role not in (user.target_roles or []):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="That role is not one of your saved target roles.",
+        )
+
+    # No-op when it's already active — don't needlessly discard the avoid-list.
+    if body.target_role != user.target_role:
+        user.target_role = body.target_role
+        user.recent_opening_questions = []
+        await db.commit()
+        await db.refresh(user)
+    return user
+
+
 def _columns(obj, fields: tuple[str, ...]) -> dict:
     """Pull a fixed allowlist of column values off an ORM row into a dict.
 
@@ -236,6 +270,7 @@ def _columns(obj, fields: tuple[str, ...]) -> dict:
 
 _EXPORT_USER_FIELDS = (
     "id", "email", "name", "resume_text", "industry", "target_role",
+    "target_roles",
     "experience_level", "short_bio", "timezone", "tier",
     "delivery_analytics_consent_at", "delivery_analytics_consent_version",
     "delivery_analytics_revoked_at",
@@ -252,15 +287,15 @@ _EXPORT_SESSION_FIELDS = (
 )
 _EXPORT_TURN_FIELDS = (
     "id", "session_id", "turn_number", "question_text", "transcript_text",
-    "is_followup", "structure_score", "problem_solving_score", "impact_score",
-    "initiative_score", "depth_score", "delivery_score", "cv_summary",
+    "is_followup", "dimension_1_score", "dimension_2_score", "dimension_3_score",
+    "dimension_4_score", "dimension_5_score", "delivery_score", "cv_summary",
     "filler_word_count", "filler_word_breakdown", "word_count", "feedback",
     "feedback_detail", "ai_model_used", "evaluated_at", "created_at",
 )
 _EXPORT_METRICS_FIELDS = (
-    "avg_structure", "avg_problem_solving", "avg_initiative", "avg_impact",
-    "avg_depth", "avg_delivery", "total_filler_word_count", "total_word_count",
-    "overall_score", "turns_evaluated", "generated_at",
+    "avg_dimension_1", "avg_dimension_2", "avg_dimension_3", "avg_dimension_4",
+    "avg_dimension_5", "avg_delivery", "total_filler_word_count",
+    "total_word_count", "overall_score", "turns_evaluated", "generated_at",
 )
 _EXPORT_SAVED_QUESTION_FIELDS = (
     "id", "question_text", "company", "job_title", "category",
@@ -361,6 +396,9 @@ def _to_decimal(v) -> Decimal | None:
 async def get_me_stats(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
+    company: str | None = Query(None),
+    job_title: str | None = Query(None),
+    question_category: str | None = Query(None),
 ) -> MeStatsOut:
     """Roll up the caller's lifetime scoring history.
 
@@ -374,7 +412,97 @@ async def get_me_stats(
     `total_sessions` and `completed_sessions` but not the per-dimension
     averages (their metrics row is null). Acceptable for the demo: legacy
     rows wash out once a couple of new sessions land.
+
+    Optional `company` / `job_title` filters narrow every aggregate to the
+    sessions matching that value (case-insensitive equality). The History
+    page passes these so the summary tiles and the "Most used filler words"
+    bar can honor its Company / Role filter without a separate endpoint.
+    Empty/whitespace values are ignored (treated as no filter).
+
+    Optional `question_category` narrows the tiles + filler stats to *pure*
+    single-category sessions of that type (a session ALL of whose turns are
+    that category) — a single-category session's cached metrics ARE that
+    category's dimension averages, so this reuses the metrics cache and simply
+    excludes "Recommended Mix" sessions. Unknown values are ignored.
+    `by_category` is computed independently of this narrowing (it always spans
+    every category), honoring only the company/role filters.
     """
+    # Case-insensitive equality filters, applied to EVERY aggregate below so
+    # the returned object is internally coherent. Parameterized — no injection
+    # surface. Company/role filters are built first (they also feed the
+    # `by_category` rollup); the category narrowing is appended AFTER that
+    # rollup so it never restricts the cross-category radar data.
+    session_filters = []
+    if company and company.strip():
+        session_filters.append(
+            func.lower(InterviewSession.company) == company.strip().lower()
+        )
+    if job_title and job_title.strip():
+        session_filters.append(
+            func.lower(InterviewSession.job_title) == job_title.strip().lower()
+        )
+
+    # Per-category rollup (avg content score + turns evaluated), grouped from
+    # interview_turns so it correctly spans Recommended-Mix sessions. Honors
+    # the company/role filters but NOT the category narrowing below. Only
+    # scored turns contribute (dimension_1_score non-null is the "evaluated"
+    # check); the mean of the five content dims is the per-category score.
+    content_mean = (
+        InterviewTurn.dimension_1_score
+        + InterviewTurn.dimension_2_score
+        + InterviewTurn.dimension_3_score
+        + InterviewTurn.dimension_4_score
+        + InterviewTurn.dimension_5_score
+    ) / 5.0
+    by_category_rows = (await db.execute(
+        select(
+            InterviewTurn.question_category.label("cat"),
+            func.count(InterviewTurn.id).label("turns"),
+            func.avg(content_mean).label("avg_score"),
+        )
+        .select_from(InterviewTurn)
+        .join(InterviewSession, InterviewSession.id == InterviewTurn.session_id)
+        .where(
+            InterviewSession.user_id == user.id,
+            InterviewSession.status == SessionStatus.completed,
+            InterviewTurn.dimension_1_score.isnot(None),
+            *session_filters,
+        )
+        .group_by(InterviewTurn.question_category)
+    )).all()
+    by_category = [
+        CategoryStat(
+            question_category=(
+                r.cat.value if hasattr(r.cat, "value") else str(r.cat)
+            ),
+            average_score=_to_decimal(r.avg_score),
+            turns_evaluated=int(r.turns or 0),
+        )
+        for r in by_category_rows
+    ]
+
+    # Category narrowing (appended after the rollup): restrict the tiles +
+    # filler stats to sessions ALL of whose turns are the requested category.
+    # `bool_and` over the session's turns is true only for a pure-category
+    # session, so Mix sessions drop out. Unknown category values fail soft.
+    if question_category and question_category.strip():
+        try:
+            qc_enum = QuestionCategory(question_category.strip())
+        except ValueError:
+            qc_enum = None
+        if qc_enum is not None:
+            pure_category_sessions = (
+                select(InterviewTurn.session_id)
+                .group_by(InterviewTurn.session_id)
+                .having(
+                    func.bool_and(InterviewTurn.question_category == qc_enum)
+                )
+                .scalar_subquery()
+            )
+            session_filters.append(
+                InterviewSession.id.in_(pure_category_sessions)
+            )
+
     # Total / completed counts come straight from `interview_sessions`.
     counts_row = (await db.execute(
         select(
@@ -382,18 +510,18 @@ async def get_me_stats(
             func.count(InterviewSession.id).filter(
                 InterviewSession.status == SessionStatus.completed
             ).label("completed"),
-        ).where(InterviewSession.user_id == user.id)
+        ).where(InterviewSession.user_id == user.id, *session_filters)
     )).one()
 
     # Per-dimension averages + filler totals come from the cached metrics
     # rows for the user's COMPLETED sessions only.
     metrics_row = (await db.execute(
         select(
-            func.avg(SessionMetrics.avg_structure).label("st"),
-            func.avg(SessionMetrics.avg_problem_solving).label("ps"),
-            func.avg(SessionMetrics.avg_impact).label("im"),
-            func.avg(SessionMetrics.avg_initiative).label("ini"),
-            func.avg(SessionMetrics.avg_depth).label("dp"),
+            func.avg(SessionMetrics.avg_dimension_1).label("st"),
+            func.avg(SessionMetrics.avg_dimension_2).label("ps"),
+            func.avg(SessionMetrics.avg_dimension_3).label("im"),
+            func.avg(SessionMetrics.avg_dimension_4).label("ini"),
+            func.avg(SessionMetrics.avg_dimension_5).label("dp"),
             func.avg(SessionMetrics.avg_delivery).label("dl"),
             func.coalesce(
                 func.sum(SessionMetrics.total_filler_word_count), 0
@@ -413,6 +541,7 @@ async def get_me_stats(
         .where(
             InterviewSession.user_id == user.id,
             InterviewSession.status == SessionStatus.completed,
+            *session_filters,
         )
     )).one()
 
@@ -435,6 +564,7 @@ async def get_me_stats(
         .where(
             InterviewSession.user_id == user.id,
             InterviewSession.status == SessionStatus.completed,
+            *session_filters,
         )
         .group_by(kv.c.key)
         .order_by(desc("count"), kv.c.key.asc())
@@ -457,13 +587,14 @@ async def get_me_stats(
         # 20-word one.
         filler_word_rate=filler_rate_pct(total_fillers, total_words),
         averages=DimensionAverages(
-            structure=_to_decimal(metrics_row.st),
-            problem_solving=_to_decimal(metrics_row.ps),
-            impact=_to_decimal(metrics_row.im),
-            initiative=_to_decimal(metrics_row.ini),
-            depth=_to_decimal(metrics_row.dp),
+            dimension_1=_to_decimal(metrics_row.st),
+            dimension_2=_to_decimal(metrics_row.ps),
+            dimension_3=_to_decimal(metrics_row.im),
+            dimension_4=_to_decimal(metrics_row.ini),
+            dimension_5=_to_decimal(metrics_row.dp),
             delivery=_to_decimal(metrics_row.dl),
         ),
         average_overall_score=_to_decimal(metrics_row.overall),
         top_filler_words=top_filler_words,
+        by_category=by_category,
     )

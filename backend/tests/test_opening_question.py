@@ -8,11 +8,11 @@ from types import SimpleNamespace
 import pytest
 
 from app.db.models.enums import ExperienceLevel
-from app.services._field_prompts import (
-    DEFAULT_CATEGORY,
-    FIELD_EXAMPLES,
-    FIELD_THEMES,
-    build_field_system_prompt,
+from app.services._field_categories import DEFAULT_CATEGORY
+from app.services._star_opening_prompts import (
+    STAR_FIELD_EXAMPLES,
+    STAR_FIELD_THEMES,
+    build_star_opening_prompt,
 )
 from app.services.company_research import CompanyBrief
 from app.services.opening_question import (
@@ -300,11 +300,11 @@ async def test_standard_style_jd_summary_has_no_inspiration_nudge(monkeypatch):
     assert "draw INSPIRATION" not in prompt
 
 
-# ── _field_prompts.build_field_system_prompt ──────────────────────────────────
+# ── _star_opening_prompts.build_star_opening_prompt ───────────────────────────
 
 
-def test_build_field_system_prompt_interpolates_category():
-    prompt = build_field_system_prompt(
+def test_build_star_opening_prompt_interpolates_category():
+    prompt = build_star_opening_prompt(
         "Healthcare and Life Sciences", rng=random.Random(0),
     )
     # Category name is in the canonical preamble.
@@ -314,30 +314,30 @@ def test_build_field_system_prompt_interpolates_category():
     assert "20-25 words" in prompt
 
 
-def test_build_field_system_prompt_shows_all_themes():
+def test_build_star_opening_prompt_shows_all_themes():
     """Themes catalog is shown in full (all 5) regardless of example rotation."""
     category = "Cybersecurity and Risk"
-    prompt = build_field_system_prompt(category, rng=random.Random(0))
-    for theme in FIELD_THEMES[category]:
+    prompt = build_star_opening_prompt(category, rng=random.Random(0))
+    for theme in STAR_FIELD_THEMES[category]:
         assert theme in prompt
 
 
-def test_build_field_system_prompt_samples_two_examples_per_call():
+def test_build_star_opening_prompt_samples_two_examples_per_call():
     """Only 2 of the 5 examples show up in any single assembled prompt."""
     category = DEFAULT_CATEGORY
-    prompt = build_field_system_prompt(category, rng=random.Random(0))
-    present = [e for e in FIELD_EXAMPLES[category] if e in prompt]
+    prompt = build_star_opening_prompt(category, rng=random.Random(0))
+    present = [e for e in STAR_FIELD_EXAMPLES[category] if e in prompt]
     assert len(present) == 2
 
 
-def test_build_field_system_prompt_rotates_examples_across_calls():
+def test_build_star_opening_prompt_rotates_examples_across_calls():
     """Different seeds produce different example slices — the rotation
     is the load-bearing fix for "same opening question over and over"."""
     category = DEFAULT_CATEGORY
-    prompt_a = build_field_system_prompt(category, rng=random.Random(0))
-    prompt_b = build_field_system_prompt(category, rng=random.Random(7))
+    prompt_a = build_star_opening_prompt(category, rng=random.Random(0))
+    prompt_b = build_star_opening_prompt(category, rng=random.Random(7))
 
-    examples = FIELD_EXAMPLES[category]
+    examples = STAR_FIELD_EXAMPLES[category]
     slice_a = {e for e in examples if e in prompt_a}
     slice_b = {e for e in examples if e in prompt_b}
     # At least one example differs across the two seeded calls. With
@@ -346,10 +346,10 @@ def test_build_field_system_prompt_rotates_examples_across_calls():
     assert slice_a != slice_b
 
 
-def test_build_field_system_prompt_deterministic_with_pinned_rng():
+def test_build_star_opening_prompt_deterministic_with_pinned_rng():
     """Identical seeds produce identical prompts — the seam tests use."""
-    prompt_a = build_field_system_prompt(DEFAULT_CATEGORY, rng=random.Random(42))
-    prompt_b = build_field_system_prompt(DEFAULT_CATEGORY, rng=random.Random(42))
+    prompt_a = build_star_opening_prompt(DEFAULT_CATEGORY, rng=random.Random(42))
+    prompt_b = build_star_opening_prompt(DEFAULT_CATEGORY, rng=random.Random(42))
     assert prompt_a == prompt_b
 
 

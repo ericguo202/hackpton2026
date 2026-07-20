@@ -16,22 +16,36 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.session import CompanyBriefOut, ScoresOut
+from app.services.voice_pool import DEFAULT_PACE, SpeechPace
 
 
 class SavedQuestionCreateIn(BaseModel):
-    """Save the opening question of an existing completed session."""
+    """Save an opening question of an existing completed session.
+
+    `turn_id` targets a specific opening turn — story-block interviews have
+    more than one opening (turn 1 plus a fresh opening at each block pivot),
+    and any of them is savable. Omitted → the session's first opening (turn 1),
+    preserving the pre-story-block behavior. Follow-up turns are rejected
+    server-side (only openings are savable).
+    """
 
     session_id: UUID
+    turn_id: UUID | None = None
 
 
 class RePracticeIn(BaseModel):
     """Start a fresh practice attempt of a saved question.
 
-    Same optional knobs as `SessionCreateIn` (voice + timezone); company /
-    job_title / question come frozen off the saved row, so they're absent here.
+    Same optional knobs as `SessionCreateIn` (voice + speech pace + timezone);
+    company / job_title / question come frozen off the saved row, so they're
+    absent here.
     """
 
     voice_id: str | None = Field(default=None, max_length=64)
+    # Per-session interview-voice pace, same "Normal" (default) / "Slower"
+    # choice as `SessionCreateIn`. Resolved to a per-voice `voice_settings.speed`
+    # server-side via `voice_pool.resolve_speed`.
+    speech_pace: SpeechPace = DEFAULT_PACE
     timezone: str | None = Field(default=None, max_length=64)
 
 
@@ -61,6 +75,11 @@ class SavedQuestionListItem(BaseModel):
     attempt_count: int
     last_practiced_at: datetime | None
     avg_overall_score: Decimal | None
+    # The FORM axis of the frozen opening (a `QuestionCategory` value, stamped
+    # from the saved turn). Lets the History page's saved-questions section
+    # honor the question-category filter. Defaults to "experience_star" for
+    # legacy rows saved before the column existed.
+    question_category: str = "experience_star"
 
 
 class SavedQuestionAttempt(BaseModel):
@@ -98,3 +117,7 @@ class SavedQuestionDetailOut(BaseModel):
     created_at: datetime
     summary: CompanyBriefOut | None
     attempts: list[SavedQuestionAttempt]
+    # The FORM axis of the frozen opening (a `QuestionCategory` value). Labels
+    # the detail page's trend chart + radar with the right rubric's dimensions.
+    # Defaults to "experience_star" for legacy rows saved before the column.
+    question_category: str = "experience_star"

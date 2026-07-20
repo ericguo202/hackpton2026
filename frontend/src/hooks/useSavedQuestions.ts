@@ -10,6 +10,7 @@ import { useCallback } from 'react';
 
 import { useApi } from './useApi';
 import { useFetch } from './useFetch';
+import type { SpeechPace } from '../components/SpeechSpeedToggle';
 import type {
   SavedQuestionListItem,
   SavedQuestionOut,
@@ -21,6 +22,7 @@ export type RePracticeResult = {
   summary: { description: string; headlines: string[]; values: string[] };
   first_question: string;
   first_question_audio_url: string;
+  first_question_category: string;
 };
 
 export function useSavedQuestions() {
@@ -29,10 +31,18 @@ export function useSavedQuestions() {
     useFetch<SavedQuestionListItem[]>('/api/v1/saved-questions');
 
   const save = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, turnId?: string) => {
       const created = await apiFetch<SavedQuestionOut>(
         '/api/v1/saved-questions',
-        { method: 'POST', body: JSON.stringify({ session_id: sessionId }) },
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            session_id: sessionId,
+            // Target a specific opening turn (mid-session openings are
+            // savable too); omitted → the backend saves turn 1.
+            ...(turnId ? { turn_id: turnId } : {}),
+          }),
+        },
       );
       await fetchSaved();
       return created;
@@ -49,12 +59,13 @@ export function useSavedQuestions() {
   );
 
   const rePractice = useCallback(
-    async (id: string, voiceId?: string | null) =>
+    async (id: string, voiceId?: string | null, speechPace?: SpeechPace) =>
       apiFetch<RePracticeResult>(`/api/v1/saved-questions/${id}/practice`, {
         method: 'POST',
         body: JSON.stringify({
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(voiceId ? { voice_id: voiceId } : {}),
+          ...(speechPace !== undefined ? { speech_pace: speechPace } : {}),
         }),
       }),
     [apiFetch],

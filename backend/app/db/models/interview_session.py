@@ -12,7 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Numeric, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -27,6 +27,7 @@ class InterviewSession(Base):
         CheckConstraint(
             "overall_score BETWEEN 0 AND 100", name="ck_sessions_overall_score"
         ),
+        CheckConstraint("num_turns BETWEEN 2 AND 8", name="ck_sessions_num_turns"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -48,6 +49,9 @@ class InterviewSession(Base):
     # Snapshot of the start-form inputs at session-create time.
     company: Mapped[str] = mapped_column(Text, nullable=False)
     job_title: Mapped[str] = mapped_column(Text, nullable=False)
+    num_turns: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("2")
+    )
 
     # Gemini's per-session company-research output (architecture step 1).
     company_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -66,6 +70,16 @@ class InterviewSession(Base):
     # `voice_for_session(session.id)` in that case.
     voice_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Per-session speech pace passed to ElevenLabs as `voice_settings.speed`
+    # (see `tts.NORMAL_SPEED`/`SLOWER_SPEED`). Picked on the setup form's
+    # Advanced panel and persisted here so turn 2's TTS uses the same pace the
+    # candidate chose for turn 1. Nullable for legacy rows created before this
+    # column existed; the TTS call sites fall back to `tts.DEFAULT_SPEED` via
+    # `clamp_speed(None)` in that case.
+    speech_speed: Mapped[Decimal | None] = mapped_column(
+        Numeric(3, 2), nullable=True
+    )
+
     # Frozen candidate seniority for THIS session. Stamped at create time from
     # the user's live `experience_level` (or from a saved question's frozen
     # level on re-practice). `submit_turn` reads this — NOT the live user row —
@@ -77,6 +91,21 @@ class InterviewSession(Base):
     experience_level: Mapped[ExperienceLevel | None] = mapped_column(
         Enum(ExperienceLevel, name="experience_level", create_type=False),
         nullable=True,
+    )
+
+    clarification_retry_used: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
+    # "Recommended Mix" mode: when true, each story-block opening draws a
+    # question category from the level+field calibrated weights
+    # (`_category_weights.draw_opening_category`) instead of the session being
+    # locked to one type. Stamped at create time; `submit_turn`'s opening-pivot
+    # branch reads it to decide whether to draw a fresh category or inherit the
+    # just-answered turn's. Legacy rows default false (byte-identical
+    # single-category behavior).
+    calibrated_mix: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
     )
 
     # Links this session to the saved question it was a practice attempt of.

@@ -10,6 +10,7 @@ GET  /api/v1/sessions/{id}        — full session detail (session + turns).
 import asyncio
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -20,7 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from app.core.auth import get_current_user_db
-from app.db.models.enums import ExperienceLevel, SessionStatus, UserTier
+from app.db.models.enums import (
+    ExperienceLevel,
+    QuestionCategory,
+    SessionStatus,
+    UserTier,
+)
 from app.db.models.custom_question import CustomQuestion
 from app.db.models.interview_session import InterviewSession
 from app.db.models.interview_turn import InterviewTurn
@@ -34,16 +40,19 @@ from app.schemas.session import (
     SessionCreateIn,
     SessionCreateOut,
     SessionDetailOut,
+    SessionEndOut,
     SessionListItem,
     TurnOut,
     TurnSubmitOut,
 )
 from app.services import eval_registry
 from app.services.company_research import (
+    CompanyBrief,
     CompanyNotFoundError,
+    DEFAULT_CATEGORY,
     research_company,
 )
-from app.services._field_prompts import FieldCategory
+from app.services._field_categories import FieldCategory
 from app.services._injection import contains_injection
 from app.services.daily_limit import (
     enforce_daily_limit,
@@ -53,7 +62,11 @@ from app.services.coaching import generate_next_take
 from app.services.delivery_consent import has_active_delivery_analytics_consent
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
 from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
-from app.services.followup import generate_followup
+from app.services.followup import (
+    generate_followup_transition,
+    should_continue_followup,
+    _tts_text,
+)
 from app.services.incidents import (
     log_error,
     log_injection_detected,
@@ -65,10 +78,11 @@ from app.services.job_description import (
     looks_like_gibberish,
 )
 from app.services.moderation import check_moderation
+from app.services._category_weights import draw_opening_category
 from app.services.opening_question import generate_opening_question
 from app.services.stt import transcribe_audio
-from app.services.tts import synthesize_speech
-from app.services.voice_pool import resolve_voice, voice_for_session
+from app.services.tts import DEFAULT_SPEED, synthesize_speech
+from app.services.voice_pool import resolve_speed, resolve_voice, voice_for_session
 
 logger = logging.getLogger(__name__)
 
@@ -133,8 +147,12 @@ async def _persist_session_and_turn(
     session_id: UUID,
     voice_id: str,
     experience_level: ExperienceLevel | None,
+    num_turns: int = 2,
     roll_recent: bool = True,
     saved_question_id: UUID | None = None,
+    speech_speed: float = DEFAULT_SPEED,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
+    calibrated_mix: bool = False,
 ) -> UUID:
     """INSERT the session row + turn 1 atomically; return session.id.
 
@@ -165,7 +183,10 @@ async def _persist_session_and_turn(
         started_at=func.now(),
         voice_id=voice_id,
         experience_level=experience_level,
+        num_turns=num_turns,
         saved_question_id=saved_question_id,
+        speech_speed=speech_speed,
+        calibrated_mix=calibrated_mix,
     )
     db.add(session)
     await db.flush()
@@ -175,6 +196,10 @@ async def _persist_session_and_turn(
         turn_number=1,
         question_text=opening_q,
         is_followup=False,
+        # The session's chosen question FORM (single-category per session).
+        # Defaults to Experience/STAR for callers that don't pass it (re-practice,
+        # custom questions). Every later turn inherits this in submit_turn.
+        question_category=question_category,
     )
     db.add(turn)
 
@@ -276,7 +301,11 @@ async def create_session(
     # concurrently; each logs its incident in its own short-lived session, so the
     # request `db` is never touched concurrently.
     moderation_targets = [("sessions.company", body.company)]
-    if body.job_title != user.target_role:
+    # `job_title` is the profile's active role by default, but a multi-role user
+    # can start a session under any of their declared roles — all of which were
+    # moderated at onboarding. Skip re-moderation when it matches ANY stored role.
+    vetted_roles = user.target_roles or ([user.target_role] if user.target_role else [])
+    if body.job_title not in vetted_roles:
         moderation_targets.append(("sessions.job_title", body.job_title))
     # The pasted job description is freshly user-supplied each session, so it
     # always needs moderation when present.
@@ -347,12 +376,30 @@ async def create_session(
             db=db,
         )
 
+    # "Recommended Mix" mode: each story-block opening draws a calibrated category
+    # from the user's level + researched field. A custom question is verbatim user
+    # text (not a generated opening), so Mix never applies to it.
+    mixed_mode = body.calibrated_mix and custom_question is None
+
+    # The category used to select the RESEARCH variant. The situational research
+    # variant (accurate company principles + situational themes) is picked BEFORE
+    # research, so it needs a category up front. In Mix mode the field category
+    # (which drives the turn-1 draw) only exists AFTER research, so we can't
+    # pre-select the situational variant — Mix uses the standard/behavioral brief
+    # (see plan "Known limitations"). Custom questions are STAR verbatim.
+    research_category = (
+        QuestionCategory.experience_star
+        if (custom_question is not None or mixed_mode)
+        else body.question_category
+    )
+
     try:
         brief = await research_company(
             body.company,
             body.job_title,
             user.experience_level,
             job_description=job_description or None,
+            question_category=research_category,
         )
     except CompanyNotFoundError:
         raise HTTPException(
@@ -363,6 +410,22 @@ async def create_session(
         "Session research complete: company=%r job_title=%r category=%r",
         body.company, body.job_title, brief.category,
     )
+
+    # The FORM stamped on turn 1. In Mix mode, drawn from the calibrated weights
+    # now that the field category is known (turn 1 of a >2-turn session carries
+    # the "tell me about yourself" M&F bias); otherwise the picker's single
+    # category (STAR for custom questions). Later openings redraw in submit_turn.
+    if mixed_mode:
+        question_category = draw_opening_category(
+            field=brief.category,
+            level=user.experience_level,
+            num_turns=body.num_turns,
+            used=set(),
+            is_first_opening=True,
+        )
+    else:
+        question_category = research_category
+
     if custom_question is not None:
         # The candidate picked their own question — skip the opening-question
         # LLM call entirely and use the (already-screened) custom text verbatim.
@@ -374,6 +437,7 @@ async def create_session(
         opening_q = await generate_opening_question(
             user, brief, body.job_title,
             recent_questions=user.recent_opening_questions,
+            question_category=question_category,
         )
 
     # Generate the session UUID up front so the voice can be resolved
@@ -383,11 +447,16 @@ async def create_session(
     session_id = uuid.uuid4()
     # Honor the candidate's picker choice when valid, else a deterministic
     # per-session voice (see `resolve_voice`). The resolved voice is persisted
-    # on the session row below so turn 2's TTS reads the same value.
+    # on the session row below so every follow-up TTS reads the same value.
     voice_id = resolve_voice(body.voice_id, session_id)
+    # Turn the "Normal"/"Slower" toggle into this voice's tuned speed now that
+    # the voice is resolved (works for the "Surprise me" path, where the
+    # frontend couldn't know the voice). The resolved float is persisted and
+    # reused verbatim by turn 2's follow-up TTS.
+    speech_speed = resolve_speed(voice_id, body.speech_pace)
 
     audio_url, _ = await asyncio.gather(
-        synthesize_speech(opening_q, voice_id=voice_id),
+        synthesize_speech(opening_q, voice_id=voice_id, speed=speech_speed),
         _persist_session_and_turn(
             db,
             user,
@@ -398,9 +467,15 @@ async def create_session(
             session_id=session_id,
             voice_id=voice_id,
             experience_level=user.experience_level,
+            num_turns=body.num_turns,
             # A custom question is a deliberate, reusable pick — don't push it
             # into the generation avoid-list (it isn't a generated question).
             roll_recent=custom_question is None,
+            # Persist the resolved pace so turn 2's TTS matches turn 1.
+            speech_speed=speech_speed,
+            # Stamp turn 1 with the session's chosen category (STAR for custom).
+            question_category=question_category,
+            calibrated_mix=mixed_mode,
         ),
     )
     await log_interview_session_started(
@@ -410,6 +485,7 @@ async def create_session(
         metadata={
             "company": body.company,
             "job_title": body.job_title,
+            "num_turns": body.num_turns,
             "custom_question": custom_question is not None,
         },
     )
@@ -418,6 +494,9 @@ async def create_session(
         session_id=session_id,
         summary=CompanyBriefOut(**brief.model_dump()),
         first_question=opening_q,
+        first_question_category=question_category.value,
+        num_turns=body.num_turns,
+        calibrated_mix=mixed_mode,
         first_question_audio_url=audio_url,
     )
 
@@ -432,6 +511,78 @@ async def create_session(
 # résumé read (`_read_pdf_bounded`).
 _MAX_AUDIO_BYTES = 50 * 1024 * 1024
 _AUDIO_CHUNK_SIZE = 1024 * 1024
+_FALLBACK_CLARIFICATION_QUESTION = (
+    "Tell me about one specific work or school situation, what you did, and what happened."
+)
+# Matched at the START of the utterance (after leading filler is stripped), so
+# these are clarification *openers*, not substrings. The modal branch is
+# compositional — "(can|could|would|will) [you] [please] <verb>" — so an
+# interposed "you"/"please" ("can you please clarify that") doesn't break the
+# match the way a fixed "can you clarify" literal would.
+_CLARIFICATION_RE = re.compile(
+    r"(?:"
+    r"(?:can|could|would|will) (?:you )?(?:please )?"
+    r"(?:clarify|be more (?:explicit|specific)|"
+    r"explain (?:the |that |your )?question|repeat (?:the |that )?question)"
+    r"|please clarify"
+    r"|clarify (?:the question|that)"
+    r"|what (?:do|did) you mean"
+    r"|what are you asking"
+    r"|be more (?:explicit|specific)"
+    r"|challenge regarding what"
+    r")\b",
+    re.IGNORECASE,
+)
+# Politeness/filler the candidate might utter *before* the clarification
+# proper ("uh, sorry. can you clarify that, please?"). Stripped from the front
+# so the anchored match below still fires, without opening the door to
+# mid-sentence matches. The trailing separator class swallows any run of
+# whitespace/punctuation between filler tokens — including the sentence period
+# in "sorry. can you..." — so a filler word ending a clause doesn't block the
+# next token from being recognized.
+_CLARIFICATION_LEADING_FILLER_RE = re.compile(
+    r"^(?:"
+    r"sorry|please|excuse me|um+|uh+|uhm+|er+|erm+|hmm+|hey|hi|wait|so|yeah|"
+    r"yep|well|oh|okay|ok|like|but|and|i'?m sorry|my bad"
+    r")\b[\s,.;:!?\-]*",
+    re.IGNORECASE,
+)
+
+
+def _is_clarification_request(transcript: str) -> bool:
+    """Conservative detector for explicit clarification requests only.
+
+    The clarification phrase must *lead* the utterance (after stripping any
+    leading politeness/filler), not merely appear somewhere inside it. This is
+    what separates a real "What do you mean?" from a genuine — if short — answer
+    that narrates one ("I asked my manager what do you mean by scalable, then I
+    built it."), which should be scored normally, not silently re-asked.
+    """
+    cleaned = " ".join((transcript or "").strip().lower().split())
+    if not cleaned or len(cleaned) > 180:
+        return False
+    prev = None
+    while prev != cleaned:
+        prev = cleaned
+        cleaned = _CLARIFICATION_LEADING_FILLER_RE.sub("", cleaned, count=1)
+    return bool(_CLARIFICATION_RE.match(cleaned))
+
+
+def _clarified_question(question: str) -> str:
+    """Re-ask the same prompt with a concrete-answer frame."""
+    q = " ".join((question or "").strip().split())
+    if not q:
+        return _FALLBACK_CLARIFICATION_QUESTION
+    stripped = q.rstrip("?.!")
+    lower = stripped.lower()
+    if lower.startswith("tell me about"):
+        return f"{stripped} using one specific work or school example."
+    if lower.startswith("describe"):
+        return (
+            f"{stripped} using one specific situation and what you personally did."
+        )
+    topic = stripped[0].lower() + stripped[1:] if stripped else "the situation"
+    return f"Using one specific work or school example, {topic}?"
 
 
 async def _read_audio_bounded(audio: UploadFile) -> bytes:
@@ -453,21 +604,57 @@ async def _read_audio_bounded(audio: UploadFile) -> bytes:
     return bytes(buf)
 
 
+async def _insert_next_turn(
+    db: AsyncSession,
+    session_id: UUID,
+    *,
+    turn_number: int,
+    question: str,
+    is_followup: bool,
+    parent_turn_id: UUID | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
+) -> None:
+    """Insert the next turn and flush (caller commits).
+
+    Handles both branches of the story-block flow: a follow-up
+    (`is_followup=True`, `parent_turn_id` = the block's opening turn) and a
+    fresh opening (`is_followup=False`, `parent_turn_id=None`).
+
+    `question_category` is `experience_star` for every turn today; it's a
+    parameter (not hard-coded) so the future question-type routing sets it in
+    one place when the other three types are generated.
+    """
+    db.add(InterviewTurn(
+        session_id=session_id,
+        turn_number=turn_number,
+        question_text=question,
+        is_followup=is_followup,
+        parent_turn_id=parent_turn_id,
+        question_category=question_category,
+    ))
+    await db.flush()
+
+
 async def _insert_followup_turn(
     db: AsyncSession,
     session_id: UUID,
     parent_turn_id: UUID,
+    turn_number: int,
     question: str,
 ) -> None:
-    """Insert turn 2 and flush (caller commits)."""
-    db.add(InterviewTurn(
-        session_id=session_id,
-        turn_number=2,
-        question_text=question,
+    """Insert the next follow-up turn and flush (caller commits).
+
+    Thin wrapper over `_insert_next_turn` kept for callers/tests that only
+    ever produce follow-ups.
+    """
+    await _insert_next_turn(
+        db,
+        session_id,
+        turn_number=turn_number,
+        question=question,
         is_followup=True,
         parent_turn_id=parent_turn_id,
-    ))
-    await db.flush()
+    )
 
 
 async def _followup_and_tts(
@@ -479,6 +666,10 @@ async def _followup_and_tts(
     sample_question_themes: list[str] | None = None,
     experience_level: ExperienceLevel | None = None,
     jd_summary: list[str] | None = None,
+    already_asked: list[str] | None = None,
+    block_history: list[dict[str, str]] | None = None,
+    speech_speed: float | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
 ) -> tuple[str, str]:
     """Generate follow-up via Flash then TTS — runs before background eval.
 
@@ -493,8 +684,13 @@ async def _followup_and_tts(
     facts, empty/None otherwise) is threaded the same way so the follow-up
     doesn't mischaracterize how the role operates — e.g. probing group
     collaboration for a solo role.
+
+    `already_asked` (questions already posed this interview) and `block_history`
+    (the current story block's prior Q/A pairs) keep a follow-up from repeating
+    or re-treading earlier questions — the anti-repetition half of the
+    variety fix.
     """
-    next_q = await generate_followup(
+    generated = await generate_followup_transition(
         question,
         transcript,
         category=category,
@@ -502,9 +698,217 @@ async def _followup_and_tts(
         sample_question_themes=sample_question_themes,
         experience_level=experience_level,
         jd_summary=jd_summary,
+        already_asked=already_asked,
+        block_history=block_history,
+        question_category=question_category,
     )
-    audio_url = await synthesize_speech(next_q, voice_id=voice_id)
+    audio_url = await synthesize_speech(
+        _tts_text(generated), voice_id=voice_id, speed=speech_speed
+    )
+    return generated.question, audio_url
+
+
+async def _opening_and_tts(
+    user: User,
+    brief: CompanyBrief,
+    job_title: str,
+    recent_questions: list[str],
+    voice_id: str,
+    speech_speed: float | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
+) -> tuple[str, str]:
+    """Generate a fresh opening question mid-session, then TTS.
+
+    Sibling of `_followup_and_tts` — kept separate because the two generators
+    take disjoint inputs (an opening needs the candidate profile + research
+    brief + avoid-list; a follow-up needs the prior question + transcript).
+    Research is reused from the persisted brief, so no Serper call here. Reuses
+    the session's persisted voice so a mid-session opening sounds like the same
+    interviewer, and the session's persisted `speech_speed` so it plays at the
+    pace the candidate chose at create time.
+
+    `question_category` selects the opening's FORM (STAR vs Motivation & Fit),
+    threaded from the routing decision; every mid-session opening is
+    `experience_star` today.
+    """
+    next_q = await generate_opening_question(
+        user, brief, job_title, recent_questions=recent_questions,
+        question_category=question_category,
+    )
+    audio_url = await synthesize_speech(
+        next_q, voice_id=voice_id, speed=speech_speed
+    )
     return next_q, audio_url
+
+
+# ── story-block routing helpers ──────────────────────────────────────────────
+
+def _service_brief_from_out(out: "CompanyBriefOut | None") -> CompanyBrief | None:
+    """Rebuild the service `CompanyBrief` from the persisted wire model.
+
+    `generate_opening_question` takes the `company_research.CompanyBrief`
+    service type, but mid-session we only hold the `CompanyBriefOut` reparsed
+    from `session.company_summary`. The fields are identical except `category`
+    is nullable on the wire (legacy rows) and required-with-default on the
+    service model, so coalesce it. Returns None when there's no usable brief —
+    the caller then falls back to a follow-up rather than an opening.
+    """
+    if out is None:
+        return None
+    data = out.model_dump()
+    if data.get("category") is None:
+        data["category"] = DEFAULT_CATEGORY
+    return CompanyBrief.model_validate(data)
+
+
+def _followup_streak(turns_in_order: list[InterviewTurn]) -> int:
+    """Count consecutive follow-ups at the tail of an ordered turn list.
+
+    0 means the last turn is an opening; 1 means one follow-up since the last
+    opening; 2 means two (the block's cap).
+    """
+    streak = 0
+    for turn in reversed(turns_in_order):
+        if turn.is_followup:
+            streak += 1
+        else:
+            break
+    return streak
+
+
+def _block_opening_id(turns_in_order: list[InterviewTurn]) -> UUID:
+    """The id of the opening turn that starts the trailing story block.
+
+    Walks back past the trailing follow-ups to the opening they belong to. The
+    parent of any follow-up is always its block's opening (turn 1 is always an
+    opening, so this loop always finds one).
+    """
+    for turn in reversed(turns_in_order):
+        if not turn.is_followup:
+            return turn.id
+    return turns_in_order[-1].id
+
+
+def _block_route(fu_streak: int, has_brief: bool) -> str:
+    """Deterministic part of story-block routing.
+
+    Returns one of 'followup' (drill in), 'opening' (pivot to a new story), or
+    'decide' (ask the model whether to probe once more). A missing brief can't
+    build an opening, so we always drill in then — which also keeps pre-
+    story-block rows byte-identical to the old single-follow-up flow.
+    """
+    if not has_brief or fu_streak == 0:
+        return "followup"
+    if fu_streak >= 2:
+        return "opening"
+    return "decide"
+
+
+def _current_block_history(
+    prior_turns: list[InterviewTurn],
+    current_turn: InterviewTurn,
+    current_transcript: str,
+) -> list[dict[str, str]]:
+    """Q&A pairs for the current story block, oldest-first.
+
+    When `current_turn` is a follow-up: the trailing opening in `prior_turns`
+    plus every follow-up after it, then the just-answered `current_turn`
+    (whose transcript isn't persisted into `prior_turns` yet). When
+    `current_turn` is an OPENING it *starts* a new block, so the block is just
+    the current pair — walking `prior_turns` here would mislabel the PREVIOUS
+    block's Q/As as "this story" and steer the next follow-up back onto the
+    prior story's content. Shape matches the evaluator's `history`.
+    """
+    block: list[InterviewTurn] = []
+    if current_turn.is_followup:
+        for turn in reversed(prior_turns):
+            block.append(turn)
+            if not turn.is_followup:
+                break
+        block.reverse()
+    history = [
+        {"question": t.question_text, "transcript": t.transcript_text or ""}
+        for t in block
+    ]
+    history.append(
+        {"question": current_turn.question_text, "transcript": current_transcript}
+    )
+    return history
+
+
+def _session_opening_avoid_list(
+    prior_turns: list[InterviewTurn],
+    current_turn: InterviewTurn,
+    user: User,
+) -> list[str]:
+    """Avoid-list for a mid-session opening: every question asked this session
+    (including the one just answered) plus the user's cross-session recents,
+    de-duplicated with order preserved. Fed to
+    `generate_opening_question(recent_questions=...)` so a new opening repeats
+    neither an intra-session nor a recent cross-session question.
+    """
+    candidates = (
+        [t.question_text for t in prior_turns]
+        + [current_turn.question_text]
+        + list(user.recent_opening_questions or [])
+    )
+    seen: list[str] = []
+    for q in candidates:
+        if q and q not in seen:
+            seen.append(q)
+    return seen
+
+
+def _session_asked_questions(
+    prior_turns: list[InterviewTurn],
+    current_turn: InterviewTurn,
+) -> list[str]:
+    """Every question asked so far this session (openings AND follow-ups),
+    de-duplicated with order preserved. Fed to the follow-up generator's
+    avoid-list so a follow-up doesn't echo any earlier question — in
+    particular so a 2nd follow-up in a block doesn't re-tread the 1st.
+
+    Within-session only: unlike `_session_opening_avoid_list` it omits the
+    user's cross-session recents, since follow-ups are answer-contextual and
+    cross-session repetition is already handled for openings.
+    """
+    seen: list[str] = []
+    for q in [t.question_text for t in prior_turns] + [current_turn.question_text]:
+        if q and q not in seen:
+            seen.append(q)
+    return seen
+
+
+def _roll_session_openings_into_recent(
+    session: InterviewSession,
+    user: User,
+    turns: list[InterviewTurn],
+) -> None:
+    """Fold this session's mid-session openings into the cross-session avoid-list.
+
+    Turn 1's opening is already rolled at session-create (and gated there for
+    custom / saved-question sessions), so only openings from `turn_number > 1`
+    are added here. Skipped for re-practice sessions, mirroring the create-time
+    `roll_recent` gate. Newest-first, deduped, capped at 3; reassigned only when
+    the list actually changes so a plain 2-turn session incurs no write.
+    """
+    if session.saved_question_id is not None:
+        return
+    mid_openings = [
+        t.question_text
+        for t in turns
+        if not t.is_followup and t.turn_number > 1 and t.question_text
+    ]
+    if not mid_openings:
+        return
+    existing = list(user.recent_opening_questions or [])
+    merged: list[str] = []
+    for q in [*reversed(mid_openings), *existing]:
+        if q and q not in merged:
+            merged.append(q)
+    merged = merged[:3]
+    if merged != existing:
+        user.recent_opening_questions = merged
 
 
 # ── background evaluation ────────────────────────────────────────────────────
@@ -521,21 +925,20 @@ def _log_eval_scores(
     new sessions are running the new rubric."""
     logger.info(
         "Eval scored: session=%s turn=%s category=%r "
-        "structure=%s problem_solving=%s impact=%s "
-        "initiative=%s depth=%s delivery=%s",
+        "d1=%s d2=%s d3=%s d4=%s d5=%s delivery=%s",
         session_id, turn_id, category,
-        eval_out.structure, eval_out.problem_solving, eval_out.impact,
-        eval_out.initiative, eval_out.depth, eval_out.delivery,
+        eval_out.dimension_1, eval_out.dimension_2, eval_out.dimension_3,
+        eval_out.dimension_4, eval_out.dimension_5, eval_out.delivery,
     )
 
 
 def _apply_eval_to_turn(turn: InterviewTurn, eval_out: EvaluatorOutput) -> None:
     """Copy evaluator output onto an InterviewTurn row (no commit)."""
-    turn.structure_score       = eval_out.structure
-    turn.problem_solving_score = eval_out.problem_solving
-    turn.impact_score          = eval_out.impact
-    turn.initiative_score      = eval_out.initiative
-    turn.depth_score           = eval_out.depth
+    turn.dimension_1_score     = eval_out.dimension_1
+    turn.dimension_2_score     = eval_out.dimension_2
+    turn.dimension_3_score     = eval_out.dimension_3
+    turn.dimension_4_score     = eval_out.dimension_4
+    turn.dimension_5_score     = eval_out.dimension_5
     turn.delivery_score        = eval_out.delivery
     turn.feedback              = eval_out.notes
     turn.feedback_detail       = eval_out.feedback_detail.model_dump()
@@ -579,6 +982,8 @@ async def _run_background_eval(
     category: FieldCategory | None,
     experience_level: ExperienceLevel | None = None,
     jd_summary: list[str] | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
+    resume_excerpt: str | None = None,
 ) -> None:
     """Evaluate a turn after the request has already returned, then persist.
 
@@ -595,7 +1000,10 @@ async def _run_background_eval(
     appendix; both are passed explicitly because this task runs in a detached
     AsyncSession with no access to the request-scoped `user` row. `jd_summary`
     (pasted-JD role facts, `None`/empty otherwise) rides through the same way as
-    calibration-only context for the evaluator.
+    calibration-only context for the evaluator. `resume_excerpt` (the candidate's
+    résumé) is passed from the request path — where the `user` row is live — and
+    grounds the Evidence dimension for Self-Assessment & Growth only (the evaluator
+    ignores it for other types).
     """
     try:
         async with AsyncSessionLocal() as db:
@@ -605,6 +1013,8 @@ async def _run_background_eval(
                     cv_summary=cv_summary, category=category,
                     experience_level=experience_level,
                     jd_summary=jd_summary,
+                    question_category=question_category,
+                    resume_excerpt=resume_excerpt,
                 )
                 _log_eval_scores(session_id, turn_id, category, eval_out)
                 await _attach_next_take(
@@ -647,11 +1057,11 @@ async def _run_background_eval(
             },
         )
     finally:
-        eval_registry.discard(session_id)
+        eval_registry.discard(session_id, turn_id)
 
 
-async def _await_background_eval(session_id: UUID) -> None:
-    """If turn 1's eval is still running, wait for it before finalizing.
+async def _await_background_evals(session_id: UUID) -> None:
+    """If known turn evals are still running, wait before finalizing.
 
     Idempotent: returns immediately when no task is registered (e.g. the
     background task already finished and called `discard`, or the demo
@@ -659,17 +1069,16 @@ async def _await_background_eval(session_id: UUID) -> None:
     lost the in-memory registry — the inline fallback in `submit_turn`
     handles the latter case).
     """
-    task = eval_registry.pop(session_id)
-    if task is None:
-        return
-    if task.done():
+    tasks = eval_registry.pop_session(session_id)
+    pending = [task for task in tasks if not task.done()]
+    if not pending:
         return
     logger.info(
-        "Finalize: waiting for background eval to finish for session=%s",
-        session_id,
+        "Finalize: waiting for %s background eval(s) to finish for session=%s",
+        len(pending), session_id,
     )
-    # The task itself swallows exceptions, so this await never raises.
-    await task
+    # The tasks themselves swallow exceptions, so this gather never raises.
+    await asyncio.gather(*pending)
 
 
 # ── session-completion aggregation ────────────────────────────────────────────
@@ -705,12 +1114,12 @@ def _per_dimension_averages(turns: list[_TurnScores]) -> dict[str, float | None]
         return round(sum(non_null) / len(non_null), 2) if non_null else None
 
     return {
-        "structure":       _avg([t[0] for t in turns]),
-        "problem_solving": _avg([t[1] for t in turns]),
-        "impact":          _avg([t[2] for t in turns]),
-        "initiative":      _avg([t[3] for t in turns]),
-        "depth":           _avg([t[4] for t in turns]),
-        "delivery":        _avg([t[5] for t in turns]),
+        "dimension_1": _avg([t[0] for t in turns]),
+        "dimension_2": _avg([t[1] for t in turns]),
+        "dimension_3": _avg([t[2] for t in turns]),
+        "dimension_4": _avg([t[3] for t in turns]),
+        "dimension_5": _avg([t[4] for t in turns]),
+        "delivery":    _avg([t[5] for t in turns]),
     }
 
 
@@ -727,7 +1136,7 @@ async def _upsert_session_metrics(
     """Write (or replace) the cached aggregate row for a completed session.
 
     `session_metrics.session_id` has a UNIQUE constraint, so a re-finalize
-    of the same session (shouldn't happen in the 2-turn flow but cheap
+    of the same session (shouldn't happen in the normal flow but cheap
     insurance) deletes the existing row first rather than tripping IntegrityError.
     """
     existing = await db.execute(
@@ -740,11 +1149,11 @@ async def _upsert_session_metrics(
 
     db.add(SessionMetrics(
         session_id=session_id,
-        avg_structure=averages["structure"],
-        avg_problem_solving=averages["problem_solving"],
-        avg_impact=averages["impact"],
-        avg_initiative=averages["initiative"],
-        avg_depth=averages["depth"],
+        avg_dimension_1=averages["dimension_1"],
+        avg_dimension_2=averages["dimension_2"],
+        avg_dimension_3=averages["dimension_3"],
+        avg_dimension_4=averages["dimension_4"],
+        avg_dimension_5=averages["dimension_5"],
         avg_delivery=averages["delivery"],
         total_filler_word_count=total_filler_word_count,
         total_word_count=total_word_count,
@@ -772,12 +1181,12 @@ async def _complete_session_from_turns(
     """
     all_turn_scores: list[_TurnScores] = [
         (
-            float(t.structure_score)       if t.structure_score       is not None else None,
-            float(t.problem_solving_score) if t.problem_solving_score is not None else None,
-            float(t.impact_score)          if t.impact_score          is not None else None,
-            float(t.initiative_score)      if t.initiative_score      is not None else None,
-            float(t.depth_score)           if t.depth_score           is not None else None,
-            float(t.delivery_score)        if t.delivery_score        is not None else None,
+            float(t.dimension_1_score) if t.dimension_1_score is not None else None,
+            float(t.dimension_2_score) if t.dimension_2_score is not None else None,
+            float(t.dimension_3_score) if t.dimension_3_score is not None else None,
+            float(t.dimension_4_score) if t.dimension_4_score is not None else None,
+            float(t.dimension_5_score) if t.dimension_5_score is not None else None,
+            float(t.delivery_score)    if t.delivery_score    is not None else None,
             int(t.filler_word_count or 0),
         )
         for t in turns
@@ -886,10 +1295,10 @@ async def _run_background_finalize(
                 )
                 return
 
-            # Let turn 1's detached eval finish if this worker still knows
-            # about it. Missing/stale registry entries are handled by the
-            # inline fallback below.
-            await _await_background_eval(session_id)
+            # Let detached evals finish if this worker still knows about them.
+            # Missing/stale registry entries are handled by the inline fallback
+            # below.
+            await _await_background_evals(session_id)
 
             turns_result = await db.execute(
                 select(InterviewTurn)
@@ -899,7 +1308,7 @@ async def _run_background_finalize(
             turns = list(turns_result.scalars().all())
 
             for turn in turns:
-                if turn.transcript_text is None or turn.structure_score is not None:
+                if turn.transcript_text is None or turn.dimension_1_score is not None:
                     continue
 
                 if turn.id != final_turn_id:
@@ -929,6 +1338,17 @@ async def _run_background_finalize(
                         category=category,
                         experience_level=experience_level,
                         jd_summary=jd_summary,
+                        question_category=turn.question_category,
+                        # Résumé grounds the Evidence dimension for Self-Assessment
+                        # & Growth only. This task already loaded the `user` row
+                        # above, so read it directly (no threading needed); other
+                        # types get None and the evaluator ignores it.
+                        resume_excerpt=(
+                            user.resume_text
+                            if turn.question_category
+                            == QuestionCategory.self_assessment_growth
+                            else None
+                        ),
                     )
                     _log_eval_scores(session_id, turn.id, category, eval_out)
                     await _attach_next_take(
@@ -964,6 +1384,10 @@ async def _run_background_finalize(
                 turns=turns,
             )
             if completed:
+                # Fold this session's mid-session openings into the user's
+                # cross-session avoid-list so a later session won't repeat them.
+                # Rides the same commit as the completed metrics.
+                _roll_session_openings_into_recent(session, user, turns)
                 await db.commit()
                 logger.info("Background finalize complete for session=%s", session_id)
             else:
@@ -1134,6 +1558,39 @@ async def submit_turn(
             ),
         )
 
+    if (
+        not session.clarification_retry_used
+        and _is_clarification_request(transcript)
+    ):
+        clarified = _clarified_question(current_turn.question_text)
+        turn_voice_id = session.voice_id or voice_for_session(session.id)
+        turn_speech_speed = (
+            float(session.speech_speed)
+            if session.speech_speed is not None
+            else None
+        )
+        audio_url = await synthesize_speech(
+            clarified, voice_id=turn_voice_id, speed=turn_speech_speed
+        )
+        current_turn.question_text = clarified
+        session.clarification_retry_used = True
+        await db.commit()
+        filler_count, filler_breakdown = count_filler_words(transcript)
+        return TurnSubmitOut(
+            transcript=transcript,
+            scores=None,
+            feedback=None,
+            feedback_detail=None,
+            filler_word_count=filler_count,
+            filler_word_breakdown=filler_breakdown,
+            next_question=clarified,
+            next_question_audio_url=audio_url,
+            next_question_is_followup=current_turn.is_followup,
+            clarification_retry=True,
+            is_final=False,
+            evaluation_pending=False,
+        )
+
     # 4. Filler words (regex ground truth per CLAUDE.md) + total word count
     #    (denominator for the filler rate).
     filler_count, filler_breakdown = count_filler_words(transcript)
@@ -1167,8 +1624,10 @@ async def submit_turn(
         except json.JSONDecodeError as exc:
             logger.warning("cv_summary JSON parse failed: %s", exc)
 
-    # 7. Hardcoded 2-turn rule (CLAUDE.md): turn 2 is always final.
-    is_final = current_turn.turn_number >= 2
+    # 7. Session-specific turn rule: the persisted target count determines the
+    # final turn. Legacy rows created before the column existed read the DB
+    # default of 2.
+    is_final = current_turn.turn_number >= session.num_turns
 
     # 8a. Persist transcript + filler counts BEFORE doing evaluator work.
     #     Background tasks mutate this same row; persisting now means they
@@ -1180,32 +1639,116 @@ async def submit_turn(
     current_turn.filler_word_breakdown = filler_breakdown
     current_turn.word_count            = word_count
 
-    # 8b. Branch: non-final returns the follow-up; final returns immediately
+    # 8b. Branch: non-final returns the next question; final returns immediately
     #     after spawning session finalization below.
     if not is_final:
-        # Only wait for follow-up + TTS. Evaluation is spawned as a detached
-        # task that writes scores to the DB later.
+        # Only wait for next-question generation + TTS. Evaluation is spawned as
+        # a detached task that writes scores to the DB later.
         # Voice was resolved at session-create time and persisted on
-        # `session.voice_id`, so turn 2's audio always sounds like the
-        # same interviewer who asked turn 1 even after a refresh.
-        # Legacy rows (created before the column existed) fall back to
-        # the old deterministic-random derivation from session.id —
-        # which would have given the same answer at session-create
-        # time, so the behavior is unchanged for those rows too.
+        # `session.voice_id`, so every follow-up / mid-session opening sounds
+        # like the same interviewer even after a refresh. Legacy rows (created
+        # before the column existed) fall back to the old deterministic-random
+        # derivation from session.id — which would have given the same answer at
+        # session-create time, so the behavior is unchanged for those rows too.
         turn_voice_id = session.voice_id or voice_for_session(session.id)
-        next_q, next_audio_url = await _followup_and_tts(
-            current_turn.question_text,
-            transcript,
-            turn_voice_id,
-            category=category,
-            role_signals=brief_out.role_signals if brief_out else None,
-            sample_question_themes=(
-                brief_out.sample_question_themes if brief_out else None
-            ),
-            experience_level=experience_level,
-            jd_summary=jd_summary,
+        # Frozen at create time (None on legacy rows → tts default), so every
+        # mid-session question (follow-up OR fresh opening) plays at the pace the
+        # candidate chose for turn 1.
+        turn_speech_speed = (
+            float(session.speech_speed)
+            if session.speech_speed is not None
+            else None
         )
-        await _insert_followup_turn(db, session_id, current_turn.id, next_q)
+        next_turn_number = current_turn.turn_number + 1
+
+        # Story-block routing (CLAUDE.md "Story-block interviews"): decide whether
+        # the next turn drills into the CURRENT story (a follow-up) or pivots to a
+        # fresh opening. A block is 1 opening + 1-2 follow-ups:
+        #   streak 0 (just answered an opening) -> follow-up #1 (always)
+        #   streak 1 (just answered follow-up #1) -> model decides: probe or pivot
+        #   streak 2 (just answered follow-up #2) -> forced pivot to a new opening
+        # A legacy/missing brief can't build an opening, so routing collapses to
+        # a single follow-up — byte-identical to the pre-story-block flow.
+        ordered_turns = [*prior_turns, current_turn]
+        service_brief = _service_brief_from_out(brief_out)
+        fu_streak = _followup_streak(ordered_turns)
+        route = _block_route(fu_streak, has_brief=service_brief is not None)
+        if route == "decide":
+            route = (
+                "followup"
+                if await should_continue_followup(
+                    _current_block_history(prior_turns, current_turn, transcript),
+                    experience_level=experience_level,
+                    question_category=current_turn.question_category,
+                )
+                else "opening"
+            )
+
+        # The next question's FORM. By default it inherits the just-answered
+        # turn's category — a single-category session and every follow-up (a story
+        # block stays one type). In "Recommended Mix" mode a NEW story-block
+        # opening instead draws a fresh calibrated category, without repeating one
+        # already used by this session's openings.
+        next_question_category = current_turn.question_category
+        if route == "opening" and session.calibrated_mix:
+            next_question_category = draw_opening_category(
+                field=category,
+                level=experience_level,
+                num_turns=session.num_turns,
+                used={t.question_category for t in ordered_turns if not t.is_followup},
+                is_first_opening=False,
+            )
+
+        if route == "opening":
+            next_q, next_audio_url = await _opening_and_tts(
+                user,
+                service_brief,
+                session.job_title,
+                _session_opening_avoid_list(prior_turns, current_turn, user),
+                turn_voice_id,
+                speech_speed=turn_speech_speed,
+                question_category=next_question_category,
+            )
+            await _insert_next_turn(
+                db,
+                session_id,
+                turn_number=next_turn_number,
+                question=next_q,
+                is_followup=False,
+                parent_turn_id=None,
+                question_category=next_question_category,
+            )
+        else:
+            # Anti-repetition context: the block's prior Q/As (everything before
+            # the turn we're following up on) plus the within-session avoid-list,
+            # so a 2nd follow-up probes a new facet instead of echoing the 1st.
+            next_q, next_audio_url = await _followup_and_tts(
+                current_turn.question_text,
+                transcript,
+                turn_voice_id,
+                category=category,
+                role_signals=brief_out.role_signals if brief_out else None,
+                sample_question_themes=(
+                    brief_out.sample_question_themes if brief_out else None
+                ),
+                experience_level=experience_level,
+                jd_summary=jd_summary,
+                already_asked=_session_asked_questions(prior_turns, current_turn),
+                block_history=_current_block_history(
+                    prior_turns, current_turn, transcript
+                )[:-1],
+                speech_speed=turn_speech_speed,
+                question_category=next_question_category,
+            )
+            await _insert_next_turn(
+                db,
+                session_id,
+                turn_number=next_turn_number,
+                question=next_q,
+                is_followup=True,
+                parent_turn_id=_block_opening_id(ordered_turns),
+                question_category=next_question_category,
+            )
         # Commit BEFORE registering the background task so the bg task's
         # fresh AsyncSession sees the persisted transcript on its first
         # query. Without this, there's a tiny race where the task could
@@ -1223,10 +1766,20 @@ async def submit_turn(
                 category=category,
                 experience_level=experience_level,
                 jd_summary=jd_summary,
+                question_category=current_turn.question_category,
+                # Résumé grounds the Evidence dimension for Self-Assessment &
+                # Growth only; pass the live user's résumé for that type, else None
+                # (the evaluator re-gates by category, so this is belt-and-braces).
+                resume_excerpt=(
+                    user.resume_text
+                    if current_turn.question_category
+                    == QuestionCategory.self_assessment_growth
+                    else None
+                ),
             ),
             name=f"eval-session-{session_id}-turn-{current_turn.turn_number}",
         )
-        eval_registry.register(session_id, bg_task)
+        eval_registry.register(session_id, current_turn.id, bg_task)
 
         return TurnSubmitOut(
             transcript=transcript,
@@ -1237,6 +1790,8 @@ async def submit_turn(
             filler_word_breakdown=filler_breakdown,
             next_question=next_q,
             next_question_audio_url=next_audio_url,
+            next_question_is_followup=(route == "followup"),
+            next_question_category=next_question_category.value,
             is_final=False,
             evaluation_pending=True,
         )
@@ -1273,6 +1828,85 @@ async def submit_turn(
     )
 
 
+@router.post("/{session_id}/end", response_model=SessionEndOut)
+async def end_session_early(
+    session_id: UUID,
+    user: User = Depends(get_current_user_db),
+    db: AsyncSession = Depends(get_db),
+) -> SessionEndOut:
+    """Finalize a session the user is quitting mid-interview, grading only the
+    turns they actually completed.
+
+    A longer (2–8 turn) interview can be interrupted — class starts, time runs
+    out — so abandoning the whole thing and losing the feedback for turns the
+    candidate DID finish is unfair. Every completed turn was already submitted
+    and evaluated in the background, so we can grade the session on just those.
+
+    Requires ≥ 1 answered (transcript-bearing) turn; the frontend only calls
+    this in that case (a zero-turn quit stays a pure client-side abandon with
+    no record and no daily-limit charge). The completed session counts toward
+    the free-tier daily limit like any other finalized session — the normal
+    finalize path increments the counter.
+
+    Mirrors the final-turn finalize: trims the dangling unanswered turn, then
+    spawns the same detached `_run_background_finalize`. Returning immediately
+    (rather than awaiting) lets the finalize survive the user closing the tab
+    the instant they quit; the generalized lazy reaper in `get_session` is the
+    backstop if that detached task dies.
+    """
+    session = await db.get(InterviewSession, session_id)
+    if not session or session.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != SessionStatus.in_progress:
+        raise HTTPException(status_code=400, detail="Session is not in progress")
+
+    turns_result = await db.execute(
+        select(InterviewTurn)
+        .where(InterviewTurn.session_id == session_id)
+        .order_by(InterviewTurn.turn_number)
+    )
+    turns = list(turns_result.scalars().all())
+
+    answered = [t for t in turns if t.transcript_text is not None]
+    if not answered:
+        raise HTTPException(
+            status_code=422,
+            detail="No completed turns to grade.",
+        )
+
+    # Trim the dangling turn(s): when a non-final turn is submitted the next
+    # question is inserted + committed with a NULL transcript, so a quit mid-
+    # interview leaves exactly one unanswered turn. Deleting it leaves the
+    # session with only completed turns, so (a) SessionDetail/history render no
+    # empty trailing turn and (b) the reaper's "no pending turn" signal is
+    # well-defined. Each is a leaf (nothing points to it as parent_turn_id).
+    for turn in turns:
+        if turn.transcript_text is None:
+            await db.delete(turn)
+
+    final_turn = max(answered, key=lambda t: t.turn_number)
+
+    # Fresh reaper clock (mirrors the final-turn path), then commit before
+    # spawning so the detached finalizer reads the trimmed, committed state.
+    session.updated_at = datetime.utcnow()
+    await db.commit()
+
+    brief = _parse_company_summary(session.company_summary)
+    _spawn_finalize(
+        session_id=session_id,
+        final_turn_id=final_turn.id,
+        category=brief.category if brief else None,
+        experience_level=session.experience_level,
+        jd_summary=brief.jd_summary if brief else None,
+    )
+
+    return SessionEndOut(
+        session_id=session_id,
+        status=session.status.value,
+        graded_turns=len(answered),
+    )
+
+
 # ── history routes ───────────────────────────────────────────────────────────
 
 # Hard cap on `GET /sessions` rows. The history page renders a chart + table
@@ -1286,11 +1920,11 @@ def _averages_from_metrics(m: SessionMetrics | None) -> DimensionAverages:
     if m is None:
         return DimensionAverages()
     return DimensionAverages(
-        structure=m.avg_structure,
-        problem_solving=m.avg_problem_solving,
-        impact=m.avg_impact,
-        initiative=m.avg_initiative,
-        depth=m.avg_depth,
+        dimension_1=m.avg_dimension_1,
+        dimension_2=m.avg_dimension_2,
+        dimension_3=m.avg_dimension_3,
+        dimension_4=m.avg_dimension_4,
+        dimension_5=m.avg_dimension_5,
         delivery=m.avg_delivery,
     )
 
@@ -1322,12 +1956,33 @@ async def list_sessions(
     that cache existed (legacy rows) come back with all averages = null;
     the frontend chart simply skips them.
     """
+    # Per-session question-category rollup: how many DISTINCT categories the
+    # session's turns span, plus the (arbitrary) min category. One distinct
+    # category → that category; more than one → a "Recommended Mix" session.
+    # Lets the History page filter the trend chart + list by category.
+    cat_subq = (
+        select(
+            InterviewTurn.session_id.label("sid"),
+            func.count(func.distinct(InterviewTurn.question_category)).label(
+                "cat_count"
+            ),
+            func.min(InterviewTurn.question_category).label("cat_min"),
+        )
+        .group_by(InterviewTurn.session_id)
+        .subquery()
+    )
     result = await db.execute(
-        select(InterviewSession, SessionMetrics)
+        select(
+            InterviewSession,
+            SessionMetrics,
+            cat_subq.c.cat_count,
+            cat_subq.c.cat_min,
+        )
         .outerjoin(
             SessionMetrics,
             SessionMetrics.session_id == InterviewSession.id,
         )
+        .outerjoin(cat_subq, cat_subq.c.sid == InterviewSession.id)
         .where(
             InterviewSession.user_id == user.id,
             InterviewSession.status == SessionStatus.completed,
@@ -1336,7 +1991,17 @@ async def list_sessions(
         .limit(_HISTORY_LIMIT)
     )
     rows: list[SessionListItem] = []
-    for session, metrics in result.all():
+    for session, metrics, cat_count, cat_min in result.all():
+        # None when the session has no turns; "mixed" when its turns span more
+        # than one category; else the single category value.
+        if not cat_count:
+            session_category = None
+        elif cat_count > 1:
+            session_category = "mixed"
+        else:
+            session_category = (
+                cat_min.value if hasattr(cat_min, "value") else cat_min
+            )
         rows.append(SessionListItem(
             id=session.id,
             company=session.company,
@@ -1355,6 +2020,7 @@ async def list_sessions(
                 metrics.total_word_count if metrics else None,
             ),
             averages=_averages_from_metrics(metrics),
+            question_category=session_category,
         ))
     return rows
 
@@ -1365,27 +2031,35 @@ def _maybe_reap_stuck_session(
 ) -> None:
     """Lazily recover a session left `in_progress` by a dead finalizer.
 
-    The final-turn POST persists the transcript and hands scoring to a
-    detached `_run_background_finalize` task. If the worker that spawned it
-    dies before it commits (deploy, crash, OOM) — or the task itself raised
-    and left the session un-finalized — the row stays `in_progress` forever:
-    there is no cron sweeper. Recover opportunistically on read.
+    Two paths hand scoring to a detached `_run_background_finalize` task and
+    return before it commits: the final-turn POST, and `POST /{id}/end` (early
+    quit, graded on the completed turns). If the worker that spawned the task
+    dies before it commits (deploy, crash, OOM) — or the task itself raised and
+    left the session un-finalized — the row stays `in_progress` forever: there
+    is no cron sweeper. Recover opportunistically on read.
 
-    Only fires once the final answer is durably persisted and the grace
-    window has elapsed, and re-uses `_spawn_finalize`'s per-session dedup so
-    it can never run alongside a finalizer this worker is already driving.
-    `_run_background_finalize` is itself idempotent — it no-ops on a session
-    that's since completed and only evaluates still-unscored turns — so a
-    spurious re-spawn is harmless.
+    Fires once the session has NO pending (unanswered) turn and the grace
+    window has elapsed. "No pending turn" is the general finalizable signal:
+    mid-interview there is always a committed dangling next turn (the non-final
+    branch inserts + commits it), so an `in_progress` session with every turn
+    answered is either the final turn done (finalizer died) or an early-ended
+    session whose trailing unanswered turn was trimmed — both should finalize.
+    A candidate merely taking a long time still has their current turn as a
+    NULL-transcript row, so they're never reaped mid-answer.
+
+    Re-uses `_spawn_finalize`'s per-session dedup so it can never run alongside
+    a finalizer this worker is already driving. `_run_background_finalize` is
+    itself idempotent — it no-ops on a session that's since completed and only
+    evaluates still-unscored turns — so a spurious re-spawn is harmless.
     """
     if session.status != SessionStatus.in_progress:
         return
-    # Final answer committed? (2-turn rule: turn 2 carries the last answer.)
+    # Finalizable only once every turn is answered (no dangling unanswered
+    # turn). The highest-numbered answered turn is the finalizer's anchor.
     final_turn = max(turns, key=lambda t: t.turn_number, default=None)
     if (
         final_turn is None
-        or final_turn.turn_number < 2
-        or final_turn.transcript_text is None
+        or any(t.transcript_text is None for t in turns)
     ):
         return
     # Still within the window where a normal finalizer is expected to finish.
@@ -1455,17 +2129,18 @@ async def get_session(
             question_text=t.question_text,
             transcript_text=t.transcript_text,
             is_followup=t.is_followup,
+            question_category=t.question_category.value,
             scores=ScoresOut(
                 # `0` is a valid evaluator score, so null must round-trip as
                 # null — not coerced to 0 — otherwise the UI can't tell an
                 # unevaluated turn from a 0/10 score, and the per-session
                 # average gets dragged down by phantom zeros. The frontend
                 # renders an "Evaluation Failed" placeholder for null rows.
-                structure=int(t.structure_score) if t.structure_score is not None else None,
-                problem_solving=int(t.problem_solving_score) if t.problem_solving_score is not None else None,
-                impact=int(t.impact_score) if t.impact_score is not None else None,
-                initiative=int(t.initiative_score) if t.initiative_score is not None else None,
-                depth=int(t.depth_score) if t.depth_score is not None else None,
+                dimension_1=int(t.dimension_1_score) if t.dimension_1_score is not None else None,
+                dimension_2=int(t.dimension_2_score) if t.dimension_2_score is not None else None,
+                dimension_3=int(t.dimension_3_score) if t.dimension_3_score is not None else None,
+                dimension_4=int(t.dimension_4_score) if t.dimension_4_score is not None else None,
+                dimension_5=int(t.dimension_5_score) if t.dimension_5_score is not None else None,
                 delivery=int(t.delivery_score) if t.delivery_score is not None else None,
             ),
             feedback=t.feedback,
@@ -1483,6 +2158,7 @@ async def get_session(
         id=session.id,
         company=session.company,
         job_title=session.job_title,
+        num_turns=session.num_turns,
         status=session.status.value,
         overall_score=session.overall_score,
         started_at=session.started_at,
@@ -1500,4 +2176,5 @@ async def get_session(
         ),
         turns_evaluated=metrics.turns_evaluated if metrics else 0,
         saved_question_id=session.saved_question_id,
+        calibrated_mix=session.calibrated_mix,
     )

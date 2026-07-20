@@ -13,6 +13,8 @@ result-*
 
 # test files and folders
 recordings/
-tests/  
+tests/__pycache__/
+!tests/
+!tests/*.py
 
 interview_feedback_latest.json

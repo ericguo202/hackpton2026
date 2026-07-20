@@ -7,7 +7,7 @@ company brief produced by `company_research.research_company()`. Runs on
 `google/gemini-3.5-flash` (minimal reasoning) via OpenRouter.
 
 The system prompt is assembled per-call by
-`_field_prompts.build_field_system_prompt(brief.category)`. That helper:
+`_star_opening_prompts.build_star_opening_prompt(brief.category)`. That helper:
   - Interpolates the shared intro / hard constraints with the category
     name.
   - Shows the full 5-theme catalog for the category so the model knows
@@ -46,11 +46,20 @@ from __future__ import annotations
 import logging
 import random
 
+from app.db.models.enums import QuestionCategory
 from app.db.models.user import User
-from app.services._field_prompts import (
-    DEFAULT_CATEGORY,
-    build_field_system_prompt,
+from app.services._archetypes import archetype_for
+from app.services._field_categories import DEFAULT_CATEGORY
+from app.services._motivation_fit_opening_prompts import (
+    build_motivation_fit_opening_prompt,
 )
+from app.services._situational_opening_prompts import (
+    build_situational_opening_prompt,
+)
+from app.services._self_assessment_opening_prompts import (
+    build_self_assessment_opening_prompt,
+)
+from app.services._star_opening_prompts import build_star_opening_prompt
 from app.services._injection import contains_injection
 from app.services._openrouter import create_chat_with_fallback, get_client
 from app.services.company_research import CompanyBrief
@@ -247,22 +256,207 @@ _RESEARCH_USAGE_INSTRUCTIONS = (
 )
 
 
+# Motivation & Fit is company-CENTRIC (unlike the STAR standard style, which
+# forbids naming the company). The M&F user prompt therefore always surfaces the
+# company facts and instructs the model to ground the question in this specific
+# company/role — there is no standard/company style rotation.
+_MF_RESEARCH_USAGE_INSTRUCTIONS = (
+    "Ground the question in THIS company and role. Motivation & Fit questions are "
+    "company-specific: draw on the company facts, stated values, and research "
+    "signals above so a 'why this company' or 'why this role' question could not "
+    "be asked of any other employer. If the company facts are sparse, fall back "
+    "to a 'why this field', 'tell me about yourself', career-goals, or "
+    "work-environment question rather than inventing company details. You MAY "
+    "name the company."
+)
+
+
+def _build_mf_user_prompt(
+    user: User,
+    brief: CompanyBrief,
+    job_title: str,
+    recent_questions: list[str] | None,
+) -> str:
+    """User prompt for a Motivation & Fit opening question.
+
+    Company-centric: always includes the company facts (description / headlines /
+    values / role signals / themes) since M&F questions are company-specific.
+    Reuses the shared empty-omission digests so no-JD / no-signal / first-session
+    sessions stay clean.
+    """
+    company_block = _company_digest(brief, include_company_facts=True)
+    company_section = f"{company_block}\n\n" if company_block else ""
+    # JD facts ground the role; use the inspiration nudge (as the company style
+    # does) so the question may draw on concrete role facts, not just honor them.
+    jd_block = _jd_summary_block(brief.jd_summary, company_style=True)
+    jd_section = f"{jd_block}\n\n" if jd_block else ""
+    avoid_block = _recent_questions_block(recent_questions)
+    avoid_section = f"{avoid_block}\n\n" if avoid_block else ""
+    return (
+        f"{_profile_digest(user, job_title)}\n\n"
+        f"{company_section}"
+        f"{jd_section}"
+        f"{_MF_RESEARCH_USAGE_INSTRUCTIONS}\n\n"
+        f"{avoid_section}"
+        "Now write the opening Motivation & Fit question — exactly ONE sentence, "
+        "15-25 words (never exceed 30), conversational, no preamble or surrounding "
+        "quotes. Output only the question text."
+    )
+
+
+# Situational is scenario-CENTRIC and grounded in the company's real principles /
+# stakeholder values (which the situational `company_research` variant surfaces
+# accurately). The dilemma should pit those stakeholder values against each other
+# so the candidate's Principles/Reasoning can be genuinely tested. A hypothetical
+# need not name the employer, so there is no name-drop requirement.
+_SITUATIONAL_RESEARCH_USAGE_INSTRUCTIONS = (
+    "Ground the scenario in THIS role and field. Use the company's stated values / "
+    "principles and the research signals above to build a dilemma around a GENUINE "
+    "TENSION between competing stakeholder priorities the candidate would actually "
+    "face in this role (for example safety vs. deadline, a customer vs. policy, "
+    "honesty vs. a relationship). If the company facts are sparse, build a realistic "
+    "field-typical dilemma instead of inventing company details. You do NOT need to "
+    "name the company — a strong hypothetical stands on the scenario itself."
+)
+
+
+def _build_situational_user_prompt(
+    user: User,
+    brief: CompanyBrief,
+    job_title: str,
+    recent_questions: list[str] | None,
+) -> str:
+    """User prompt for a Situational opening question.
+
+    Surfaces the company facts (description / headlines / values / role signals /
+    themes) so the model can ground the dilemma in the company's real stakeholder
+    values and role context. Reuses the shared empty-omission digests so
+    no-JD / no-signal / first-session sessions stay clean.
+    """
+    company_block = _company_digest(brief, include_company_facts=True)
+    company_section = f"{company_block}\n\n" if company_block else ""
+    # JD facts ground how the role actually operates; use the inspiration nudge so
+    # the dilemma can draw on concrete role duties, not just honor them.
+    jd_block = _jd_summary_block(brief.jd_summary, company_style=True)
+    jd_section = f"{jd_block}\n\n" if jd_block else ""
+    avoid_block = _recent_questions_block(recent_questions)
+    avoid_section = f"{avoid_block}\n\n" if avoid_block else ""
+    return (
+        f"{_profile_digest(user, job_title)}\n\n"
+        f"{company_section}"
+        f"{jd_section}"
+        f"{_SITUATIONAL_RESEARCH_USAGE_INSTRUCTIONS}\n\n"
+        f"{avoid_section}"
+        "Now write the opening Situational question — exactly ONE sentence that "
+        "sets up the scenario and poses the dilemma, 25-40 words (never exceed 50), "
+        "conversational, no preamble or surrounding quotes. Output only the question "
+        "text."
+    )
+
+
+# Self-Assessment & Growth is about the CANDIDATE, not the company, so its user
+# prompt is profile-CENTRIC and deliberately omits the company facts / JD block
+# (unlike M&F and situational). The candidate profile + declared role are enough
+# to keep a weakness/feedback question role-relevant; the field's load-bearing
+# competency lives only in the evaluator (the role-critical-weakness rule).
+_SELF_ASSESSMENT_RESEARCH_USAGE_INSTRUCTIONS = (
+    "This is a self-assessment question about the CANDIDATE — their own strengths, "
+    "weaknesses, failures, feedback, or growth — NOT about the company. Do not quiz "
+    "them on the employer and do not name-drop the company. Use the candidate's "
+    "declared role and background only to keep the question relevant to someone "
+    "aiming for this kind of role."
+)
+
+
+def _build_self_assessment_user_prompt(
+    user: User,
+    job_title: str,
+    recent_questions: list[str] | None,
+) -> str:
+    """User prompt for a Self-Assessment & Growth opening question.
+
+    Profile-CENTRIC (no company facts / JD block): the question is about the
+    candidate, so only the candidate profile, the usage instruction, and the
+    recent-questions avoid-list are included. Reuses the shared empty-omission
+    digests so first-session sessions stay clean.
+    """
+    avoid_block = _recent_questions_block(recent_questions)
+    avoid_section = f"{avoid_block}\n\n" if avoid_block else ""
+    return (
+        f"{_profile_digest(user, job_title)}\n\n"
+        f"{_SELF_ASSESSMENT_RESEARCH_USAGE_INSTRUCTIONS}\n\n"
+        f"{avoid_section}"
+        "Now write the opening Self-Assessment & Growth question — exactly ONE "
+        "sentence, 12-22 words (never exceed 28), conversational, no preamble or "
+        "surrounding quotes. Output only the question text."
+    )
+
+
+async def _run_opening_completion(system_prompt: str, user_prompt: str) -> str:
+    """Shared LLM call for both the STAR and Motivation & Fit opening paths.
+
+    Both build a per-call system prompt + a user prompt, then hit the same
+    Gemini model with the same generation params — so the call, the empty-content
+    fallback behavior, and the wrapping-quote strip live here once.
+    """
+    # Prompt-cache note: gemini-3.5-flash uses implicit prefix caching but only
+    # for prefixes >= 1024 tokens. This system prompt is ~400 tokens (and varies
+    # per call via randomly sampled examples), so the call does NOT cache today —
+    # that's expected, not a bug, and isn't worth padding to fix.
+    response = await create_chat_with_fallback(
+        get_client(),
+        models=(OPENING_MODEL, OPENING_FALLBACK_MODEL),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.7,
+        timeout=60.0,
+        # Bound a derailed generation (e.g. leaked reasoning free-associating
+        # past the question) instead of letting it run unbounded into the DB
+        # and TTS. NOT a tight ~128: on OpenRouter, Gemini's thinking tokens
+        # count against max_tokens (finish_reason=MAX_TOKENS when thoughts +
+        # output exceed it) and effort-derived thinking budgets floor at 1024,
+        # so a small cap risks truncating `content` to empty. 1024 leaves
+        # headroom for minimal-effort thinking plus the ≤30-word question;
+        # `create_chat_with_fallback` retries the fallback model on empty
+        # content if a provider still eats the whole budget.
+        max_tokens=1024,
+        # gemini-3.5-flash reasons by default; this is a single short generation
+        # that doesn't need a reasoning trace, so keep it minimal for latency/cost.
+        # The deepseek-v3.2 fallback doesn't accept the OpenAI-style "minimal"
+        # effort level, so disable reasoning on that path instead.
+        extra_body_by_model={
+            OPENING_MODEL: {"reasoning": {"effort": "minimal"}},
+            OPENING_FALLBACK_MODEL: {"reasoning": {"enabled": False}},
+        },
+        label="opening_question",
+    )
+    text = response.choices[0].message.content or ""
+    return _strip_wrapping_quotes(text)
+
+
 async def generate_opening_question(
     user: User,
     brief: CompanyBrief,
     job_title: str,
     recent_questions: list[str] | None = None,
+    question_category: QuestionCategory = QuestionCategory.experience_star,
 ) -> str:
-    """Return a single opening interview question — standard or company-flavored.
+    """Return a single opening interview question for the given question category.
 
     `recent_questions` is the candidate's most-recent opening questions
     (newest-first, capped at 3 by the caller). When non-empty it's surfaced
     as an explicit avoid-list so the model stops converging on the same
     attractor question across sessions. None / empty (first session) leaves
     the prompt byte-identical to the pre-feature behavior.
-    """
-    client = get_client()
 
+    `question_category` selects the FORM of the opening question:
+    `experience_star` (default) builds a STAR "tell me about a time…" behavioral
+    prompt with the standard/company style rotation; `motivation_fit` builds a
+    company-centric Motivation & Fit prompt (why this company/role, tell me about
+    yourself, goals, fit) with no style rotation.
+    """
     # Tripwire: a candidate profile shouldn't carry injection markers — bio /
     # résumé are moderated + regex-gated at onboarding, company/title at
     # session-create. If one slips through, log a warning + best-effort incident
@@ -289,8 +483,48 @@ async def generate_opening_question(
             user=user,
         )
 
-    system_prompt = build_field_system_prompt(
-        brief.category or DEFAULT_CATEGORY,
+    resolved_category = brief.category or DEFAULT_CATEGORY
+
+    if question_category == QuestionCategory.motivation_fit:
+        system_prompt = build_motivation_fit_opening_prompt(
+            resolved_category,
+            archetype_for(resolved_category),
+            experience_level=user.experience_level,
+        ) + _PROFILE_SECURITY_CLAUSE
+        prompt = _build_mf_user_prompt(user, brief, job_title, recent_questions)
+        return await _run_opening_completion(system_prompt, prompt)
+
+    if question_category == QuestionCategory.situational:
+        # Situational question generation is field-DRIVEN (not a level matrix like
+        # STAR/M&F), but the level is threaded as a light fit guard so the
+        # scenario's scope/authority matches the candidate (e.g. no
+        # "manage a subordinate" dilemma for an intern).
+        system_prompt = build_situational_opening_prompt(
+            resolved_category,
+            experience_level=user.experience_level,
+        ) + _PROFILE_SECURITY_CLAUSE
+        prompt = _build_situational_user_prompt(
+            user, brief, job_title, recent_questions
+        )
+        return await _run_opening_completion(system_prompt, prompt)
+
+    if question_category == QuestionCategory.self_assessment_growth:
+        # Self-Assessment & Growth is level-DOMINANT and field-INDEPENDENT: the
+        # experience level is the PRIMARY driver of the question (coachability →
+        # learning-agility → derailment-aware failure focus) and the field never
+        # enters generation (it lives only in the evaluator's load-bearing-
+        # competency line). The builder also rotates the internal/external
+        # self-awareness probe type per call.
+        system_prompt = build_self_assessment_opening_prompt(
+            experience_level=user.experience_level,
+        ) + _PROFILE_SECURITY_CLAUSE
+        prompt = _build_self_assessment_user_prompt(
+            user, job_title, recent_questions
+        )
+        return await _run_opening_completion(system_prompt, prompt)
+
+    system_prompt = build_star_opening_prompt(
+        resolved_category,
         experience_level=user.experience_level,
     ) + _PROFILE_SECURITY_CLAUSE
 
@@ -322,30 +556,4 @@ async def generate_opening_question(
         "quotes. Output only the question text."
     )
 
-    # Prompt-cache note: gemini-3.5-flash uses implicit prefix caching but only
-    # for prefixes >= 1024 tokens. This system prompt is ~400 tokens (and varies
-    # per call via randomly sampled style examples), so the call does NOT cache
-    # today — that's expected, not a bug, and isn't worth padding to fix. Static
-    # content still goes first / per-request data in the user message, so it'll
-    # cache automatically if the system prompt ever grows past the threshold.
-    response = await create_chat_with_fallback(
-        client,
-        models=(OPENING_MODEL, OPENING_FALLBACK_MODEL),
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.7,
-        timeout=60.0,
-        # gemini-3.5-flash reasons by default; this is a single short generation
-        # that doesn't need a reasoning trace, so keep it minimal for latency/cost.
-        # The deepseek-v3.2 fallback doesn't accept the OpenAI-style "minimal"
-        # effort level, so disable reasoning on that path instead.
-        extra_body_by_model={
-            OPENING_MODEL: {"reasoning": {"effort": "minimal"}},
-            OPENING_FALLBACK_MODEL: {"reasoning": {"enabled": False}},
-        },
-        label="opening_question",
-    )
-    text = response.choices[0].message.content or ""
-    return _strip_wrapping_quotes(text)
+    return await _run_opening_completion(system_prompt, prompt)

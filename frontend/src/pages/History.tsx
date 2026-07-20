@@ -29,28 +29,34 @@ import {
   YAxis,
 } from 'recharts';
 
+import { CategoryStrengthsRadarPanel } from '../components/CategoryStrengthsRadar';
 import DimensionMenu from '../components/DimensionMenu';
+import FilterFieldMenu, { type FilterField } from '../components/FilterFieldMenu';
+import LocalSuggestionField from '../components/LocalSuggestionField';
+import QuestionCategoryFilterMenu, {
+  type CategoryFilter,
+} from '../components/QuestionCategoryFilterMenu';
 import { StrengthsRadarPanel } from '../components/StrengthsRadar';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
+import type { SpeechPace } from '../components/SpeechSpeedToggle';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
-import { useMeStats } from '../hooks/useMeStats';
+import { useMeStats, type MeStatsFilter } from '../hooks/useMeStats';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { useSessions } from '../hooks/useSessions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
-import { buildRadarData } from '../lib/radarData';
-import { SCORE_DIMENSIONS, type ScoreKey } from '../lib/scoreDimensions';
+import { buildCategoryRadarData, buildRadarData } from '../lib/radarData';
+import { SCORE_DIMENSIONS, scoreDimensionsFor, type ScoreKey } from '../lib/scoreDimensions';
 import type { FillerWordStat, SessionListItem } from '../types/history';
 import type { SavedQuestionListItem } from '../types/savedQuestions';
+import { questionCategoryLabel } from '../types/session';
 import type { PracticeLocationState } from './Practice';
 
-// Chart series key/label/color come from the canonical SCORE_DIMENSIONS
-// (colors sourced from the dedicated --color-chart-* palette in index.css, NOT
-// the primary/secondary ramps — those are monochromatic warm-earth and render
-// as indistinguishable near-black on a chart).
-const DIMENSIONS = SCORE_DIMENSIONS;
-
 type DimensionKey = ScoreKey;
+
+/** History's own Company/Role filter shape (distinct from the `/me/stats`
+ *  query filter — this one is applied client-side to the session list). */
+type CompanyRoleFilter = { field: 'company' | 'job_title'; value: string };
 
 /** Wire-format Decimal-as-string → number, with null passthrough. */
 function num(v: string | null | undefined): number | null {
@@ -81,12 +87,12 @@ function buildChartData(sessions: SessionListItem[]) {
       // Overall is 0-100; per-dim averages are 0-10. Rescale overall to
       // 0-10 here so a single Y axis works for both.
       overall: overall === null ? null : overall / 10,
-      structure:       num(s.averages.structure),
-      problem_solving: num(s.averages.problem_solving),
-      impact:          num(s.averages.impact),
-      initiative:      num(s.averages.initiative),
-      depth:           num(s.averages.depth),
-      delivery:        num(s.averages.delivery),
+      dimension_1: num(s.averages.dimension_1),
+      dimension_2: num(s.averages.dimension_2),
+      dimension_3: num(s.averages.dimension_3),
+      dimension_4: num(s.averages.dimension_4),
+      dimension_5: num(s.averages.dimension_5),
+      delivery:    num(s.averages.delivery),
       // Filler words as a percent of words for this session. Plotted on its
       // own chart (different axis/scale from the 0-10 scores). Null on legacy
       // rows with no cached word total — dropped from the line.
@@ -185,13 +191,13 @@ type ChartPoint = {
   sessionId: string;
   company: string;
   overall: number | null;
-  structure:       number | null;
-  problem_solving: number | null;
-  impact:          number | null;
-  initiative:      number | null;
-  depth:           number | null;
-  delivery:        number | null;
-  filler_rate:     number | null;
+  dimension_1: number | null;
+  dimension_2: number | null;
+  dimension_3: number | null;
+  dimension_4: number | null;
+  dimension_5: number | null;
+  delivery:    number | null;
+  filler_rate: number | null;
   created_at: string;
 };
 
@@ -357,17 +363,19 @@ function SessionRow({
 export default function History() {
   const navigate = useNavigate();
   const { sessions, isLoading: sessionsLoading, error: sessionsError } = useSessions();
-  const { stats, isLoading: statsLoading } = useMeStats();
 
   // Per-dimension toggles. All on by default; clicking the chip toggles
-  // individual dimensions so the chart can isolate one at a time.
+  // individual dimensions so the chart can isolate one at a time. Only the
+  // dimensions present in `lineDimensions` (which depends on the category
+  // filter) actually render, so the default all-categories view shows just
+  // Structure + Delivery even though every key is on here.
   const [activeDims, setActiveDims] = useState<Record<DimensionKey, boolean>>({
-    structure:       true,
-    problem_solving: true,
-    impact:          true,
-    initiative:      true,
-    depth:           true,
-    delivery:        true,
+    dimension_1: true,
+    dimension_2: true,
+    dimension_3: true,
+    dimension_4: true,
+    dimension_5: true,
+    delivery:    true,
   });
   const [showOverall, setShowOverall] = useState(true);
 
@@ -376,9 +384,96 @@ export default function History() {
   const [scoreRange, setScoreRange] = useState<RangeWindow>(10);
   const [fillerRange, setFillerRange] = useState<RangeWindow>(10);
 
-  const chartData = useMemo(
-    () => (sessions ? buildChartData(sessions) : []),
+  // Company / Role filter. `filterField` picks the dimension; `filterValue` +
+  // `filterSelected` come from the autocomplete — a filter is only "active"
+  // once a concrete option is picked, so free-typed text never filters.
+  const [filterField, setFilterField] = useState<FilterField>('none');
+  const [filterValue, setFilterValue] = useState('');
+  const [filterSelected, setFilterSelected] = useState(false);
+
+  // Question-category filter (`'all'` or one of the four real categories). A
+  // separate axis from Company/Role — the two compose.
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
+
+  const activeFilter = useMemo<CompanyRoleFilter | null>(
+    () =>
+      filterField !== 'none' && filterSelected && filterValue
+        ? { field: filterField, value: filterValue }
+        : null,
+    [filterField, filterSelected, filterValue],
+  );
+
+  // Autocomplete option universe — the distinct companies / roles across the
+  // user's sessions (sorted). Built from the full unfiltered list so the
+  // options stay complete regardless of the active filter.
+  const companyOptions = useMemo(
+    () =>
+      sessions
+        ? [...new Set(sessions.map((s) => s.company).filter(Boolean))].sort()
+        : [],
     [sessions],
+  );
+  const roleOptions = useMemo(
+    () =>
+      sessions
+        ? [...new Set(sessions.map((s) => s.job_title).filter(Boolean))].sort()
+        : [],
+    [sessions],
+  );
+
+  // Client-side filtered session list (case-insensitive equality). Everything
+  // derived from sessions — the charts, radar, and the list — reads this. The
+  // Company/Role and Question-category filters compose; a category filter keeps
+  // only sessions of that single category (Mix sessions, tagged "mixed", drop
+  // out — their blended averages aren't purely one category).
+  const filteredSessions = useMemo(() => {
+    if (!sessions) return null;
+    return sessions.filter((s) => {
+      if (activeFilter) {
+        const hay = (
+          activeFilter.field === 'company' ? s.company : s.job_title
+        ).toLowerCase();
+        if (hay !== activeFilter.value.toLowerCase()) return false;
+      }
+      if (categoryFilter !== 'all' && s.question_category !== categoryFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [sessions, activeFilter, categoryFilter]);
+
+  // The summary tiles + "Most used filler words" bar + the category radar are
+  // aggregated server-side. One /me/stats call carries the composed Company /
+  // Role + Question-category filter (the `by_category` rollup inside it always
+  // spans all categories regardless).
+  const statsFilter = useMemo<MeStatsFilter>(
+    () => ({
+      company: activeFilter?.field === 'company' ? activeFilter.value : undefined,
+      jobTitle: activeFilter?.field === 'job_title' ? activeFilter.value : undefined,
+      questionCategory: categoryFilter !== 'all' ? categoryFilter : undefined,
+    }),
+    [activeFilter, categoryFilter],
+  );
+  const { stats: displayStats, isLoading: displayStatsLoading } =
+    useMeStats(statsFilter);
+
+  // The line chart's series set depends on the category filter. All-categories:
+  // only the two type-invariant series (Structure = dimension_1, Delivery) —
+  // dims 2-5 mean different things per rubric, so they're not comparable in
+  // aggregate. A specific category: that category's full relabeled dimensions.
+  const lineDimensions = useMemo(
+    () =>
+      categoryFilter === 'all'
+        ? SCORE_DIMENSIONS.filter(
+            (d) => d.key === 'dimension_1' || d.key === 'delivery',
+          )
+        : scoreDimensionsFor(categoryFilter),
+    [categoryFilter],
+  );
+
+  const chartData = useMemo(
+    () => (filteredSessions ? buildChartData(filteredSessions) : []),
+    [filteredSessions],
   );
 
   const scoreData = useMemo(
@@ -390,20 +485,41 @@ export default function History() {
     [chartData, fillerRange],
   );
 
-  // Strengths radar: six dims averaged over the up-to-5 most recent sessions.
-  // Independent of the line chart's RangeSelector — always its own fixed window.
-  // `chartData` is oldest→newest, so the last ≤5 rows are the most recent.
+  // Radar. Default (all categories): the category-comparison radar (one spoke
+  // per question category) from the server `by_category` rollup. A specific
+  // category: the per-dimension radar relabeled for that category, averaged
+  // over the up-to-5 most recent (pure-category) sessions.
   const radar = useMemo(
-    () => (sessions ? buildRadarData(chartData.slice(-5)) : null),
-    [sessions, chartData],
+    () =>
+      filteredSessions
+        ? buildRadarData(
+            chartData.slice(-5),
+            categoryFilter === 'all' ? null : categoryFilter,
+          )
+        : null,
+    [filteredSessions, chartData, categoryFilter],
+  );
+  const categoryRadar = useMemo(
+    () => buildCategoryRadarData(displayStats?.by_category),
+    [displayStats],
   );
 
-  const hasSessions = (sessions?.length ?? 0) > 0;
+  const hasAnySessions = (sessions?.length ?? 0) > 0;
+  const filteredCount = filteredSessions?.length ?? 0;
+  const hasFilteredSessions = filteredCount > 0;
   const enoughForChart = chartData.length >= 1;
+  // Either filter axis (Company/Role or Question-category) narrowing the view.
+  const anyFilterActive = activeFilter !== null || categoryFilter !== 'all';
   // Filler-rate trend only renders once at least one session carries a
   // non-null rate (legacy rows without a cached word total are skipped).
   const hasFillerRate = chartData.some((d) => d.filler_rate !== null);
-  const hasTopFillerWords = (stats?.top_filler_words?.length ?? 0) > 0;
+  const hasTopFillerWords = (displayStats?.top_filler_words?.length ?? 0) > 0;
+
+  function handleFilterFieldChange(next: FilterField) {
+    setFilterField(next);
+    setFilterValue('');
+    setFilterSelected(false);
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
@@ -444,7 +560,7 @@ export default function History() {
             Progress over time.
           </h1>
 
-          {/* Lifetime stats strip */}
+          {/* Summary stats strip — all-time, or narrowed when a filter is active. */}
           <section
             className="anim-reveal grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-10 pb-10 mb-10 border-b border-border"
             style={{ animationDelay: '160ms' }}
@@ -452,30 +568,106 @@ export default function History() {
             <StatCell
               label="Sessions"
               value={
-                statsLoading ? '—'
-                  : String(stats?.completed_sessions ?? 0)
+                displayStatsLoading ? '—'
+                  : String(displayStats?.completed_sessions ?? 0)
               }
               href="#sessions"
             />
             <StatCell
               label="Overall avg"
-              value={statsLoading ? '—' : fmt(stats?.average_overall_score ?? null, '/100')}
+              value={displayStatsLoading ? '—' : fmt(displayStats?.average_overall_score ?? null, '/100')}
             />
             <StatCell
               label="Turns evaluated"
-              value={statsLoading ? '—' : String(stats?.total_turns_evaluated ?? 0)}
+              value={displayStatsLoading ? '—' : String(displayStats?.total_turns_evaluated ?? 0)}
             />
             <StatCell
               label="Filler rate"
-              value={statsLoading ? '—' : fmt(stats?.filler_word_rate ?? null, '%')}
+              value={displayStatsLoading ? '—' : fmt(displayStats?.filler_word_rate ?? null, '%')}
               hint={
-                statsLoading
+                displayStatsLoading
                   ? undefined
-                  : `${stats?.total_filler_word_count ?? 0} filler words`
+                  : `${displayStats?.total_filler_word_count ?? 0} filler words`
               }
               href="#filler-words"
             />
           </section>
+
+          {/* Filters — govern everything below (charts, radar, filler words,
+              saved questions, and the session list). Two composable axes:
+              Question-category (left) + Company/Role (right). Shown once the
+              user has at least one session. */}
+          {hasAnySessions && (
+            <section
+              className="anim-reveal relative z-30 mb-10"
+              style={{ animationDelay: '200ms' }}
+            >
+              {/* Description on the left; filter cluster on the right (same row
+                  on desktop). On mobile everything stacks, with the category
+                  dropdown on its own row above the Company/Role controls. */}
+              <div className="flex flex-col gap-3 min-[900px]:flex-row min-[900px]:items-center min-[900px]:justify-between">
+                <p className="text-sm text-text-muted">
+                  {categoryFilter === 'all'
+                    ? 'Showing aggregates across all question categories'
+                    : `Showing ${questionCategoryLabel(categoryFilter)} questions`}
+                </p>
+                <div className="flex flex-col gap-3 min-[900px]:flex-row min-[900px]:items-center min-[900px]:justify-end">
+                  <QuestionCategoryFilterMenu
+                    value={categoryFilter}
+                    onChange={setCategoryFilter}
+                  />
+                  <div className="flex items-center justify-end gap-3">
+                    {filterField !== 'none' && (
+                      <div className="flex-1 min-w-[8rem] max-w-[20rem]">
+                        <LocalSuggestionField
+                          options={filterField === 'company' ? companyOptions : roleOptions}
+                          value={filterValue}
+                          onChange={(v) => {
+                            setFilterValue(v);
+                            setFilterSelected(false);
+                          }}
+                          selected={filterSelected}
+                          onSelectedChange={setFilterSelected}
+                          inputClassName="w-full rounded-full border border-border-strong bg-surface-raised px-4 py-1 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                          placeholder={
+                            filterField === 'company'
+                              ? 'Type a company…'
+                              : 'Type a role…'
+                          }
+                          ariaLabel={
+                            filterField === 'company'
+                              ? 'Filter by company'
+                              : 'Filter by role'
+                          }
+                        />
+                      </div>
+                    )}
+                    <FilterFieldMenu
+                      value={filterField}
+                      onChange={handleFilterFieldChange}
+                    />
+                  </div>
+                </div>
+              </div>
+              {/* Left-aligned so the right-side dropdown popup (which opens
+                  downward) never covers the active-filter status or its Clear
+                  link. */}
+              {activeFilter && (
+                <p className="mt-3 text-left text-xs text-text-subtle">
+                  Showing {activeFilter.field === 'company' ? 'company' : 'role'}{' '}
+                  <span className="text-text-muted">“{activeFilter.value}”</span> ·{' '}
+                  {filteredCount} session{filteredCount === 1 ? '' : 's'}
+                  <button
+                    type="button"
+                    onClick={() => handleFilterFieldChange('none')}
+                    className="ml-2 text-link underline-offset-2 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded-sm"
+                  >
+                    Clear
+                  </button>
+                </p>
+              )}
+            </section>
+          )}
 
           {/* Trend chart */}
           <section
@@ -507,7 +699,9 @@ export default function History() {
 
             {!sessionsLoading && !enoughForChart && (
               <p className="text-sm text-text-muted">
-                Finish your first session to see a trend here.
+                {anyFilterActive
+                  ? 'No sessions match this filter.'
+                  : 'Finish your first session to see a trend here.'}
               </p>
             )}
 
@@ -524,7 +718,7 @@ export default function History() {
                   <DimensionMenu
                     showOverall={showOverall}
                     onToggleOverall={() => setShowOverall((v) => !v)}
-                    dimensions={DIMENSIONS}
+                    dimensions={lineDimensions}
                     activeDims={activeDims}
                     onToggleDim={(key) =>
                       setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -578,7 +772,7 @@ export default function History() {
                           isAnimationActive={false}
                         />
                       )}
-                      {DIMENSIONS.map((d) =>
+                      {lineDimensions.map((d) =>
                         activeDims[d.key] ? (
                           <Line
                             key={d.key}
@@ -599,10 +793,20 @@ export default function History() {
                 </div>
                 </div>
 
-                {/* Radar (1/3): six dims averaged over the last ≤5 sessions —
-                    the shape reads as consistent strengths/weaknesses. */}
+                {/* Radar (1/3). All categories: the category-comparison radar
+                    (one spoke per question type). A specific category: the
+                    per-dimension radar for that category, averaged over the
+                    last ≤5 sessions — the shape reads as strengths/weaknesses. */}
                 <div className="min-[900px]:col-span-1">
-                  <StrengthsRadarPanel radar={radar} unitLabel="session" />
+                  {categoryFilter === 'all' ? (
+                    // Guard against a transient all-zero flash before the
+                    // server rollup lands (displayStats undefined while loading).
+                    displayStats ? (
+                      <CategoryStrengthsRadarPanel data={categoryRadar} />
+                    ) : null
+                  ) : (
+                    <StrengthsRadarPanel radar={radar} unitLabel="session" />
+                  )}
                 </div>
               </div>
             )}
@@ -640,15 +844,19 @@ export default function History() {
                     <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle mb-4">
                       Most used
                     </p>
-                    <FillerWordsChart entries={stats!.top_filler_words} />
+                    <FillerWordsChart entries={displayStats!.top_filler_words} />
                   </div>
                 )}
               </div>
             </section>
           )}
 
-          {/* Saved questions — hidden entirely when the user has none. */}
-          <SavedQuestionsSection />
+          {/* Saved questions — hidden entirely when the user has none (or none
+              match the active filter). */}
+          <SavedQuestionsSection
+            activeFilter={activeFilter}
+            categoryFilter={categoryFilter}
+          />
 
           {/* Session list */}
           <section id="sessions" className="anim-reveal scroll-mt-8" style={{ animationDelay: '320ms' }}>
@@ -660,11 +868,11 @@ export default function History() {
                 Sessions
               </h2>
               <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle tabular-nums">
-                {hasSessions ? `${sessions!.length} total` : ''}
+                {hasFilteredSessions ? `${filteredCount} total` : ''}
               </p>
             </div>
 
-            {!sessionsLoading && !hasSessions && !sessionsError && (
+            {!sessionsLoading && !hasAnySessions && !sessionsError && (
               <div className="mt-8 py-16 text-center">
                 <p className="font-display text-xl text-text mb-2">
                   No completed sessions yet.
@@ -681,13 +889,19 @@ export default function History() {
               </div>
             )}
 
-            {hasSessions && (
+            {!sessionsLoading && hasAnySessions && !hasFilteredSessions && (
+              <p className="mt-8 py-8 text-sm text-text-muted">
+                No sessions match this filter.
+              </p>
+            )}
+
+            {hasFilteredSessions && (
               <div className="mt-2">
-                {sessions!.map((s, i) => (
+                {filteredSessions!.map((s, i) => (
                   <SessionRow
                     key={s.id}
                     session={s}
-                    ordinal={sessions!.length - i}
+                    ordinal={filteredCount - i}
                     onClick={() => navigate(`/sessions/${s.id}`)}
                   />
                 ))}
@@ -707,18 +921,47 @@ export default function History() {
  * the FROZEN `job_title` (what the question was generated for), not the live
  * profile target_role, so the card reads as an intentional snapshot.
  */
-function SavedQuestionsSection() {
+function SavedQuestionsSection({
+  activeFilter,
+  categoryFilter,
+}: {
+  activeFilter: CompanyRoleFilter | null;
+  categoryFilter: CategoryFilter;
+}) {
   const navigate = useNavigate();
   const { saved, isLoading, remove, rePractice } = useSavedQuestions();
   const [busyId, setBusyId] = useState<string | null>(null);
   // The saved question pending in the voice picker (null = dialog closed).
   const [pendingSq, setPendingSq] = useState<SavedQuestionListItem | null>(null);
 
-  // Don't render anything (not even a heading) until we know there's at least
-  // one saved question — an empty section would be visual noise.
-  if (isLoading || !saved || saved.length === 0) return null;
+  // Same composable Company/Role + Question-category filter the rest of the
+  // page uses (case-insensitive equality on company/role; exact match on the
+  // frozen question category).
+  const filtered = useMemo(() => {
+    if (!saved) return saved;
+    return saved.filter((sq) => {
+      if (activeFilter) {
+        const hay = (
+          activeFilter.field === 'company' ? sq.company : sq.job_title
+        ).toLowerCase();
+        if (hay !== activeFilter.value.toLowerCase()) return false;
+      }
+      if (categoryFilter !== 'all' && sq.question_category !== categoryFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [saved, activeFilter, categoryFilter]);
 
-  async function handleRePractice(sq: SavedQuestionListItem, voiceId: string | null) {
+  // Don't render anything (not even a heading) until we know there's at least
+  // one saved question in view — an empty section would be visual noise.
+  if (isLoading || !filtered || filtered.length === 0) return null;
+
+  async function handleRePractice(
+    sq: SavedQuestionListItem,
+    voiceId: string | null,
+    speechPace: SpeechPace,
+  ) {
     setBusyId(sq.id);
     try {
       // Same mic preflight as Home's Begin-session, so the user lands in
@@ -733,11 +976,12 @@ function SavedQuestionsSection() {
         });
         return;
       }
-      const data = await rePractice(sq.id, voiceId);
+      const data = await rePractice(sq.id, voiceId, speechPace);
       const state: PracticeLocationState = {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        firstQuestionCategory: data.first_question_category,
         company: sq.company,
         jobTitle: sq.job_title,
       };
@@ -765,7 +1009,7 @@ function SavedQuestionsSection() {
           Saved questions
         </h2>
         <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle tabular-nums">
-          {saved.length}/5 saved
+          {saved!.length}/5 saved
         </p>
       </div>
       <p className="mb-4 text-sm leading-[1.6] text-text-muted">
@@ -776,7 +1020,7 @@ function SavedQuestionsSection() {
         improve over time. You can keep up to five saved questions at once.
       </p>
       <div className="mt-2">
-        {saved.map((sq) => (
+        {filtered.map((sq) => (
           <SavedQuestionRow
             key={sq.id}
             sq={sq}
@@ -793,8 +1037,8 @@ function SavedQuestionsSection() {
         busy={busyId !== null}
         questionText={pendingSq?.question_text}
         onCancel={() => setPendingSq(null)}
-        onStart={(voiceId) => {
-          if (pendingSq) void handleRePractice(pendingSq, voiceId);
+        onStart={(voiceId, speechPace) => {
+          if (pendingSq) void handleRePractice(pendingSq, voiceId, speechPace);
         }}
       />
     </section>

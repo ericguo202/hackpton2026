@@ -14,6 +14,7 @@ import { cn } from '../lib/utils';
 
 interface Props {
   turnNum: number;
+  totalTurns: number;
   recorderState: 'idle' | 'recording' | 'stopped';
   showQuestionText: boolean;
   showTranscript: boolean;
@@ -95,6 +96,7 @@ function QuitButton({ onClick }: { onClick: () => void }) {
 
 export function PracticeFooter({
   turnNum,
+  totalTurns,
   recorderState,
   showQuestionText,
   showTranscript,
@@ -114,7 +116,7 @@ export function PracticeFooter({
         {/* Turn number dropped on mobile to free horizontal space for the
             larger, evenly-spaced button row below. */}
         <span className="hidden whitespace-nowrap text-eyebrow uppercase tracking-eyebrow text-text-muted min-[900px]:inline">
-          Turn {turnNum}
+          Turn {turnNum} of {totalTurns}
         </span>
         <span className="flex items-center gap-2 text-sm">
           {recorderState === 'recording' ? (

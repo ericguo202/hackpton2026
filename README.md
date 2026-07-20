@@ -148,15 +148,26 @@ enterprise leadership — same company, very different interview.
 ### Voice-native session loop
 
 The whole session runs through voice: question audio plays, the mic engages
-automatically when it ends, you talk, you press **End answer**, and the
-follow-up arrives. The follow-up is conditioned on the same field category
+automatically when it ends, you talk, you press **End answer**, and the next
+question arrives. You choose the session length up front — anywhere from **2
+to 8 turns** — and the interview is broken into short "story blocks": a fresh
+opening question followed by one or two follow-ups that drill into what you
+actually said. Whether a second follow-up comes is decided on the fly — a
+lightweight model call judges whether your answer left a gap worth probing, so
+a complete answer moves on to a new scenario instead of being padded with a
+forced extra question. Each follow-up is conditioned on the same field category
 and company-research signals (role values, behavioral themes) that shaped
 the opening question, so it lands in the right tone for the role and gently
-redirects rather than echoing back if your first answer was off-topic or
+redirects rather than echoing back if your answer was off-topic or
 nonsensical. You can pick from a pool of accented interviewer voices
 (or let the system surprise you) so non-native English speakers can rehearse
 against the kind of voice they'll actually face in a screen. The chosen voice
-persists across both turns so the interviewer never "changes person" mid-session.
+persists across every turn so the interviewer never "changes person" mid-session.
+
+If you have to stop early, the turns you already finished aren't thrown away:
+quitting a session with at least one completed answer scores and saves it on
+just those turns, so an interrupted interview becomes a shorter graded one
+rather than a total loss.
 
 ### Session history and trend chart
 
@@ -213,8 +224,9 @@ for regular user-facing APIs.
 
 ## Tech stack & architecture
 
-A small, deliberately boring stack — React + FastAPI + Postgres, with three
-sequential LLM calls per session (no multi-agent loop). The frontend is
+A small, deliberately boring stack — React + FastAPI + Postgres, with a
+handful of sequential LLM calls per session that scale with its length (no
+multi-agent loop). The frontend is
 React 19 + Vite + Tailwind 4 with Clerk for auth, MediaRecorder for capture,
 and MediaPipe Tasks Vision for the in-browser face landmark mesh. The backend
 is FastAPI on async SQLAlchemy with Alembic migrations against Postgres, all
@@ -241,27 +253,12 @@ Browser (React + Vite)
 
 ## Future improvements
 
-The MVP's scope was intentionally tight (two turns, one company at a time,
-single-shot scoring). A few directions worth exploring beyond this build:
-
-- **Variable-length sessions** — drop the hardcoded 2-turn rule, let the
-  evaluator decide when the answer warrants a deeper follow-up vs. moving on.
-  Requires a smarter end-condition than `turn_number >= 2`. **coming soon!**
-- **More interview formats** — the architecture is generic; technical-screen
-  framing, case-interview prompts, and consulting fit-style questions are all
-  swap-the-prompt features.
-- **Streaming TTS / LiveAvatar** — ElevenLabs supports streaming; pairing it
-  with a HeyGen LiveAvatar would give the interviewer a face. Lite-mode
-  integration was scoped but cut for time.
 - **Spoken-feedback mode** — pipe the structured feedback back through TTS at the
   end of the session so the review feels like a debrief, not a report card.
 - **Comparative analytics** — anonymized cohort percentiles ("your
   Structure and Impact scores trail the median for entry-level SWE
   candidates") would turn the trend chart from a self-comparison into a
   benchmark.
-- **Mobile capture** — the current MediaPipe loop assumes a laptop webcam;
-  a dedicated phone capture flow with portrait framing and on-device STT
-  would extend the practice context.
 - **Production hardening** — exponential backoff on the ElevenLabs / Gemini
   rate limits and an actual test suite beyond the evaluator unit tests.
   Per-user daily caps and the internal incidents table already ship; broader

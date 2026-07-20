@@ -14,9 +14,10 @@
 
 import type { ReactNode } from 'react';
 
+import { scoreDimensionsFor, type ScoreKey } from '../../lib/scoreDimensions';
 import type { DimensionAverages, SessionDetail } from '../../types/history';
 import FillerRateBar from './FillerRateBar';
-import { SCORE_COLOR_MAP, SCORE_KEYS, num, type ScoreKey } from './_helpers';
+import { isMixedCategorySession, num } from './_helpers';
 
 type Props = {
   session: SessionDetail;
@@ -30,6 +31,12 @@ export default function OverviewPanel({ session, sessionCompleted }: Props) {
     <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-6 min-[900px]:gap-8 p-6 min-[900px]:p-8">
       <CaseFileColumn session={session} />
       <ScoresOverviewColumn
+        // Label the aggregate tiles from the opening turn's category (STAR by
+        // default). For a Recommended Mix session spanning multiple types, only
+        // the type-invariant tiles (Structure + Delivery) are shown — positions
+        // 2–5 mean different things per turn, so their average is meaningless.
+        category={session.turns[0]?.question_category}
+        mixed={isMixedCategorySession(session.turns)}
         averages={session.averages}
         fillerRate={num(session.filler_word_rate)}
         caption={
@@ -108,6 +115,8 @@ export function ScoresOverviewColumn({
   averages,
   caption,
   fillerRate,
+  category,
+  mixed = false,
 }: {
   averages: DimensionAverages;
   caption?: ReactNode;
@@ -117,7 +126,23 @@ export function ScoresOverviewColumn({
    * (lower is better), so deliberately not a 7th tile. Omitted when null.
    */
   fillerRate?: number | null;
+  /**
+   * The session's question category (single-category per session). Resolves the
+   * per-position tile labels (STAR vs Motivation & Fit). Omitted/unknown → STAR.
+   */
+  category?: string | null;
+  /**
+   * True for a "Recommended Mix" session whose turns span MULTIPLE question
+   * types. Positions 2–5 mean different things per turn (e.g. Problem-Solving
+   * for STAR vs Relevance for M&F), so averaging them into one labeled tile is
+   * meaningless — we show only the type-invariant slots (Structure + Delivery)
+   * here and defer the rest to the per-turn cards, which label correctly.
+   */
+  mixed?: boolean;
 }) {
+  const dimensions = scoreDimensionsFor(category).filter(
+    (d) => !mixed || d.key === 'dimension_1' || d.key === 'delivery',
+  );
   return (
     <section className="flex flex-col">
       <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted mb-3">
@@ -126,14 +151,21 @@ export function ScoresOverviewColumn({
       {caption != null && (
         <p className="mb-4 text-sm text-text-muted">{caption}</p>
       )}
+      {mixed && (
+        <p className="mb-4 text-sm text-text-muted">
+          This session mixed question types. Only Structure and Delivery compare
+          across them — open each turn below for its full per-type scores.
+        </p>
+      )}
 
       <div className="grid grid-cols-2 min-[900px]:grid-cols-3 gap-3">
-        {SCORE_KEYS.map(([key, label]) => (
+        {dimensions.map((d) => (
           <ScoreTile
-            key={key}
-            scoreKey={key}
-            label={label}
-            value={num(averages[key])}
+            key={d.key}
+            scoreKey={d.key}
+            label={d.label}
+            color={d.color}
+            value={num(averages[d.key])}
           />
         ))}
       </div>
@@ -150,13 +182,14 @@ export function ScoresOverviewColumn({
 function ScoreTile({
   scoreKey,
   label,
+  color,
   value,
 }: {
   scoreKey: ScoreKey;
   label: string;
+  color: string;
   value: number | null;
 }) {
-  const color = SCORE_COLOR_MAP[scoreKey];
   const isDelivery = scoreKey === 'delivery';
   return (
     <div className="rounded-lg bg-surface-sunken p-4 flex flex-col gap-3">

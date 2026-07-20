@@ -11,9 +11,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.db.models.enums import QuestionCategory
 from app.services.evaluator import (
     EvaluatorOutput,
     _compute_delivery_score,
+    _normalize_score_key,
+    _remap_dimension_keys,
+    _summary_quality_score,
     evaluate_turn,
 )
 from app.services.filler_words import count_filler_words
@@ -83,7 +87,11 @@ _DEFAULT_PAYLOAD = {
     "notes": "Good structure, but quantify the impact to strengthen it.",
 }
 
-_RUBRIC_FIELDS = ("structure", "problem_solving", "impact", "initiative", "depth")
+# The evaluator's five generic content-score fields (STAR maps them to
+# structure/problem_solving/impact/initiative/depth by position).
+_RUBRIC_FIELDS = (
+    "dimension_1", "dimension_2", "dimension_3", "dimension_4", "dimension_5",
+)
 
 
 async def test_evaluate_turn_returns_valid_output(monkeypatch):
@@ -156,11 +164,11 @@ async def test_scores_clamped_to_range(monkeypatch):
         "and shared what we learned with the team."
     )
     result = await evaluate_turn(question="q", transcript=transcript)
-    assert result.structure == 10
-    assert result.problem_solving == 0
-    assert result.impact == 10
-    assert result.initiative == 4
-    assert result.depth == 7
+    assert result.dimension_1 == 10   # structure 15 → clamped 10
+    assert result.dimension_2 == 0    # problem_solving -3 → clamped 0
+    assert result.dimension_3 == 10   # impact 100 → clamped 10
+    assert result.dimension_4 == 4    # initiative
+    assert result.dimension_5 == 7    # depth
 
 
 def test_history_included_in_prompt():
@@ -429,11 +437,11 @@ def test_feedback_detail_accepts_legacy_coaching_moments():
 
     detail = EvaluatorOutput.model_validate(
         {
-            "structure": 5,
-            "problem_solving": 5,
-            "impact": 4,
-            "initiative": 5,
-            "depth": 5,
+            "dimension_1": 5,
+            "dimension_2": 5,
+            "dimension_3": 4,
+            "dimension_4": 5,
+            "dimension_5": 5,
             "feedback_detail": legacy,
             "notes": "Add a result.",
         }
@@ -519,6 +527,129 @@ def test_compute_delivery_score_penalizes_tilted_bad_posture():
     }
 
     assert _compute_delivery_score(tilted) < _compute_delivery_score(baseline)
+
+
+def test_mobile_capture_softens_camera_motion_but_keeps_severe_cap():
+    moving_phone = {
+        "frames_processed": 180,
+        "face_visible_pct": 98.0,
+        "eye_contact_score": 72.0,
+        "expression_score": 68.0,
+        "posture_score": 50.0,
+        "overall_interview_score": 64.0,
+        "eye_contact_stability": 82.0,
+        "expression_stability": 84.0,
+        "posture_stability": 42.0,
+        "looked_away_pct": 8.0,
+        "posture_drift_pct": 75.0,
+        "bad_posture_pct": 75.0,
+        "tilted_pct": 58.0,
+        "low_energy_pct": 5.0,
+        "longest_looked_away_streak_frames": 8,
+        "longest_posture_drift_streak_frames": 126,
+        "longest_bad_posture_streak_frames": 126,
+        "longest_tilted_streak_frames": 104,
+        "longest_low_energy_streak_frames": 5,
+    }
+
+    desktop_score = _compute_delivery_score(moving_phone)
+    mobile_score = _compute_delivery_score(
+        {**moving_phone, "capture_mode": "mobile_portrait"}
+    )
+
+    assert mobile_score > desktop_score
+    # Mobile camera movement is discounted, not ignored: sustained severe
+    # alignment still cannot produce an excellent delivery score.
+    assert mobile_score <= 5
+
+
+def test_unknown_capture_mode_keeps_legacy_desktop_scoring():
+    summary = {
+        "frames_processed": 120,
+        "face_visible_pct": 98.0,
+        "eye_contact_score": 70.0,
+        "expression_score": 64.0,
+        "posture_score": 55.0,
+        "overall_interview_score": 63.0,
+        "eye_contact_stability": 76.0,
+        "posture_stability": 48.0,
+        "looked_away_pct": 12.0,
+        "bad_posture_pct": 54.0,
+        "tilted_pct": 32.0,
+        "longest_looked_away_streak_frames": 10,
+        "longest_bad_posture_streak_frames": 48,
+        "longest_tilted_streak_frames": 30,
+    }
+
+    assert _compute_delivery_score(
+        {**summary, "capture_mode": "future_device"}
+    ) == _compute_delivery_score(summary)
+
+
+def test_delivery_score_prefers_full_turn_face_only_quality_over_dropout_ema():
+    dropout_biased = {
+        "frames_processed": 180,
+        "face_visible_pct": 90.0,
+        # A detector dropout near the end pulled the legacy EMAs down even
+        # though face-visible frames were consistently strong.
+        "eye_contact_score": 28.0,
+        "expression_score": 30.0,
+        "posture_score": 32.0,
+        "overall_interview_score": 30.0,
+        "eye_contact_stability": 82.0,
+        "posture_stability": 84.0,
+        "looked_away_pct": 6.0,
+        "posture_drift_pct": 5.0,
+        "bad_posture_pct": 5.0,
+        "tilted_pct": 3.0,
+        "longest_looked_away_streak_frames": 8,
+        "longest_bad_posture_streak_frames": 7,
+        "longest_tilted_streak_frames": 4,
+    }
+    robust = {
+        **dropout_biased,
+        "quality_aggregation_version": 2,
+        "face_quality_sample_count": 150,
+        "eye_contact_score_robust": 76.0,
+        "expression_score_robust": 68.0,
+        "posture_score_robust": 82.0,
+    }
+
+    assert _compute_delivery_score(robust) > _compute_delivery_score(
+        dropout_biased
+    )
+
+
+def test_robust_quality_signal_blends_short_captures_toward_legacy_ema():
+    summary = {
+        "quality_aggregation_version": 2,
+        "face_quality_sample_count": 5,
+        "eye_contact_score": 50.0,
+        "eye_contact_score_robust": 70.0,
+    }
+
+    assert _summary_quality_score(
+        summary,
+        "eye_contact_score_robust",
+        "eye_contact_score",
+        0.0,
+    ) == pytest.approx(55.0)
+
+
+def test_nonfinite_robust_quality_falls_back_to_legacy_score():
+    summary = {
+        "quality_aggregation_version": 2,
+        "face_quality_sample_count": 40,
+        "eye_contact_score": 64.0,
+        "eye_contact_score_robust": "nan",
+    }
+
+    assert _summary_quality_score(
+        summary,
+        "eye_contact_score_robust",
+        "eye_contact_score",
+        0.0,
+    ) == 64.0
 
 
 def test_compute_delivery_score_does_not_compound_low_energy_coverage():
@@ -725,8 +856,8 @@ async def test_content_calibration_prevents_unsupported_neutral_fives(monkeypatc
         transcript="Stuff happened and it was fine.",
     )
 
-    assert result.impact < 5
-    assert result.depth < 5
+    assert result.dimension_3 < 5   # impact
+    assert result.dimension_5 < 5   # depth
 
 
 async def test_injection_transcript_scored_as_nonanswer_without_llm(monkeypatch):
@@ -917,3 +1048,120 @@ async def test_category_threads_into_system_prompt(monkeypatch):
     )
     assert "deal sizes" not in captured["system"]
     assert "user problem" in captured["system"]  # phrase unique to Tech appendix
+
+
+# ---------------------------------------------------------------------------
+# Malformed-DeepSeek-output resilience: tolerant key normalization (#2) +
+# parse/validation retry (#1). See evaluator._normalize_score_key and the
+# retry loop in evaluate_turn.
+# ---------------------------------------------------------------------------
+
+
+def _make_raw_client(contents):
+    """Client whose create() serves successive RAW string bodies (not dicts).
+
+    Lets a test hand back a malformed HTTP-200 body (unterminated JSON, non-JSON
+    prose) that the evaluator must retry past, and count how many calls it took.
+    Returns (client, calls) where calls["n"] is the create() invocation count.
+    """
+    it = iter(contents)
+    calls = {"n": 0}
+
+    async def _create(**_kwargs):
+        calls["n"] += 1
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=next(it)))]
+        )
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    return client, calls
+
+
+def test_normalize_score_key_strips_stray_chars():
+    # The observed DeepSeek glitch: a stray '}' glued onto the first key.
+    assert _normalize_score_key("}structure") == "structure"
+    assert _normalize_score_key('"structure') == "structure"
+    assert _normalize_score_key(" Structure ") == "structure"
+    # A clean key is returned unchanged (identity for the common case).
+    assert _normalize_score_key("self_awareness") == "self_awareness"
+
+
+def test_remap_recovers_stray_brace_first_key():
+    # Reproduces the production failure: the model emitted "}structure" as the
+    # first key, so `structure` -> dimension_1 was never mapped and validation
+    # failed. Normalized-key fallback now recovers it without a re-request.
+    payload = {
+        "}structure": 6,
+        "self_awareness": 7,
+        "growth": 8,
+        "candor": 5,
+        "evidence": 9,
+        "notes": "x",
+    }
+    out = _remap_dimension_keys(payload, QuestionCategory.self_assessment_growth)
+    assert out["dimension_1"] == 6
+    assert out["dimension_2"] == 7
+    assert out["dimension_3"] == 8
+    assert out["dimension_4"] == 5
+    assert out["dimension_5"] == 9
+    assert "}structure" not in out
+    assert out["notes"] == "x"  # non-score keys untouched
+
+
+def test_remap_prefers_exact_keys_for_star():
+    # Clean payload: exact matches map by position, no normalization needed.
+    payload = {
+        "structure": 1,
+        "problem_solving": 2,
+        "impact": 3,
+        "initiative": 4,
+        "depth": 5,
+    }
+    out = _remap_dimension_keys(payload, QuestionCategory.experience_star)
+    assert [out[f"dimension_{i}"] for i in range(1, 6)] == [1, 2, 3, 4, 5]
+
+
+def test_remap_no_false_recovery_when_key_truly_missing():
+    # `growth` is genuinely absent — nothing should be invented for dimension_3,
+    # and a valid neighboring key (`candor`) must not be stolen to fill it.
+    payload = {
+        "structure": 1,
+        "self_awareness": 2,
+        "candor": 4,
+        "evidence": 5,
+    }
+    out = _remap_dimension_keys(payload, QuestionCategory.self_assessment_growth)
+    assert "dimension_3" not in out
+    assert out["dimension_4"] == 4  # candor kept its slot, not consumed by growth
+
+
+async def test_evaluate_turn_retries_past_malformed_body(monkeypatch):
+    # First body is unterminated JSON (extract_json_object raises ValueError);
+    # the retry re-requests and the second body parses cleanly.
+    client, calls = _make_raw_client(
+        ['{"structure": 6', json.dumps(_DEFAULT_PAYLOAD)]
+    )
+    monkeypatch.setattr("app.services.evaluator.get_client", lambda: client)
+
+    result = await evaluate_turn(
+        question="Tell me about a project you led.",
+        transcript="I led the migration and we shipped two days early.",
+    )
+    assert isinstance(result, EvaluatorOutput)
+    assert calls["n"] == 2  # one failed attempt, one success
+
+
+async def test_evaluate_turn_raises_after_exhausting_retries(monkeypatch):
+    # Every attempt returns non-JSON prose. After _EVAL_PARSE_ATTEMPTS tries the
+    # last parse error propagates so the caller's fail-soft (null scores) runs.
+    client, calls = _make_raw_client(["I'm sorry, I can't do that."] * 3)
+    monkeypatch.setattr("app.services.evaluator.get_client", lambda: client)
+
+    with pytest.raises(ValueError):
+        await evaluate_turn(
+            question="Tell me about a project you led.",
+            transcript="I led the migration.",
+        )
+    assert calls["n"] == 3  # _EVAL_PARSE_ATTEMPTS

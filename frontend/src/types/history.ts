@@ -8,14 +8,19 @@
  * so the raw payload stays inspectable in DevTools.
  */
 
-/** Per-dimension averages — every value is null on rows with no data. */
+/**
+ * Per-dimension averages — every value is null on rows with no data. The five
+ * content slots are GENERIC (`dimension_1..5`); the human label per position is
+ * resolved from the question category (see `lib/scoreDimensions.ts`). Aggregate
+ * surfaces render the STAR label set today (all live turns are STAR).
+ */
 export type DimensionAverages = {
-  structure:       string | null;
-  problem_solving: string | null;
-  impact:          string | null;
-  initiative:      string | null;
-  depth:           string | null;
-  delivery:        string | null;
+  dimension_1: string | null;
+  dimension_2: string | null;
+  dimension_3: string | null;
+  dimension_4: string | null;
+  dimension_5: string | null;
+  delivery:    string | null;
 };
 
 export type SessionStatus =
@@ -78,6 +83,10 @@ export type SessionListItem = {
   /** Filler words ÷ total words, percent (Decimal-as-string). Null on legacy rows. */
   filler_word_rate: string | null;
   averages: DimensionAverages;
+  /** Session-level question category (FORM axis), derived from the session's
+   *  turns: the single category, or "mixed" for a Recommended-Mix session.
+   *  Null on a session with no turns. Drives the History category filter. */
+  question_category?: string | null;
 };
 
 /** One scored turn inside `SessionDetail`. Mirrors backend `TurnOut`. */
@@ -87,14 +96,18 @@ export type TurnDetail = {
   question_text: string;
   transcript_text: string | null;
   is_followup: boolean;
+  /** Question FORM (Experience/STAR today). One of the QuestionCategory enum
+   *  values; drives the per-turn category badge. Optional for legacy payloads. */
+  question_category?: string;
   scores: {
-    // Null when the turn's evaluation never completed. Renders as an
-    // "Evaluation Failed" placeholder, NOT as 0/10.
-    structure: number | null;
-    problem_solving: number | null;
-    impact: number | null;
-    initiative: number | null;
-    depth: number | null;
+    // Five GENERIC content slots + delivery. Null when the turn's evaluation
+    // never completed (renders as "Evaluation Failed", NOT 0/10). The label per
+    // position is resolved from `question_category` (see `lib/scoreDimensions.ts`).
+    dimension_1: number | null;
+    dimension_2: number | null;
+    dimension_3: number | null;
+    dimension_4: number | null;
+    dimension_5: number | null;
     delivery: number | null;
   };
   feedback: string | null;
@@ -111,6 +124,7 @@ export type SessionDetail = {
   id: string;
   company: string;
   job_title: string;
+  num_turns: number;
   status: SessionStatus;
   overall_score: string | null;
   started_at: string | null;
@@ -146,6 +160,19 @@ export type FillerWordStat = {
   count: number;
 };
 
+/**
+ * Per-question-category rollup for the History strengths radar. `average_score`
+ * is the mean of the five content dimensions (0-10, Decimal-as-string), null
+ * when the category has no scored turns; `turns_evaluated` is that turn count.
+ * Only categories with ≥1 scored turn appear — the frontend plots absent
+ * categories as 0.
+ */
+export type CategoryStat = {
+  question_category: string;
+  average_score: string | null;
+  turns_evaluated: number;
+};
+
 export type MeStats = {
   total_sessions: number;
   completed_sessions: number;
@@ -160,4 +187,7 @@ export type MeStats = {
   average_overall_score: string | null;
   /** Top-5 filler words, count-desc. Empty until the user logs a filler word. */
   top_filler_words: FillerWordStat[];
+  /** Per-category rollup for the strengths-radar category-comparison view.
+   *  Always spans all categories (honors company/role, not the category filter). */
+  by_category: CategoryStat[];
 };

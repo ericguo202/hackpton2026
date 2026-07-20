@@ -250,14 +250,12 @@ export default function SessionDetail() {
                           replay={replay}
                           sessionCompleted={sessionCompleted}
                           sessionId={session.id}
-                          savedQuestionId={session.saved_question_id}
                         />
                       ) : (
                         <TurnPanel
                           turn={turn}
                           sessionCompleted={sessionCompleted}
                           sessionId={session.id}
-                          savedQuestionId={session.saved_question_id}
                         />
                       );
                     })()}

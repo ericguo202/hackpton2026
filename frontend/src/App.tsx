@@ -45,6 +45,10 @@ const Calibration = lazyWithRetry(
   () => import('./pages/Calibration'),
   'Calibration',
 );
+const DeliveryPlayground = lazyWithRetry(
+  () => import('./pages/DeliveryPlayground'),
+  'DeliveryPlayground',
+);
 const Personalize = lazyWithRetry(
   () => import('./pages/Personalize'),
   'Personalize',
@@ -54,6 +58,7 @@ const SavedQuestionDetail = lazyWithRetry(
   () => import('./pages/SavedQuestionDetail'),
   'SavedQuestionDetail',
 );
+const Scoring = lazyWithRetry(() => import('./pages/Scoring'), 'Scoring');
 const Settings = lazyWithRetry(() => import('./pages/Settings'), 'Settings');
 const SessionDetail = lazyWithRetry(
   () => import('./pages/SessionDetail'),
@@ -123,6 +128,11 @@ function App() {
       />
       <Route path="/legal/privacy" element={<PrivacyPolicy />} />
       <Route path="/legal/terms" element={<TermsOfService />} />
+      {/* Public like the legal pages: it's the "how we grade you" transparency
+          page, linked from the signed-out footer, so a visitor weighing our
+          methodology can read it before making an account. Static prose — no
+          user data, nothing to gate. */}
+      <Route path="/scoring" element={<Scoring />} />
 
       <Route element={<RedirectIfOnboarded />}>
         <Route path="/sign-in" element={<SignIn />} />
@@ -137,6 +147,7 @@ function App() {
         <Route element={<RequireOnboarded />}>
           <Route path="/practice" element={<Practice />} />
           <Route path="/history" element={<History />} />
+          <Route path="/delivery-playground" element={<DeliveryPlayground />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
           <Route path="/saved-question/:id" element={<SavedQuestionDetail />} />
           <Route path="/personalize" element={<Personalize />} />

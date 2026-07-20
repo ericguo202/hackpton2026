@@ -11,30 +11,40 @@
  * mounted at `/practice`.
  *
  * Layout splits into two slabs at the 900px breakpoint (the same breakpoint
- * TopBar.tsx uses for nav vs hamburger). Desktop keeps the inline form and
- * exposes Advanced as a right-side drawer (`AdvancedPanelDrawer`) that slides
- * in over the sculpture column when the user clicks the "Advanced" trigger
- * next to the Auto-submit pill — the form on the left stays usable. Mobile
- * uses Basic / Advanced pill tabs (matching the resume tabs in Personalize.tsx)
- * sitting alongside Begin session. The Advanced surface is the same
- * `AdvancedPanel` component on both breakpoints.
+ * TopBar.tsx uses for nav vs hamburger). Both keep the same core: one company
+ * question + Begin session, with Advanced / Privacy as optional refinements off
+ * the shared `surface` state. Desktop exposes those as right-side drawers
+ * (`AdvancedPanelDrawer` / `PrivacyPanelDrawer`) opened by quiet inline
+ * "Advanced ›" / "Privacy ›" triggers; the form on the left stays usable.
+ * Mobile opens the same `AdvancedPanel` / `PrivacyPanel` content in a
+ * bottom sheet (`MobileSheet`) and pins Begin session to a thumb-anchored
+ * bar so it's always reachable without scrolling past the refinements.
  */
 
 import { useState, type SubmitEvent } from 'react';
 import { useUser } from '@clerk/react';
 import { ChevronRight } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 
 import AccountButton from '../components/AccountButton';
-import AdvancedPanel from '../components/AdvancedPanel';
+import AdvancedPanel, { SPEECH_PACE_DEFAULT } from '../components/AdvancedPanel';
+import type { SpeechPace } from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
+import SessionLengthField, {
+  MIN_SESSION_TURNS,
+} from '../components/SessionLengthField';
 import DeliveryConsentDialog from '../components/DeliveryConsentDialog';
 import FlashBanner from '../components/FlashBanner';
 import HomeTutorial from '../components/home-tutorial/HomeTutorial';
+import MobileSheet from '../components/MobileSheet';
 import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
-import ScoreDimensions from '../components/ScoreDimensions';
+import QuestionTypeField from '../components/QuestionTypeField';
+import { RECOMMENDED_MIX } from '../types/session';
+import RoleSwitcher from '../components/RoleSwitcher';
+import SiteFooter from '../components/SiteFooter';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
@@ -71,6 +81,8 @@ type SessionStart = {
   summary: { description: string; headlines: string[]; values: string[] };
   first_question: string;
   first_question_audio_url: string;
+  first_question_category: string;
+  num_turns: number;
 };
 
 function timeOfDay(): 'morning' | 'afternoon' | 'evening' {
@@ -136,59 +148,46 @@ function ShowQuestionTextPill({
   );
 }
 
-const SURFACE_LABELS: Record<Surface, string> = {
-  basic: 'Basic',
-  advanced: 'Advanced',
-  privacy: 'Privacy',
-};
-
-function ModeTabs({
-  mode,
-  setMode,
+/**
+ * A quiet "Advanced ›" / "Privacy ›" refinement trigger. Shared by the desktop
+ * inline row and the mobile core body; both just flip the `surface` state
+ * (desktop opens a drawer, mobile a bottom sheet).
+ */
+function RefineTrigger({
+  label,
+  active,
   disabled,
+  onClick,
+  tourId,
 }: {
-  mode: Surface;
-  setMode: (m: Surface) => void;
+  label: string;
+  active: boolean;
   disabled: boolean;
+  onClick: () => void;
+  tourId?: string;
 }) {
   return (
-    <div
-      role="tablist"
-      aria-label="Setup mode"
-      className="inline-flex rounded border border-border bg-surface-raised p-0.5"
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-expanded={active}
+      aria-haspopup="dialog"
+      data-tour={tourId}
+      className="inline-flex items-center gap-1 text-sm text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {(['basic', 'advanced', 'privacy'] as const).map((m) => {
-        const active = mode === m;
-        return (
-          <button
-            key={m}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            disabled={disabled}
-            onClick={() => setMode(m)}
-            className={
-              'rounded px-3 py-1.5 text-sm transition-colors ' +
-              'focus-visible:outline-none focus-visible:ring-2 ' +
-              'focus-visible:ring-focus-ring focus-visible:ring-offset-2 ' +
-              'focus-visible:ring-offset-surface ' +
-              'disabled:cursor-not-allowed disabled:opacity-50 ' +
-              (active
-                ? 'bg-accent text-accent-fg'
-                : 'text-text-muted hover:text-text')
-            }
-          >
-            {SURFACE_LABELS[m]}
-          </button>
-        );
-      })}
-    </div>
+      <span>{label}</span>
+      <ChevronRight
+        aria-hidden
+        className={`h-3.5 w-3.5 transition-transform ${active ? 'rotate-180' : ''}`}
+      />
+    </button>
   );
 }
 
 export default function Home() {
   const { user } = useUser();
-  const { me } = useMe();
+  const { me, refetch } = useMe();
   const { apiFetch } = useApi();
   const navigate = useNavigate();
 
@@ -208,6 +207,13 @@ export default function Home() {
 
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [numTurns, setNumTurns] = useState(MIN_SESSION_TURNS);
+  // Question FORM for the whole session (single-category). Only built types are
+  // offered (see SELECTABLE_QUESTION_CATEGORIES); the backend rejects the rest.
+  const [questionCategory, setQuestionCategory] = useState(RECOMMENDED_MIX);
+  // Interview-voice pace (→ backend `speech_pace`, resolved per-voice server
+  // side). Defaults to "Normal".
+  const [speechPace, setSpeechPace] = useState<SpeechPace>(SPEECH_PACE_DEFAULT);
   const [jobDescription, setJobDescription] = useState('');
   // The caller's custom questions + which one (if any) is selected for this
   // session. When selected, the backend skips the opening-question LLM call and
@@ -227,9 +233,9 @@ export default function Home() {
   // Same key the mid-session eye-icon toggle in Practice.tsx writes to —
   // both surfaces share state via localStorage. Default true (visible).
   const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
-  // Which setup surface is active. Shared between the mobile pill tabs and the
-  // desktop drawers so it survives a viewport crossing 900px. 'basic' = no
-  // drawer open on desktop; 'advanced'/'privacy' open the matching drawer.
+  // Which setup surface is active. Shared across breakpoints so it survives a
+  // viewport crossing 900px. 'basic' = closed; 'advanced'/'privacy' open the
+  // matching desktop drawer (≥900px) or mobile bottom sheet (<900px).
   const [surface, setSurface] = useState<Surface>('basic');
 
   // Pre-session delivery-analytics consent popup open/closed (Home-only UI).
@@ -286,6 +292,14 @@ export default function Home() {
           // user's "today" for the free-tier daily-limit reset. Untrusted
           // on the server side (UTC fallback on parse failure).
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          num_turns: numTurns,
+          // "Recommended Mix" is a UI-only sentinel: send `calibrated_mix` so the
+          // backend draws a calibrated category per opening. An explicit type
+          // keeps the single-category path (sends `question_category`).
+          ...(questionCategory === RECOMMENDED_MIX
+            ? { calibrated_mix: true }
+            : { question_category: questionCategory }),
+          speech_pace: speechPace,
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
           ...(acknowledgeMismatch ? { acknowledge_mismatch: true } : {}),
@@ -296,6 +310,7 @@ export default function Home() {
       });
       trackEvent('practice_session_started', {
         has_custom_voice: Boolean(voiceId),
+        num_turns: data.num_turns,
         auto_submit_enabled: autoSubmit,
         delivery_analytics_enabled: deliveryAnalyticsWillBeEnabled,
         user_tier: me?.tier ?? 'unknown',
@@ -305,6 +320,8 @@ export default function Home() {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        firstQuestionCategory: data.first_question_category,
+        numTurns: data.num_turns,
         company: trimmed,
         jobTitle: me?.target_role ?? 'Software Engineer',
       };
@@ -366,10 +383,9 @@ export default function Home() {
     void createAndGoToSession(false);
   }
 
-  const targetRoleBadge = me?.target_role ? (
-    <p className="text-sm text-text-subtle">
-      Target role: <span className="text-text-muted">{me.target_role}</span>
-    </p>
+  // Active-role badge; for multi-role users this becomes a "Change" switcher.
+  const targetRoleBadge = me ? (
+    <RoleSwitcher me={me} refetch={refetch} />
   ) : null;
 
   // Free-tier usage indicator. Pro users see nothing — the counter is
@@ -382,6 +398,12 @@ export default function Home() {
     </p>
   ) : null;
 
+  // Compact daily-count status under the mobile pinned Begin button. The target
+  // role now lives in the mobile slab as its own switcher (see below), so the
+  // pinned bar only carries the free-tier daily count. Empty (hidden) otherwise.
+  const mobileBarStatus =
+    me?.tier === 'free' ? `${me.daily_session_count}/5 today` : '';
+
   const errorBlock = setupError ? (
     <p role="alert" aria-live="polite" className="mt-10 text-sm leading-[1.6] text-text-muted">
       <span className="mr-3 text-[10px] uppercase tracking-eyebrow text-text">Error</span>
@@ -390,7 +412,9 @@ export default function Home() {
   ) : null;
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface text-text">
+    // `pb-28` on mobile keeps the footer clear of the pinned Begin bar; removed
+    // at ≥900px where the bar isn't rendered.
+    <div className="min-h-screen flex flex-col bg-surface text-text pb-28 min-[900px]:pb-0">
       <TopBar
         nav={
           <>
@@ -426,6 +450,7 @@ export default function Home() {
           />
 
           <form
+            id="setup-form"
             onSubmit={handleStart}
             className="relative z-10 mx-auto w-full max-w-[80rem] 2xl:max-w-[88rem] px-8 py-16 md:px-16 md:py-24"
           >
@@ -480,40 +505,46 @@ export default function Home() {
                       disabled={submitting}
                     />
                   </span>
-                  <button
-                    type="button"
+                  <SessionLengthField
+                    id="session-turns-desktop"
+                    tourId="length-slider"
+                    numTurns={numTurns}
+                    onChange={setNumTurns}
+                    disabled={submitting}
+                  />
+                  <QuestionTypeField
+                    value={questionCategory}
+                    onChange={setQuestionCategory}
+                    disabled={submitting}
+                    tourId="question-type"
+                  />
+                </div>
+
+                {/* Advanced / Privacy triggers sit on their own row (like mobile)
+                    so they never get pushed onto a second line by the toggles +
+                    popover launchers above. */}
+                <div
+                  className="anim-reveal mt-6 flex flex-wrap items-center gap-x-6 gap-y-2"
+                  style={{ animationDelay: '240ms' }}
+                >
+                  <RefineTrigger
+                    label="Advanced"
+                    active={surface === 'advanced'}
+                    disabled={submitting}
+                    tourId="advanced-trigger"
                     onClick={() =>
                       setSurface((s) => (s === 'advanced' ? 'basic' : 'advanced'))
                     }
+                  />
+                  <RefineTrigger
+                    label="Privacy"
+                    active={surface === 'privacy'}
                     disabled={submitting}
-                    aria-expanded={surface === 'advanced'}
-                    aria-haspopup="dialog"
-                    data-tour="advanced-trigger"
-                    className="inline-flex items-center gap-1 text-sm text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span>Advanced</span>
-                    <ChevronRight
-                      aria-hidden
-                      className={`h-3.5 w-3.5 transition-transform ${surface === 'advanced' ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-                  <button
-                    type="button"
+                    tourId="privacy-trigger"
                     onClick={() =>
                       setSurface((s) => (s === 'privacy' ? 'basic' : 'privacy'))
                     }
-                    disabled={submitting}
-                    aria-expanded={surface === 'privacy'}
-                    aria-haspopup="dialog"
-                    data-tour="privacy-trigger"
-                    className="inline-flex items-center gap-1 text-sm text-text-muted cursor-pointer underline-offset-4 transition-colors hover:text-text hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span>Privacy</span>
-                    <ChevronRight
-                      aria-hidden
-                      className={`h-3.5 w-3.5 transition-transform ${surface === 'privacy' ? 'rotate-180' : ''}`}
-                    />
-                  </button>
+                  />
                 </div>
 
                 <div
@@ -533,101 +564,75 @@ export default function Home() {
                 {errorBlock}
               </div>
 
-              {/* Mobile slab: < 900px */}
-              <div className="block min-[900px]:hidden">
-                <section key={surface} className="anim-crossfade">
-                  {surface === 'basic' ? (
-                    <>
-                      <h1
-                        className="mb-10 font-display font-semibold leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
-                        style={{ fontSize: 'clamp(2.25rem, 5vw, 4.25rem)' }}
-                      >
-                        Which company are you
-                        <br />
-                        interviewing with?
-                      </h1>
+              {/* Mobile slab: < 900px. Core only — the company question and quick
+                  toggles. Advanced/Privacy open as bottom sheets; Begin session
+                  is the pinned bar below. `pb-28` keeps the last row clear of it. */}
+              <div className="block min-[900px]:hidden pb-28">
+                <h1
+                  className="mb-10 font-display font-semibold leading-[1.15] tracking-[-0.02em] text-text md:mb-12"
+                  style={{ fontSize: 'clamp(2.25rem, 5vw, 4.25rem)' }}
+                >
+                  Which company are you
+                  <br />
+                  interviewing with?
+                </h1>
 
-                      <label className="block max-w-[clamp(20rem,55vw,42rem)]">
-                        <span className="sr-only">Company name</span>
-                        <input
-                          type="text"
-                          value={company}
-                          onChange={(e) => setCompany(e.target.value)}
-                          placeholder="Stripe, Figma, OpenAI..."
-                          autoComplete="off"
-                          maxLength={60}
-                          disabled={submitting}
-                          className={companyInputClass}
-                        />
-                      </label>
+                <label className="block max-w-[clamp(20rem,55vw,42rem)]">
+                  <span className="sr-only">Company name</span>
+                  <input
+                    type="text"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    placeholder="Stripe, Figma, OpenAI..."
+                    autoComplete="off"
+                    maxLength={60}
+                    disabled={submitting}
+                    className={companyInputClass}
+                  />
+                </label>
 
-                      <div className="mt-8 flex flex-wrap items-center gap-2">
-                        <AutoSubmitPill
-                          autoSubmit={autoSubmit}
-                          onToggle={() => setAutoSubmit((v) => !v)}
-                          disabled={submitting}
-                        />
-                        <ShowQuestionTextPill
-                          showQuestionText={showQuestionText}
-                          onToggle={() => setShowQuestionText((v) => !v)}
-                          disabled={submitting}
-                        />
-                      </div>
-                    </>
-                  ) : surface === 'advanced' ? (
-                    <>
-                      <h2
-                        className="mb-8 font-display font-semibold leading-[1.15] tracking-[-0.02em] text-text"
-                        style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)' }}
-                      >
-                        Customize your interview
-                      </h2>
-                      <AdvancedPanel
-                        voiceId={voiceId}
-                        onVoiceSelect={setVoiceId}
-                        jobDescription={jobDescription}
-                        onJobDescriptionChange={setJobDescription}
-                        customQuestions={customQuestions ?? []}
-                        selectedCustomQuestionId={selectedCustomQuestionId}
-                        onSelectCustomQuestion={setSelectedCustomQuestionId}
-                        disabled={submitting}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <h2
-                        className="mb-8 font-display font-semibold leading-[1.15] tracking-[-0.02em] text-text"
-                        style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)' }}
-                      >
-                        Privacy
-                      </h2>
-                      <PrivacyPanel
-                        active={deliveryConsentActive}
-                        busy={consentBusy}
-                        error={consentError}
-                        consentLabel={deliveryConsentLabel}
-                        onGrant={() => { void grantConsent(); }}
-                        onRevoke={() => { void revokeConsent(); }}
-                        showAnalytics={false}
-                      />
-                    </>
-                  )}
-                </section>
-
-                <div className="mt-10 flex flex-wrap items-center gap-x-4 gap-y-3">
-                  <Button
-                    type="submit"
-                    disabled={!company.trim() || submitting}
-                  >
-                    {submitting ? 'Starting...' : 'Begin session'}
-                  </Button>
-                  <ModeTabs
-                    mode={surface}
-                    setMode={setSurface}
+                <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <AutoSubmitPill
+                    autoSubmit={autoSubmit}
+                    onToggle={() => setAutoSubmit((v) => !v)}
                     disabled={submitting}
                   />
-                  {targetRoleBadge}
-                  {dailyLimitBadge}
+                  <ShowQuestionTextPill
+                    showQuestionText={showQuestionText}
+                    onToggle={() => setShowQuestionText((v) => !v)}
+                    disabled={submitting}
+                  />
+                  <SessionLengthField
+                    id="session-turns-mobile"
+                    numTurns={numTurns}
+                    onChange={setNumTurns}
+                    disabled={submitting}
+                  />
+                  <QuestionTypeField
+                    value={questionCategory}
+                    onChange={setQuestionCategory}
+                    disabled={submitting}
+                  />
+                </div>
+
+                {/* Target role + switcher. On mobile it lives in the slab body
+                    (not the pinned bar) so its popover opens downward into the
+                    content instead of off the bottom edge. */}
+                {targetRoleBadge && <div className="mt-6">{targetRoleBadge}</div>}
+
+                <div className="mt-6 flex items-center gap-x-6">
+                  <RefineTrigger
+                    label="Advanced"
+                    active={surface === 'advanced'}
+                    disabled={submitting}
+                    onClick={() => setSurface('advanced')}
+                  />
+                  <RefineTrigger
+                    label="Privacy"
+                    active={surface === 'privacy'}
+                    disabled={submitting}
+                    onClick={() => setSurface('privacy')}
+                  />
                 </div>
 
                 {errorBlock}
@@ -640,6 +645,8 @@ export default function Home() {
             onClose={() => setSurface('basic')}
             voiceId={voiceId}
             onVoiceSelect={setVoiceId}
+            speechPace={speechPace}
+            onSpeechPaceChange={setSpeechPace}
             jobDescription={jobDescription}
             onJobDescriptionChange={setJobDescription}
             customQuestions={customQuestions ?? []}
@@ -659,10 +666,72 @@ export default function Home() {
             onRevoke={() => { void revokeConsent(); }}
             showAnalytics={false}
           />
+
+          {/* Mobile (< 900px): the same Advanced / Privacy content as the desktop
+              drawers, opened as bottom sheets off the shared `surface` state. */}
+          <MobileSheet
+            open={surface === 'advanced'}
+            title="Advanced"
+            onClose={() => setSurface('basic')}
+          >
+            <AdvancedPanel
+              voiceId={voiceId}
+              onVoiceSelect={setVoiceId}
+              speechPace={speechPace}
+              onSpeechPaceChange={setSpeechPace}
+              jobDescription={jobDescription}
+              onJobDescriptionChange={setJobDescription}
+              customQuestions={customQuestions ?? []}
+              selectedCustomQuestionId={selectedCustomQuestionId}
+              onSelectCustomQuestion={setSelectedCustomQuestionId}
+              disabled={submitting}
+            />
+          </MobileSheet>
+
+          <MobileSheet
+            open={surface === 'privacy'}
+            title="Privacy"
+            onClose={() => setSurface('basic')}
+          >
+            <PrivacyPanel
+              active={deliveryConsentActive}
+              busy={consentBusy}
+              error={consentError}
+              consentLabel={deliveryConsentLabel}
+              onGrant={() => { void grantConsent(); }}
+              onRevoke={() => { void revokeConsent(); }}
+              showAnalytics={false}
+            />
+          </MobileSheet>
         </div>
       </main>
 
-      <ScoreDimensions legal />
+      {/* Mobile (< 900px): pinned thumb bar so Begin session is always reachable
+          without scrolling past the refinements. Portaled to <body> (the hero is
+          `overflow-hidden` under transformed ancestors) and submits the setup
+          form via the `form` attribute despite living outside its subtree. Sits
+          below the sheet overlay (z-40 < z-50) so it's covered while a sheet is
+          open. */}
+      {createPortal(
+        <div className="fixed inset-x-0 bottom-0 z-40 min-[900px]:hidden border-t border-border bg-surface/95 px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+          <Button
+            type="submit"
+            form="setup-form"
+            disabled={!company.trim() || submitting}
+            className="w-full"
+          >
+            {submitting ? 'Starting...' : 'Begin session'}
+          </Button>
+          {mobileBarStatus && (
+            <p className="mt-2 text-center text-xs text-text-subtle">
+              {mobileBarStatus}
+            </p>
+          )}
+        </div>,
+        document.body,
+      )}
+
+      <SiteFooter signedIn />
 
       <DeliveryConsentDialog
         open={consentModalOpen}

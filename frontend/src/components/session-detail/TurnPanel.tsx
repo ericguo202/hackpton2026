@@ -9,7 +9,7 @@
  * the shorter row). Cards inside each row share height via grid
  * `items-stretch` + `InnerCard`'s `h-full`.
  *
- * Evaluation-failed turns (turn.scores.structure === null) collapse the
+ * Evaluation-failed turns (turn.scores.dimension_1 === null) collapse the
  * Scores section to a one-line "Evaluation failed" notice — the rest of
  * the card still renders the transcript, takeaway, and any moments that
  * were persisted.
@@ -41,21 +41,20 @@ type Props = {
   /** False while the session is still finalizing — null scores mean
    *  "Scoring in progress", not "Evaluation failed". */
   sessionCompleted: boolean;
-  /** Set on the opening turn so it can offer the Save-question control. */
+  /** Set so an opening turn can offer the Save-question control. */
   sessionId?: string;
-  savedQuestionId?: string | null;
 };
 
 export default function TurnPanel({
   turn,
   sessionCompleted,
   sessionId,
-  savedQuestionId,
 }: Props) {
-  const evaluationFailed = turn.scores.structure === null;
+  const evaluationFailed = turn.scores.dimension_1 === null;
   const evaluationPending = evaluationFailed && !sessionCompleted;
-  // The opening question (turn 1, non-followup) is the only saveable one.
-  const isOpeningTurn = turn.turn_number === 1 && !turn.is_followup;
+  // Every opening question is saveable (turn 1 + mid-session story-block
+  // openings); follow-ups are not.
+  const isOpeningTurn = !turn.is_followup;
   const flash = useProvideMomentFlash(turn.id);
   const askTutor = useProvideAskTutor();
 
@@ -68,7 +67,8 @@ export default function TurnPanel({
         {isOpeningTurn && sessionId && (
           <SaveQuestionButton
             sessionId={sessionId}
-            alreadySaved={savedQuestionId != null}
+            turnId={turn.id}
+            questionText={turn.question_text}
             evaluated={!evaluationFailed}
             sessionCompleted={sessionCompleted}
           />

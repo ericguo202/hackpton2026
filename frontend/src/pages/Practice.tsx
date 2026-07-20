@@ -1,8 +1,8 @@
 /**
- * Practice — runs an active 2-turn interview session (recording only).
+ * Practice — runs an active interview session (recording only).
  *
  * Question audio plays → recorder auto-starts on `ended` → user stops →
- * submit → repeat for turn 2. When the final turn is submitted, redirects
+ * submit → repeat until the configured final turn. When the final turn is submitted, redirects
  * to `/sessions/:id?from=practice`, where the results/feedback now live
  * (SessionDetail renders the same folder-tab shell and polls for the async
  * scores). This page is deliberately chrome-free / full-viewport.
@@ -45,13 +45,26 @@ export type PracticeLocationState = {
   sessionId: string;
   firstQuestion: string;
   firstQuestionAudioUrl: string;
+  /** Question FORM of turn 1 (Experience/STAR today). Omitted by older entry
+   *  points → defaults to experience_star. */
+  firstQuestionCategory?: string;
+  /** Total questions in this session. Older entry points omit it and default
+   *  to the original two-turn flow. */
+  numTurns?: number;
   /** Echoed from the Setup form so the results screen can identify the
    *  session without waiting for the SessionDetail refetch. */
   company: string;
   jobTitle: string;
 };
 
-type CurrentQ = { text: string; audioUrl: string; num: number };
+type CurrentQ = {
+  text: string;
+  audioUrl: string;
+  num: number;
+  isFollowup: boolean;
+  /** Question FORM (Experience/STAR today) — drives the category badge. */
+  category: string;
+};
 
 /** Minimal record of a completed turn — just what the in-session transcript
  *  toggle needs to show the prior answer during the next turn. */
@@ -179,6 +192,7 @@ function PracticeSession({
     recorder.videoStream,
     recorder.state === 'recording',
     calibration,
+    recorder.captureMode,
   );
 
   const [showQuestionText, setShowQuestionText] = useLocalStoragePref('show_question_text', true);
@@ -188,10 +202,14 @@ function PracticeSession({
   const [autoSubmit] = useLocalStoragePref('auto_submit_enabled', false);
 
   const [sessionId] = useState<string>(initial.sessionId);
+  const [totalTurns] = useState<number>(initial.numTurns ?? 2);
   const [currentQ, setCurrentQ] = useState<CurrentQ | null>({
     text: initial.firstQuestion,
     audioUrl: initial.firstQuestionAudioUrl,
     num: 1,
+    // Turn 1 opens a story block — never a follow-up.
+    isFollowup: false,
+    category: initial.firstQuestionCategory ?? 'experience_star',
   });
   const [turnResults, setTurnResults] = useState<PriorTurn[]>([]);
   const [submittingTurn, setSubmittingTurn] = useState(false);
@@ -204,6 +222,10 @@ function PracticeSession({
   const [replayKey, setReplayKey] = useState(0);
   const [showTranscript, setShowTranscript] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  // Set while the graded early-end request (POST /sessions/{id}/end) is in
+  // flight, so the Quit dialog disables its buttons + shows "Saving…".
+  const [endingSession, setEndingSession] = useState(false);
+  const [endSessionError, setEndSessionError] = useState<string | null>(null);
   // Seconds of the current recording. Driven by the interval effect below;
   // reset to 0 in `handleAudioEnded` (the sole recording-start path) so it
   // never carries a stale value into a new turn.
@@ -304,7 +326,8 @@ function PracticeSession({
     const submittingTurnNumber = currentQ.num;
     trackEvent('turn_submitted', {
       turn_number: submittingTurnNumber,
-      final_turn: submittingTurnNumber >= 2,
+      final_turn: submittingTurnNumber >= totalTurns,
+      total_turns: totalTurns,
       auto_submit_enabled: autoSubmit,
       delivery_analytics_enabled: deliveryAnalyticsEnabled,
     });
@@ -330,8 +353,25 @@ function PracticeSession({
       trackEvent('turn_submit_succeeded', {
         turn_number: submittingTurnNumber,
         final_turn: result.is_final,
+        total_turns: totalTurns,
         evaluation_pending: Boolean(result.evaluation_pending),
+        clarification_retry: Boolean(result.clarification_retry),
       });
+
+      if (result.clarification_retry) {
+        setCurrentQ({
+          text: result.next_question!,
+          audioUrl: result.next_question_audio_url!,
+          num: currentQ.num,
+          isFollowup: result.next_question_is_followup,
+          // Clarification retry re-asks the SAME turn, so its category is unchanged.
+          category: currentQ.category,
+        });
+        setReplayKey((k) => k + 1);
+        recorder.reset();
+        analyzer.reset();
+        return;
+      }
 
       // Stash the recorded answer's replay URLs so SessionDetail's per-turn
       // replay cards can show them after the redirect. Fresh object URLs (not
@@ -357,6 +397,8 @@ function PracticeSession({
           text: result.next_question!,
           audioUrl: result.next_question_audio_url!,
           num: currentQ.num + 1,
+          isFollowup: result.next_question_is_followup,
+          category: result.next_question_category,
         });
         // Remount the <audio> (like Re-record / Restart) so the new question
         // routes through the same programmatic-play path instead of relying on
@@ -403,6 +445,9 @@ function PracticeSession({
 
   function handleReRecord() {
     recorder.reset();
+    // Discard delivery analytics with the discarded take. Otherwise a shaky
+    // first phone take can leak into the replacement answer's score.
+    analyzer.reset();
     setReplayKey((k) => k + 1);
   }
 
@@ -420,6 +465,7 @@ function PracticeSession({
   function handleRestart() {
     if (recorder.state !== 'idle') recorder.stop();
     recorder.reset();
+    analyzer.reset();
     setTurnError(null);
     setTurnErrorIsPolicy(false);
     setEndingTurn(false);
@@ -460,19 +506,48 @@ function PracticeSession({
       });
   }
 
-  function handleQuit() {
+  async function handleQuit() {
     if (recorder.state !== 'idle') recorder.stop();
     recorder.reset();
-    // Abandoning the session — drop any replays captured so far.
-    clearPracticeReplays(sessionId);
-    navigate('/');
+
+    // Zero completed turns → nothing to grade: a plain client-side abandon
+    // (no backend record, no daily-limit charge), the legacy behavior.
+    if (turnResults.length === 0) {
+      clearPracticeReplays(sessionId);
+      navigate('/');
+      return;
+    }
+
+    // ≥ 1 completed turn → keep the session and grade it on those turns. Fire
+    // the early-end finalize, then land on SessionDetail and poll for scores,
+    // exactly like the normal final-turn path.
+    setEndingSession(true);
+    setEndSessionError(null);
+    try {
+      await apiFetch(`/api/v1/sessions/${sessionId}/end`, { method: 'POST' });
+      trackEvent('session_ended_early', {
+        completed_turns: turnResults.length,
+        total_turns: totalTurns,
+      });
+      // Deliberately do NOT clearPracticeReplays here — SessionDetail's
+      // per-turn replay cards consume the store on the very navigation below
+      // (mirrors the normal final-turn path). Only the zero-turn abandon
+      // branch clears.
+      navigate(`/sessions/${sessionId}?from=practice`, { replace: true });
+    } catch (err) {
+      console.error('[Practice] end session early failed', err);
+      setEndSessionError(
+        'Could not save your session. Check your connection and try again.',
+      );
+      setEndingSession(false);
+    }
   }
 
   // Interview phase deliberately hides TopBar for a focused recording mode.
   const submitting = submittingTurn || endingTurn || retryingTurn;
   const spinnerMessage = retryingTurn
     ? 'Retrying…'
-    : currentQ && currentQ.num >= 2
+    : currentQ && currentQ.num >= totalTurns
       ? 'Feedback will appear shortly.'
       : 'Analyzing — 5–10 seconds';
   const showPreview =
@@ -502,7 +577,7 @@ function PracticeSession({
   // (the in-recording RecordingNotice covers later turns); hidden once recording
   // starts (state leaves 'idle').
   const showFirstTurnHint = recorder.state === 'idle' && currentQ?.num === 1;
-  const previousTurn = turnResults.length > 0 ? turnResults[0] : null;
+  const previousTurn = turnResults.length > 0 ? turnResults[turnResults.length - 1] : null;
   const showTranscriptPanel = showTranscript && previousTurn;
   const showQuestionDuringSession = showQuestionText;
 
@@ -528,6 +603,8 @@ function PracticeSession({
       >
         <QuestionColumn
           questionText={currentQ.text}
+          isFollowup={currentQ.isFollowup}
+          questionCategory={currentQ.category}
           audioUrl={currentQ.audioUrl}
           showQuestionText={showQuestionDuringSession}
           replayKey={replayKey}
@@ -541,10 +618,11 @@ function PracticeSession({
           audioUrl={recorder.audioUrl}
           showPreview={showPreview}
           submitting={submitting}
-          isFinalTurn={currentQ.num >= 2}
+          isFinalTurn={currentQ.num >= totalTurns}
           recordingNotice={recordingNotice}
           firstTurnHint={showFirstTurnHint}
           cameraError={cameraError}
+          captureMode={recorder.captureMode}
           onSubmitPreview={handleSubmitTurn}
           onReRecordPreview={handleReRecord}
         />
@@ -601,6 +679,7 @@ function PracticeSession({
 
       <PracticeFooter
         turnNum={currentQ.num}
+        totalTurns={totalTurns}
         recorderState={recorder.state}
         showQuestionText={showQuestionDuringSession}
         showTranscript={Boolean(showTranscriptPanel)}
@@ -612,12 +691,21 @@ function PracticeSession({
         onRestart={handleRestart}
         onToggleQuestion={() => setShowQuestionText((v) => !v)}
         onToggleTranscript={() => setShowTranscript((v) => !v)}
-        onQuit={() => setShowQuitConfirm(true)}
+        onQuit={() => {
+          setEndSessionError(null);
+          setShowQuitConfirm(true);
+        }}
       />
 
       <QuitConfirmDialog
         open={showQuitConfirm}
-        onCancel={() => setShowQuitConfirm(false)}
+        completedTurns={turnResults.length}
+        busy={endingSession}
+        error={endSessionError}
+        onCancel={() => {
+          if (endingSession) return;
+          setShowQuitConfirm(false);
+        }}
         onConfirm={handleQuit}
       />
     </div>
