@@ -34,6 +34,10 @@ from app.db.models.interview_turn import InterviewTurn
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.tutor import TutorMessageIn
+from app.services._score_dimensions import (
+    DELIVERY_LABEL,
+    content_dimension_labels,
+)
 from app.services._injection import contains_injection
 from app.services.daily_limit import (
     enforce_chat_daily_limit,
@@ -84,13 +88,24 @@ def _build_context(
         category=brief.category if brief else None,
         target_role=user.target_role,
         main_takeaway=fd.get("main_takeaway"),
+        # Label the five generic dimension columns per the turn's question
+        # category (STAR vs Motivation & Fit name them differently). Ordered
+        # dict → `_render_scores` renders it in position order.
         scores={
-            "Structure": turn.structure_score,
-            "Problem-solving": turn.problem_solving_score,
-            "Impact": turn.impact_score,
-            "Initiative": turn.initiative_score,
-            "Depth": turn.depth_score,
-            "Delivery": turn.delivery_score,
+            **{
+                label: score
+                for label, score in zip(
+                    content_dimension_labels(turn.question_category),
+                    (
+                        turn.dimension_1_score,
+                        turn.dimension_2_score,
+                        turn.dimension_3_score,
+                        turn.dimension_4_score,
+                        turn.dimension_5_score,
+                    ),
+                )
+            },
+            DELIVERY_LABEL: turn.delivery_score,
         },
         improvement_moments=_improvement_moments(turn.feedback_detail),
         company_name=session.company,

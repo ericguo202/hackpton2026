@@ -22,8 +22,8 @@ import pytest
 from app.db.models.enums import ExperienceLevel
 from app.services.followup import (
     _FALLBACK,
-    _FOLLOWUP_EXAMPLES,
-    _PROBE_ANGLES,
+    _STAR_FOLLOWUP_EXAMPLES,
+    _STAR_PROBE_ANGLES,
     _SYSTEM_PROMPT,
     _parse_transition_payload,
     _render_avoid_block,
@@ -446,8 +446,8 @@ def test_variety_block_samples_exactly_two_angles_and_examples():
     """A pinned rng surfaces exactly 2 probe-angles + 2 style exemplars — the
     2-of-N sampling that breaks the single-template attractor."""
     block = _render_variety_block(random.Random(0))
-    angles_hit = [a for a in _PROBE_ANGLES if a in block]
-    examples_hit = [e for e in _FOLLOWUP_EXAMPLES if e in block]
+    angles_hit = [a for a in _STAR_PROBE_ANGLES if a in block]
+    examples_hit = [e for e in _STAR_FOLLOWUP_EXAMPLES if e in block]
     assert len(angles_hit) == 2
     assert len(examples_hit) == 2
     assert "Angles worth probing" in block
@@ -466,8 +466,8 @@ def test_variety_block_always_present_even_without_rng():
     """Production passes rng=None (fresh randomness); the block still renders
     2 angles + 2 examples."""
     block = _render_variety_block(None)
-    assert len([a for a in _PROBE_ANGLES if a in block]) == 2
-    assert len([e for e in _FOLLOWUP_EXAMPLES if e in block]) == 2
+    assert len([a for a in _STAR_PROBE_ANGLES if a in block]) == 2
+    assert len([e for e in _STAR_FOLLOWUP_EXAMPLES if e in block]) == 2
 
 
 # ── avoid-list + block-history (anti-repetition) ─────────────────────────────

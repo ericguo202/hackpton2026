@@ -5,16 +5,12 @@
  * stats or testimonials (brief §8).
  *
  * Full-bleed raised band varies the page rhythm: vanilla → white → vanilla.
+ *
+ * The old right-hand list of six named dimensions is gone: with four question
+ * categories there is no longer ONE set of five content dimensions to name
+ * here (only Structure and Delivery are shared). The per-category rubrics now
+ * live on `/scoring`, which the footer links to on this page too.
  */
-
-const DIMENSIONS = [
-  { name: 'Structure', dot: 'bg-chart-1', desc: 'Does the answer have a beginning, a decision, and an end?' },
-  { name: 'Problem solving', dot: 'bg-chart-2', desc: 'Is the reasoning behind your choices visible?' },
-  { name: 'Impact', dot: 'bg-chart-3', desc: 'Does it close with a result someone could measure?' },
-  { name: 'Initiative', dot: 'bg-chart-4', desc: 'Did you own the move, or watch it happen?' },
-  { name: 'Depth', dot: 'bg-chart-5', desc: 'Specifics over generalities.' },
-  { name: 'Delivery', dot: 'bg-chart-6', desc: 'Eye contact, posture, and energy from your webcam. Scored only when the camera is on.' },
-] as const;
 
 const FACTS = [
   {
@@ -26,8 +22,8 @@ const FACTS = [
     body: 'Every piece of praise or critique is anchored to an exact phrase from your transcript, which you can refer back to.',
   },
   {
-    lead: 'Filler words are counted, not guessed.',
-    body: 'Ums, likes, and you-knows are tallied by exact matching and tracked as a rate across sessions, so you can watch it fall.',
+    lead: 'Rubrics vary across question type.',
+    body: 'Sessions draw on four question categories — Experience (STAR), Motivation & Fit, Situational, and Self-Assessment & Growth — each scored on its own rubric, derived from the guidance university career centers give their students. History shows your strengths and weaknesses both across the four categories and on the individual dimensions within each one.',
   },
   {
     lead: 'Webcam analysis stays in your browser.',
@@ -46,30 +42,19 @@ export default function Methodology() {
           What gets measured, and why you can trust it
         </h2>
 
-        <div className="grid gap-14 min-[900px]:grid-cols-2 min-[900px]:gap-20">
-          <dl className="flex max-w-[60ch] flex-col gap-8">
-            {FACTS.map((f) => (
-              <div key={f.lead}>
-                <dt className="font-display text-lg font-semibold text-text">{f.lead}</dt>
-                <dd className="mt-1.5 text-[0.9375rem] leading-relaxed text-text-muted">
-                  {f.body}
-                </dd>
-              </div>
-            ))}
-          </dl>
-
-          <ul className="self-start divide-y divide-border">
-            {DIMENSIONS.map((d) => (
-              <li key={d.name} className="flex items-baseline gap-3 py-4 first:pt-0 last:pb-0">
-                <span aria-hidden className={`h-2.5 w-2.5 shrink-0 translate-y-px rounded-full ${d.dot}`} />
-                <div>
-                  <span className="font-display text-base font-semibold text-text">{d.name}</span>
-                  <p className="mt-0.5 text-sm leading-relaxed text-text-muted">{d.desc}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {/* Two facts per row on desktop, one per row on mobile. The per-fact
+            `max-w-[60ch]` line-length cap stays on the item, not the column, so
+            it holds at every width without the grid stretching the measure. */}
+        <dl className="grid gap-x-20 gap-y-12 min-[900px]:grid-cols-2">
+          {FACTS.map((f) => (
+            <div key={f.lead} className="max-w-[60ch]">
+              <dt className="font-display text-lg font-semibold text-text">{f.lead}</dt>
+              <dd className="mt-1.5 text-[0.9375rem] leading-relaxed text-text-muted">
+                {f.body}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </section>
   );

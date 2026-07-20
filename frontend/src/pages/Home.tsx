@@ -41,6 +41,8 @@ import MobileSheet from '../components/MobileSheet';
 import { MismatchConfirmDialog } from '../components/MismatchConfirmDialog';
 import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
+import QuestionTypeField from '../components/QuestionTypeField';
+import { RECOMMENDED_MIX } from '../types/session';
 import RoleSwitcher from '../components/RoleSwitcher';
 import SiteFooter from '../components/SiteFooter';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
@@ -79,6 +81,7 @@ type SessionStart = {
   summary: { description: string; headlines: string[]; values: string[] };
   first_question: string;
   first_question_audio_url: string;
+  first_question_category: string;
   num_turns: number;
 };
 
@@ -205,6 +208,9 @@ export default function Home() {
   const [company, setCompany] = useState('');
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [numTurns, setNumTurns] = useState(MIN_SESSION_TURNS);
+  // Question FORM for the whole session (single-category). Only built types are
+  // offered (see SELECTABLE_QUESTION_CATEGORIES); the backend rejects the rest.
+  const [questionCategory, setQuestionCategory] = useState(RECOMMENDED_MIX);
   // Interview-voice pace (→ backend `speech_pace`, resolved per-voice server
   // side). Defaults to "Normal".
   const [speechPace, setSpeechPace] = useState<SpeechPace>(SPEECH_PACE_DEFAULT);
@@ -287,6 +293,12 @@ export default function Home() {
           // on the server side (UTC fallback on parse failure).
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           num_turns: numTurns,
+          // "Recommended Mix" is a UI-only sentinel: send `calibrated_mix` so the
+          // backend draws a calibrated category per opening. An explicit type
+          // keeps the single-category path (sends `question_category`).
+          ...(questionCategory === RECOMMENDED_MIX
+            ? { calibrated_mix: true }
+            : { question_category: questionCategory }),
           speech_pace: speechPace,
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
@@ -308,6 +320,7 @@ export default function Home() {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        firstQuestionCategory: data.first_question_category,
         numTurns: data.num_turns,
         company: trimmed,
         jobTitle: me?.target_role ?? 'Software Engineer',
@@ -499,6 +512,21 @@ export default function Home() {
                     onChange={setNumTurns}
                     disabled={submitting}
                   />
+                  <QuestionTypeField
+                    value={questionCategory}
+                    onChange={setQuestionCategory}
+                    disabled={submitting}
+                    tourId="question-type"
+                  />
+                </div>
+
+                {/* Advanced / Privacy triggers sit on their own row (like mobile)
+                    so they never get pushed onto a second line by the toggles +
+                    popover launchers above. */}
+                <div
+                  className="anim-reveal mt-6 flex flex-wrap items-center gap-x-6 gap-y-2"
+                  style={{ animationDelay: '240ms' }}
+                >
                   <RefineTrigger
                     label="Advanced"
                     active={surface === 'advanced'}
@@ -578,6 +606,11 @@ export default function Home() {
                     id="session-turns-mobile"
                     numTurns={numTurns}
                     onChange={setNumTurns}
+                    disabled={submitting}
+                  />
+                  <QuestionTypeField
+                    value={questionCategory}
+                    onChange={setQuestionCategory}
                     disabled={submitting}
                   />
                 </div>
@@ -698,7 +731,7 @@ export default function Home() {
         document.body,
       )}
 
-      <SiteFooter showAbout />
+      <SiteFooter signedIn />
 
       <DeliveryConsentDialog
         open={consentModalOpen}

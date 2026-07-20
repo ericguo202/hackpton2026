@@ -152,12 +152,12 @@ async def save_question(
         )
 
     # 3. Resolve the target opening turn (a specific one via `turn_id`, or
-    #    turn 1). It must be evaluated — `structure_score` non-null is the
+    #    turn 1). It must be evaluated — `dimension_1_score` non-null is the
     #    codebase's canonical "evaluated" check. Gate on the SAVED turn, not the
     #    session aggregate: a session whose overall_score is non-null (a later
     #    turn scored) is no proof this particular opening got a real attempt.
     target = await _resolve_savable_turn(db, session, body.turn_id)
-    if target is None or target.structure_score is None:
+    if target is None or target.dimension_1_score is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
@@ -218,6 +218,8 @@ async def save_question(
         role_signals=brief.role_signals if brief else [],
         sample_question_themes=brief.sample_question_themes if brief else [],
         experience_level=session.experience_level,
+        # Freeze the saved opening's question FORM so History can filter by it.
+        question_category=target.question_category,
     )
     db.add(sq)
     await db.flush()
@@ -302,6 +304,7 @@ async def list_saved_questions(
             attempt_count=a.attempts if a else 0,
             last_practiced_at=a.last_practiced_at if a else None,
             avg_overall_score=a.avg_overall if a else None,
+            question_category=s.question_category.value,
         ))
     return rows
 
@@ -342,14 +345,14 @@ async def get_saved_question(
     attempts: list[SavedQuestionAttempt] = []
     for s in sessions:
         t1 = _pick_attempt_turn(openings_by_session.get(s.id, []), sq.question_text)
-        evaluated = t1 is not None and t1.structure_score is not None
+        evaluated = t1 is not None and t1.dimension_1_score is not None
         turn1_scores = (
             ScoresOut(
-                structure=t1.structure_score,
-                problem_solving=t1.problem_solving_score,
-                impact=t1.impact_score,
-                initiative=t1.initiative_score,
-                depth=t1.depth_score,
+                dimension_1=t1.dimension_1_score,
+                dimension_2=t1.dimension_2_score,
+                dimension_3=t1.dimension_3_score,
+                dimension_4=t1.dimension_4_score,
+                dimension_5=t1.dimension_5_score,
                 delivery=t1.delivery_score,
             )
             if evaluated
@@ -373,6 +376,7 @@ async def get_saved_question(
         created_at=sq.created_at,
         summary=_parse_company_summary(sq.company_summary),
         attempts=attempts,
+        question_category=sq.question_category.value,
     )
 
 
@@ -439,6 +443,10 @@ async def practice_saved_question(
         # Re-practice WANTS the repeat — don't add it to the avoid-list.
         roll_recent=False,
         saved_question_id=sq.id,
+        # Stamp the FROZEN question FORM so the re-practice's evaluator + the
+        # inherited follow-up use the saved category's rubric/prompts (not the
+        # STAR default). submit_turn dispatches both off turn.question_category.
+        question_category=sq.question_category,
         # Persist the resolved pace so turn 2's follow-up TTS matches turn 1.
         speech_speed=speech_speed,
     )

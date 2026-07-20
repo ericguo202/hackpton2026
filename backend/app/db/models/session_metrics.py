@@ -41,11 +41,15 @@ class SessionMetrics(Base):
         nullable=False,
     )
 
-    avg_structure: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    avg_problem_solving: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    avg_impact: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    avg_initiative: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
-    avg_depth: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    # Per-dimension averages of the generic `dimension_1..5_score` columns on
+    # interview_turns (renamed from avg_structure/… in migration 0026). The
+    # human label per position is resolved from the turn's `question_category`;
+    # see `interview_turn.py` and `_score_dimensions`.
+    avg_dimension_1: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    avg_dimension_2: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    avg_dimension_3: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    avg_dimension_4: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
+    avg_dimension_5: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     # Nullable when no turn in the session had webcam analytics (camera-off
     # for every turn). Added in migration 0003.
     avg_delivery: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)

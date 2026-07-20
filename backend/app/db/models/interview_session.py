@@ -97,6 +97,17 @@ class InterviewSession(Base):
         Boolean, nullable=False, server_default=text("false")
     )
 
+    # "Recommended Mix" mode: when true, each story-block opening draws a
+    # question category from the level+field calibrated weights
+    # (`_category_weights.draw_opening_category`) instead of the session being
+    # locked to one type. Stamped at create time; `submit_turn`'s opening-pivot
+    # branch reads it to decide whether to draw a fresh category or inherit the
+    # just-answered turn's. Legacy rows default false (byte-identical
+    # single-category behavior).
+    calibrated_mix: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
     # Links this session to the saved question it was a practice attempt of.
     # Set at re-practice creation, and also back-filled onto the originating
     # session when the user first saves the question (that session becomes

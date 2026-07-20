@@ -22,6 +22,7 @@ import { useId, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import type { TurnDetail } from '../../types/history';
+import { questionCategoryLabel } from '../../types/session';
 import type { TranscriptToken } from '../../lib/fillerWords';
 import { segmentTranscriptByImprovements } from '../../lib/transcriptHighlight';
 import FillerRateBar from './FillerRateBar';
@@ -29,13 +30,12 @@ import { useMomentFlash } from './_momentFlash';
 import { useAskTutor } from './ask-tutor/_askTutor';
 import AskAboutThisButton from './ask-tutor/AskAboutThisButton';
 import {
-  SCORE_COLOR_MAP,
-  SCORE_KEYS,
   formatIssueType,
   improvementMomentsOf,
   num,
   positiveMomentsOf,
 } from './_helpers';
+import { scoreDimensionsFor } from '../../lib/scoreDimensions';
 
 /* ------------------------------------------------------------------ */
 /* Primitives                                                         */
@@ -129,7 +129,12 @@ export function QuestionAnswerCard({ turn }: { turn: TurnDetail }) {
   const transcriptId = useId();
   return (
     <InnerCard>
-      <Eyebrow>{turn.is_followup ? 'Follow-up question' : 'Question'}</Eyebrow>
+      <div className="flex flex-wrap items-center gap-2">
+        <Eyebrow>{turn.is_followup ? 'Follow-up question' : 'Question'}</Eyebrow>
+        <span className="rounded-full border border-border bg-surface-raised px-2.5 py-0.5 text-xs font-medium text-text-muted">
+          {questionCategoryLabel(turn.question_category)}
+        </span>
+      </div>
       <p className="mt-2 text-lg leading-snug text-text">
         {turn.question_text}
       </p>
@@ -403,12 +408,12 @@ export function ScoresSection({
         <EvalStatusNotice pending={evaluationPending} />
       ) : (
         <div className="mt-3 flex flex-col gap-2">
-          {SCORE_KEYS.map(([key, label]) => {
+          {/* Labels are resolved from THIS turn's question category (STAR vs
+              Motivation & Fit name the five generic slots differently). */}
+          {scoreDimensionsFor(turn.question_category).map(({ key, label, color }) => {
             const value = turn.scores[key];
             if (value == null) return null;
-            return (
-              <ScoreRow key={key} label={label} value={value} color={SCORE_COLOR_MAP[key]} />
-            );
+            return <ScoreRow key={key} label={label} value={value} color={color} />;
           })}
         </div>
       )}

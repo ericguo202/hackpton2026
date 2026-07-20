@@ -45,6 +45,9 @@ export type PracticeLocationState = {
   sessionId: string;
   firstQuestion: string;
   firstQuestionAudioUrl: string;
+  /** Question FORM of turn 1 (Experience/STAR today). Omitted by older entry
+   *  points → defaults to experience_star. */
+  firstQuestionCategory?: string;
   /** Total questions in this session. Older entry points omit it and default
    *  to the original two-turn flow. */
   numTurns?: number;
@@ -54,7 +57,14 @@ export type PracticeLocationState = {
   jobTitle: string;
 };
 
-type CurrentQ = { text: string; audioUrl: string; num: number; isFollowup: boolean };
+type CurrentQ = {
+  text: string;
+  audioUrl: string;
+  num: number;
+  isFollowup: boolean;
+  /** Question FORM (Experience/STAR today) — drives the category badge. */
+  category: string;
+};
 
 /** Minimal record of a completed turn — just what the in-session transcript
  *  toggle needs to show the prior answer during the next turn. */
@@ -199,6 +209,7 @@ function PracticeSession({
     num: 1,
     // Turn 1 opens a story block — never a follow-up.
     isFollowup: false,
+    category: initial.firstQuestionCategory ?? 'experience_star',
   });
   const [turnResults, setTurnResults] = useState<PriorTurn[]>([]);
   const [submittingTurn, setSubmittingTurn] = useState(false);
@@ -353,6 +364,8 @@ function PracticeSession({
           audioUrl: result.next_question_audio_url!,
           num: currentQ.num,
           isFollowup: result.next_question_is_followup,
+          // Clarification retry re-asks the SAME turn, so its category is unchanged.
+          category: currentQ.category,
         });
         setReplayKey((k) => k + 1);
         recorder.reset();
@@ -385,6 +398,7 @@ function PracticeSession({
           audioUrl: result.next_question_audio_url!,
           num: currentQ.num + 1,
           isFollowup: result.next_question_is_followup,
+          category: result.next_question_category,
         });
         // Remount the <audio> (like Re-record / Restart) so the new question
         // routes through the same programmatic-play path instead of relying on
@@ -590,6 +604,7 @@ function PracticeSession({
         <QuestionColumn
           questionText={currentQ.text}
           isFollowup={currentQ.isFollowup}
+          questionCategory={currentQ.category}
           audioUrl={currentQ.audioUrl}
           showQuestionText={showQuestionDuringSession}
           replayKey={replayKey}

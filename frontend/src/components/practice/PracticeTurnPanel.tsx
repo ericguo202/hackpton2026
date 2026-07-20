@@ -63,7 +63,7 @@ export function PracticeTurnPanel({
   sessionCompleted,
   sessionId,
 }: Props) {
-  const evaluationFailed = turn.scores.structure === null;
+  const evaluationFailed = turn.scores.dimension_1 === null;
   const evaluationPending = evaluationFailed && !sessionCompleted;
   // Every opening is saveable (turn 1 + mid-session openings); not follow-ups.
   const isOpeningTurn = !turn.is_followup;

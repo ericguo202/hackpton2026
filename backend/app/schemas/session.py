@@ -14,10 +14,24 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.services._field_prompts import FieldCategory
+from app.db.models.enums import QuestionCategory
+from app.services._field_categories import FieldCategory
 from app.services.voice_pool import DEFAULT_PACE, SpeechPace
+
+# Question types with a real prompt stack. The Setup picker only offers these;
+# a hand-crafted request naming an unbuilt type would generate STAR prompts
+# mislabeled as that type, so the request layer rejects it. All four taxonomy
+# types are built today; keep this gate (and extend it) if a new type is added.
+BUILT_QUESTION_CATEGORIES = frozenset(
+    {
+        QuestionCategory.experience_star,
+        QuestionCategory.motivation_fit,
+        QuestionCategory.situational,
+        QuestionCategory.self_assessment_growth,
+    }
+)
 
 
 class SessionCreateIn(BaseModel):
@@ -62,6 +76,24 @@ class SessionCreateIn(BaseModel):
     # Total interview turns, including the opening question. Default preserves
     # the original 1 opening + 1 follow-up flow for older clients.
     num_turns: int = Field(default=2, ge=2, le=8)
+    # Question FORM for this whole session (single-category per session). Chosen
+    # in the Setup picker; stamped on turn 1 and inherited by every later turn.
+    # Default keeps older clients (and re-practice / custom-question flows, which
+    # never send it) on Experience/STAR. Only built types are accepted.
+    question_category: QuestionCategory = QuestionCategory.experience_star
+    # "Recommended Mix" mode. When true, `question_category` is IGNORED and each
+    # story-block opening draws a category from the level+field calibrated weights
+    # (`_category_weights`). Additive/back-compatible: older clients omit it and
+    # keep the single-category behavior. Ignored for custom-question sessions
+    # (forced to STAR verbatim).
+    calibrated_mix: bool = Field(default=False)
+
+    @field_validator("question_category")
+    @classmethod
+    def _only_built_categories(cls, v: QuestionCategory) -> QuestionCategory:
+        if v not in BUILT_QUESTION_CATEGORIES:
+            raise ValueError(f"question_category {v.value!r} is not available yet")
+        return v
 
 
 class CompanyBriefOut(BaseModel):
@@ -97,7 +129,15 @@ class SessionCreateOut(BaseModel):
     session_id: UUID
     summary: CompanyBriefOut
     first_question: str
+    # Question FORM of turn 1 — the session's chosen category (single-category
+    # per session). Carried so the Practice recording view can badge turn 1 by
+    # category. Defaulted so re-practice / custom-question call sites (always
+    # STAR) need no change.
+    first_question_category: str = "experience_star"
     num_turns: int
+    # True when this session runs in "Recommended Mix" mode (each opening draws a
+    # calibrated category). Lets the client render the session-level mix badge.
+    calibrated_mix: bool = False
     # `data:audio/mpeg;base64,...` — ready to drop into `<audio src>`.
     # Not persisted; regenerated on demand per CLAUDE.md (audio inline in
     # JSON, no S3).
@@ -105,15 +145,17 @@ class SessionCreateOut(BaseModel):
 
 
 class ScoresOut(BaseModel):
-    # All five base scores are nullable: the route returns null for any turn
-    # whose evaluation never completed (background + inline-fallback both
-    # raised). The frontend renders an "Evaluation Failed" placeholder in
+    # Five GENERIC content score slots; the human label per position is resolved
+    # client-side from the turn's `question_category` (see frontend
+    # `SCORE_DIMENSIONS_BY_CATEGORY`). All are nullable: the route returns null
+    # for any turn whose evaluation never completed (background + inline-fallback
+    # both raised). The frontend renders an "Evaluation Failed" placeholder in
     # that case rather than displaying 0s that would drag the average down.
-    structure: int | None = None
-    problem_solving: int | None = None
-    impact: int | None = None
-    initiative: int | None = None
-    depth: int | None = None
+    dimension_1: int | None = None
+    dimension_2: int | None = None
+    dimension_3: int | None = None
+    dimension_4: int | None = None
+    dimension_5: int | None = None
     # 6th dimension from browser webcam analytics. Null when the candidate
     # declined camera access; the UI hides the row in that case.
     delivery: int | None = None
@@ -191,6 +233,10 @@ class TurnSubmitOut(BaseModel):
     # question as a follow-up during recording. False on the final turn (no
     # next question) and whenever the next turn is a fresh opening.
     next_question_is_followup: bool = False
+    # Question FORM of the next question (Experience/STAR today). Mirrors
+    # `next_question_is_followup`; lets Practice badge the upcoming question by
+    # category during recording. Empty-safe default for final/clarification returns.
+    next_question_category: str = "experience_star"
     # True when the submitted audio was only a clarification request. The
     # backend re-asks the same turn more concretely and does not persist the
     # transcript, score the turn, or advance the turn count.
@@ -209,11 +255,14 @@ class TurnSubmitOut(BaseModel):
 # is null whenever the candidate kept the camera off for every turn. The
 # frontend trend chart drops null points instead of plotting them as zeros.
 class DimensionAverages(BaseModel):
-    structure: Decimal | None = None
-    problem_solving: Decimal | None = None
-    impact: Decimal | None = None
-    initiative: Decimal | None = None
-    depth: Decimal | None = None
+    # Generic per-dimension averages; label per position resolved client-side
+    # from question_category. Aggregate surfaces (history trend, radar, stats)
+    # currently render the STAR label set since all live turns are STAR.
+    dimension_1: Decimal | None = None
+    dimension_2: Decimal | None = None
+    dimension_3: Decimal | None = None
+    dimension_4: Decimal | None = None
+    dimension_5: Decimal | None = None
     delivery: Decimal | None = None
 
 
@@ -240,6 +289,12 @@ class SessionListItem(BaseModel):
     # trend chart on the history page.
     filler_word_rate: Decimal | None = None
     averages: DimensionAverages
+    # Session-level question category (the FORM axis), derived from the
+    # session's turns: the single distinct turn category, or "mixed" for a
+    # multi-category ("Recommended Mix") session. Null on a session with no
+    # turns. Lets the History page filter the trend chart + list by category —
+    # a single-category session's `averages` ARE that category's dimensions.
+    question_category: str | None = None
 
 
 class TurnOut(BaseModel):
@@ -256,6 +311,9 @@ class TurnOut(BaseModel):
     question_text: str
     transcript_text: str | None
     is_followup: bool
+    # Question FORM (Experience/STAR today) — drives the per-turn category badge
+    # on the review cards. One of the `QuestionCategory` enum values.
+    question_category: str = "experience_star"
     scores: ScoresOut
     feedback: str | None
     feedback_detail: FeedbackDetailOut | None = None
@@ -298,6 +356,11 @@ class SessionDetailOut(BaseModel):
     # re-practice attempt). Drives the Save button's "already saved" state so
     # the frontend doesn't need a separate lookup.
     saved_question_id: UUID | None = None
+    # True when this session ran in "Recommended Mix" mode (openings drew
+    # calibrated categories). The per-turn category badges already reflect each
+    # turn's real category; this flags the session as a whole (e.g. for the
+    # overview to show only the type-invariant tiles).
+    calibrated_mix: bool = False
 
 
 class SessionEndOut(BaseModel):
@@ -320,6 +383,23 @@ class FillerWordStat(BaseModel):
 
     word: str
     count: int
+
+
+class CategoryStat(BaseModel):
+    """Per-question-category rollup for the History strengths radar.
+
+    Aggregated from `interview_turns` grouped by `question_category` (so it
+    correctly spans "Recommended Mix" sessions, which mix categories per turn).
+    `average_score` is the mean of the five content dimensions (0-10) across
+    the category's scored turns — Delivery is excluded since it isn't a
+    category-specific rubric dimension. `turns_evaluated` counts the scored
+    turns (`dimension_1_score IS NOT NULL`). A category with no scored turns is
+    simply absent from the list; the frontend plots it as 0.
+    """
+
+    question_category: str
+    average_score: Decimal | None
+    turns_evaluated: int
 
 
 class MeStatsOut(BaseModel):
@@ -350,3 +430,8 @@ class MeStatsOut(BaseModel):
     # Ordered count-desc, then word-asc for stable ties. Empty until the user
     # logs at least one filler word.
     top_filler_words: list[FillerWordStat] = []
+    # Per-question-category rollup (avg content score + turns evaluated), for the
+    # History strengths-radar's category-comparison view. Always spans ALL
+    # categories the user has scored turns in, honoring only the company/role
+    # filters (NOT the `question_category` filter). Empty until any turn scores.
+    by_category: list[CategoryStat] = []

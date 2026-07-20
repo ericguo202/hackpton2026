@@ -253,9 +253,6 @@ Browser (React + Vite)
 
 ## Future improvements
 
-- **More interview formats** — the architecture is generic; technical-screen
-  framing, case-interview prompts, and consulting fit-style questions are all
-  swap-the-prompt features.
 - **Spoken-feedback mode** — pipe the structured feedback back through TTS at the
   end of the session so the review feels like a debrief, not a report card.
 - **Comparative analytics** — anonymized cohort percentiles ("your

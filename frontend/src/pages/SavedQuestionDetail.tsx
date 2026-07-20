@@ -38,16 +38,13 @@ import { useSavedQuestionDetail } from '../hooks/useSavedQuestionDetail';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { buildRadarData } from '../lib/radarData';
-import { SCORE_DIMENSIONS, type ScoreKey } from '../lib/scoreDimensions';
+import { scoreDimensionsFor, type ScoreKey } from '../lib/scoreDimensions';
+import { questionCategoryLabel } from '../types/session';
 import type {
   SavedQuestionAttempt,
   SavedQuestionDetail as SavedQuestionDetailType,
 } from '../types/savedQuestions';
 import type { PracticeLocationState } from './Practice';
-
-// Chart series key/label/color = the canonical SCORE_DIMENSIONS (same palette +
-// ordering as History.tsx, sourced from --color-chart-*).
-const DIMENSIONS = SCORE_DIMENSIONS;
 
 type DimensionKey = ScoreKey;
 
@@ -68,11 +65,11 @@ type ChartPoint = {
   sessionId: string;
   created_at: string;
   overall: number | null;
-  structure: number | null;
-  problem_solving: number | null;
-  impact: number | null;
-  initiative: number | null;
-  depth: number | null;
+  dimension_1: number | null;
+  dimension_2: number | null;
+  dimension_3: number | null;
+  dimension_4: number | null;
+  dimension_5: number | null;
   delivery: number | null;
 };
 
@@ -85,7 +82,7 @@ type ChartPoint = {
  * excluded so a missing dimension doesn't drag the average down.
  */
 function openingOverall(s: NonNullable<SavedQuestionAttempt['turn1_scores']>): number | null {
-  const dims = [s.structure, s.problem_solving, s.impact, s.initiative, s.depth, s.delivery];
+  const dims = [s.dimension_1, s.dimension_2, s.dimension_3, s.dimension_4, s.dimension_5, s.delivery];
   const present = dims.filter((v): v is number => v !== null && v !== undefined);
   if (present.length === 0) return null;
   return present.reduce((a, b) => a + b, 0) / present.length;
@@ -103,11 +100,11 @@ function buildChartData(attempts: SavedQuestionAttempt[]): ChartPoint[] {
         sessionId: a.session_id,
         created_at: a.created_at,
         overall: openingOverall(s),
-        structure: s.structure,
-        problem_solving: s.problem_solving,
-        impact: s.impact,
-        initiative: s.initiative,
-        depth: s.depth,
+        dimension_1: s.dimension_1,
+        dimension_2: s.dimension_2,
+        dimension_3: s.dimension_3,
+        dimension_4: s.dimension_4,
+        dimension_5: s.dimension_5,
         delivery: s.delivery,
       };
     });
@@ -152,17 +149,26 @@ export default function SavedQuestionDetail() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const [activeDims, setActiveDims] = useState<Record<DimensionKey, boolean>>({
-    structure: true,
-    problem_solving: true,
-    impact: true,
-    initiative: true,
-    depth: true,
+    dimension_1: true,
+    dimension_2: true,
+    dimension_3: true,
+    dimension_4: true,
+    dimension_5: true,
     delivery: true,
   });
   const [showOverall, setShowOverall] = useState(true);
 
   const chartData = useMemo(
     () => (saved ? buildChartData(saved.attempts) : []),
+    [saved],
+  );
+
+  // Chart series key/color are fixed by position; the LABELS are the saved
+  // question's rubric (STAR / M&F / Situational / Self-Assess), mirroring the
+  // category-filtered History view. `scoreDimensionsFor` falls back to STAR for
+  // legacy rows / unknown categories.
+  const dimensions = useMemo(
+    () => scoreDimensionsFor(saved?.question_category),
     [saved],
   );
 
@@ -173,7 +179,7 @@ export default function SavedQuestionDetail() {
   // ChartPoint already exposes the six dim keys (null when a dim has no score, so
   // a webcam-off attempt doesn't drag Delivery down).
   const radar = useMemo(
-    () => (saved ? buildRadarData(chartData.slice(-5)) : null),
+    () => (saved ? buildRadarData(chartData.slice(-5), saved.question_category) : null),
     [saved, chartData],
   );
 
@@ -211,6 +217,7 @@ export default function SavedQuestionDetail() {
         sessionId: data.session_id,
         firstQuestion: data.first_question,
         firstQuestionAudioUrl: data.first_question_audio_url,
+        firstQuestionCategory: data.first_question_category,
         company: sq.company,
         jobTitle: sq.job_title,
       };
@@ -273,7 +280,8 @@ export default function SavedQuestionDetail() {
                     {saved.question_text}
                   </h1>
                   <p className="mt-4 text-sm text-text-muted">
-                    {saved.job_title} @ {saved.company} · saved{' '}
+                    {saved.job_title} @ {saved.company} ·{' '}
+                    {questionCategoryLabel(saved.question_category)} · saved{' '}
                     {new Date(saved.created_at).toLocaleDateString(undefined, {
                       month: 'short', day: 'numeric', year: 'numeric',
                     })}
@@ -337,7 +345,7 @@ export default function SavedQuestionDetail() {
                       <DimensionMenu
                         showOverall={showOverall}
                         onToggleOverall={() => setShowOverall((v) => !v)}
-                        dimensions={DIMENSIONS}
+                        dimensions={dimensions}
                         activeDims={activeDims}
                         onToggleDim={(key) =>
                           setActiveDims((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -379,7 +387,7 @@ export default function SavedQuestionDetail() {
                               isAnimationActive={false}
                             />
                           )}
-                          {DIMENSIONS.map((d) =>
+                          {dimensions.map((d) =>
                             activeDims[d.key] ? (
                               <Line
                                 key={d.key}

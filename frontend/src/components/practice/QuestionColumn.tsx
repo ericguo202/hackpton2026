@@ -3,12 +3,16 @@ import { Play, Volume2 } from 'lucide-react';
 
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
+import { questionCategoryLabel } from '../../types/session';
 
 interface Props {
   questionText: string;
   /** True when this question drills into the current story (a follow-up), so
    *  the label reads "Follow-up question" instead of "Question". */
   isFollowup: boolean;
+  /** Question FORM (Experience/STAR today) — shown as a small badge beside the
+   *  eyebrow. One of the QuestionCategory enum values. */
+  questionCategory: string;
   audioUrl: string;
   showQuestionText: boolean;
   replayKey: number;
@@ -23,6 +27,7 @@ interface Props {
 export function QuestionColumn({
   questionText,
   isFollowup,
+  questionCategory,
   audioUrl,
   showQuestionText,
   replayKey,
@@ -84,9 +89,14 @@ export function QuestionColumn({
         className,
       )}
     >
-      <p className="mb-4 text-eyebrow uppercase tracking-eyebrow text-text-muted">
-        {isFollowup ? 'Follow-up question' : 'Question'}
-      </p>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <p className="text-eyebrow uppercase tracking-eyebrow text-text-muted">
+          {isFollowup ? 'Follow-up question' : 'Question'}
+        </p>
+        <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-text-muted">
+          {questionCategoryLabel(questionCategory)}
+        </span>
+      </div>
       {/* Invisible underlay holds the real question's wrapped height; the
           visible overlay swaps between the real text and a placeholder so
           toggling never resizes the column. */}
