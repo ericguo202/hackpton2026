@@ -11,13 +11,17 @@ class SessionFeedbackCreateIn(BaseModel):
     # to a session); the compulsory gate sends the latest completed session id.
     session_id: UUID | None = None
     smoothness_rating: int = Field(ge=1, le=5)
+    # Multi-select answers arrive pre-joined with ", " by the form. Not
+    # validated against the option list — the labels live frontend-side, so a
+    # new option ships without a backend change.
+    features_used: str = Field(min_length=1, max_length=1000)
+    features_helpful: str | None = Field(default=None, max_length=1000)
     desired_features: str | None = Field(default=None, max_length=4000)
     difficult_feature_response: str | None = Field(default=None, max_length=4000)
     question_relevance_response: str = Field(min_length=1, max_length=4000)
     feedback_helpfulness_response: str = Field(min_length=1, max_length=4000)
     bug_report: str | None = Field(default=None, max_length=4000)
     overall_satisfaction_rating: int = Field(ge=1, le=5)
-    question_quality_rating: int = Field(ge=1, le=5)
     would_recommend_rating: int = Field(ge=1, le=5)
     willing_to_pay: bool
     monthly_price: str | None = Field(default=None, max_length=500)
@@ -26,6 +30,7 @@ class SessionFeedbackCreateIn(BaseModel):
     @model_validator(mode="after")
     def _validate_payment_branch(self) -> "SessionFeedbackCreateIn":
         required_text = {
+            "features_used": self.features_used,
             "question_relevance_response": self.question_relevance_response,
             "feedback_helpfulness_response": self.feedback_helpfulness_response,
         }
@@ -51,13 +56,14 @@ class SessionFeedbackOut(BaseModel):
     user_id: UUID
     session_id: UUID | None
     smoothness_rating: int
+    features_used: str
+    features_helpful: str | None
     desired_features: str | None
     difficult_feature_response: str | None
     question_relevance_response: str
     feedback_helpfulness_response: str
     bug_report: str | None
     overall_satisfaction_rating: int
-    question_quality_rating: int
     would_recommend_rating: int
     willing_to_pay: bool
     monthly_price: str | None

@@ -23,10 +23,6 @@ class SessionFeedback(Base):
             name="ck_session_feedback_smoothness_rating",
         ),
         CheckConstraint(
-            "question_quality_rating BETWEEN 1 AND 5",
-            name="ck_session_feedback_question_quality_rating",
-        ),
-        CheckConstraint(
             "would_recommend_rating BETWEEN 1 AND 5",
             name="ck_session_feedback_would_recommend_rating",
         ),
@@ -53,13 +49,17 @@ class SessionFeedback(Base):
     )
 
     smoothness_rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Multi-select answers, stored as the chosen labels joined with ", " so the
+    # rows read the same way the form displays them. `features_used` is a
+    # required question; `features_helpful` is optional (null when nothing ticked).
+    features_used: Mapped[str] = mapped_column(Text, nullable=False)
+    features_helpful: Mapped[str | None] = mapped_column(Text, nullable=True)
     desired_features: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficult_feature_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     question_relevance_response: Mapped[str] = mapped_column(Text, nullable=False)
     feedback_helpfulness_response: Mapped[str] = mapped_column(Text, nullable=False)
     bug_report: Mapped[str | None] = mapped_column(Text, nullable=True)
     overall_satisfaction_rating: Mapped[int] = mapped_column(Integer, nullable=False)
-    question_quality_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     would_recommend_rating: Mapped[int] = mapped_column(Integer, nullable=False)
     willing_to_pay: Mapped[bool] = mapped_column(Boolean, nullable=False)
     monthly_price: Mapped[str | None] = mapped_column(Text, nullable=True)
