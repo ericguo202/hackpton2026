@@ -24,9 +24,11 @@ dist-ssr
 *.sln
 *.sw?
 
-.claude
+.claude/
 .impeccable.md
 .env
+.agents/
+skills-lock.json
 
 # screenshot output from scripts/shot.mjs (visual QA helper)
 shots

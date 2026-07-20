@@ -19,13 +19,25 @@ type Props = {
   onClose?: () => void;
 };
 
-type RatingName =
-  | 'smoothness'
-  | 'overallSatisfaction'
-  | 'questionQuality'
-  | 'wouldRecommend';
+type RatingName = 'smoothness' | 'overallSatisfaction' | 'wouldRecommend';
 
 const RATINGS = [1, 2, 3, 4, 5] as const;
+
+// Shared answer list for both feature multi-selects. The label IS the stored
+// value (joined with ", "), so DB rows read exactly like the form — no
+// label→value mapping layer, and adding an option needs no backend change.
+const FEATURE_OPTIONS = [
+  'Changing the length of an interview session',
+  'Practicing a particular question type',
+  'History page',
+  'Saving a question',
+  'Choosing interviewer accent and speed',
+  'Adding a resume',
+  'Adding a job description',
+  'Practicing a custom question',
+  'Adding multiple target roles',
+  'Delivery Playground',
+] as const;
 
 export default function BetaFeedbackDialog({
   open,
@@ -37,13 +49,14 @@ export default function BetaFeedbackDialog({
 }: Props) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const [smoothnessRating, setSmoothnessRating] = useState(0);
+  const [featuresUsed, setFeaturesUsed] = useState<string[]>([]);
+  const [featuresHelpful, setFeaturesHelpful] = useState<string[]>([]);
   const [desiredFeatures, setDesiredFeatures] = useState('');
   const [difficultFeature, setDifficultFeature] = useState('');
   const [questionRelevanceResponse, setQuestionRelevanceResponse] = useState('');
   const [feedbackHelpfulnessResponse, setFeedbackHelpfulnessResponse] = useState('');
   const [bugReport, setBugReport] = useState('');
   const [overallSatisfaction, setOverallSatisfaction] = useState(0);
-  const [questionQuality, setQuestionQuality] = useState(0);
   const [wouldRecommend, setWouldRecommend] = useState(0);
   const [willingToPay, setWillingToPay] = useState<boolean | null>(null);
   const [monthlyPrice, setMonthlyPrice] = useState('');
@@ -53,13 +66,14 @@ export default function BetaFeedbackDialog({
   if (sessionId !== lastSessionId) {
     setLastSessionId(sessionId);
     setSmoothnessRating(0);
+    setFeaturesUsed([]);
+    setFeaturesHelpful([]);
     setDesiredFeatures('');
     setDifficultFeature('');
     setQuestionRelevanceResponse('');
     setFeedbackHelpfulnessResponse('');
     setBugReport('');
     setOverallSatisfaction(0);
-    setQuestionQuality(0);
     setWouldRecommend(0);
     setWillingToPay(null);
     setMonthlyPrice('');
@@ -134,10 +148,10 @@ export default function BetaFeedbackDialog({
       : willingToPay === false && paidFeatureRequest.trim().length > 0;
   const canSubmit =
     smoothnessRating > 0
+    && featuresUsed.length > 0
     && questionRelevanceResponse.trim().length > 0
     && feedbackHelpfulnessResponse.trim().length > 0
     && overallSatisfaction > 0
-    && questionQuality > 0
     && wouldRecommend > 0
     && branchAnswered
     && !submitting;
@@ -145,13 +159,14 @@ export default function BetaFeedbackDialog({
   const payload = useMemo<SessionFeedbackPayload>(() => ({
     session_id: sessionId,
     smoothness_rating: smoothnessRating,
+    features_used: featuresUsed.join(', '),
+    features_helpful: featuresHelpful.length > 0 ? featuresHelpful.join(', ') : null,
     desired_features: cleanOptional(desiredFeatures),
     difficult_feature_response: cleanOptional(difficultFeature),
     question_relevance_response: questionRelevanceResponse.trim(),
     feedback_helpfulness_response: feedbackHelpfulnessResponse.trim(),
     bug_report: cleanOptional(bugReport),
     overall_satisfaction_rating: overallSatisfaction,
-    question_quality_rating: questionQuality,
     would_recommend_rating: wouldRecommend,
     willing_to_pay: willingToPay === true,
     monthly_price: willingToPay === true ? cleanOptional(monthlyPrice) : null,
@@ -160,11 +175,12 @@ export default function BetaFeedbackDialog({
     bugReport,
     desiredFeatures,
     difficultFeature,
+    featuresHelpful,
+    featuresUsed,
     feedbackHelpfulnessResponse,
     monthlyPrice,
     overallSatisfaction,
     paidFeatureRequest,
-    questionQuality,
     questionRelevanceResponse,
     sessionId,
     smoothnessRating,
@@ -216,17 +232,26 @@ export default function BetaFeedbackDialog({
             value={smoothnessRating}
             onChange={setSmoothnessRating}
           />
+          <CheckboxField
+            label="Which features have you used?"
+            name="featuresUsed"
+            options={FEATURE_OPTIONS}
+            value={featuresUsed}
+            onChange={setFeaturesUsed}
+            required
+          />
+          <CheckboxField
+            label="Which features have you found helpful?"
+            name="featuresHelpful"
+            options={FEATURE_OPTIONS}
+            value={featuresHelpful}
+            onChange={setFeaturesHelpful}
+          />
           <RatingField
             label="Overall, how satisfied are you with the practice session feature?"
             name="overallSatisfaction"
             value={overallSatisfaction}
             onChange={setOverallSatisfaction}
-          />
-          <RatingField
-            label="How strong was the question quality?"
-            name="questionQuality"
-            value={questionQuality}
-            onChange={setQuestionQuality}
           />
           <RatingField
             label="How likely are you to recommend InterviewPie to a friend?"
@@ -265,6 +290,7 @@ export default function BetaFeedbackDialog({
           <fieldset className="space-y-3">
             <legend className="text-sm font-semibold text-text">
               Would you be willing to pay for InterviewPie?
+              <span className="text-link"> *</span>
             </legend>
             <div className="grid grid-cols-2 gap-3">
               <BranchButton
@@ -366,6 +392,71 @@ function RatingField({
             {rating}
           </label>
         ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Multi-select answer list. Mirrors `RatingField`'s sr-only-input-inside-a-
+ * styled-label pattern (so keyboard + screen readers get a real checkbox), but
+ * stacks single-column with left-aligned text since the options are sentences.
+ */
+function CheckboxField({
+  label,
+  name,
+  options,
+  value,
+  onChange,
+  required = false,
+}: {
+  label: string;
+  name: string;
+  options: readonly string[];
+  value: string[];
+  onChange: (value: string[]) => void;
+  required?: boolean;
+}) {
+  const toggle = (option: string) => {
+    const next = value.includes(option)
+      ? value.filter((entry) => entry !== option)
+      // Rebuild from `options` so the joined string always reads in canonical
+      // order, regardless of the order the boxes were ticked.
+      : options.filter((entry) => entry === option || value.includes(entry));
+    onChange([...next]);
+  };
+
+  return (
+    <fieldset className="space-y-3">
+      <legend className="text-sm font-semibold text-text">
+        {label}
+        {required && <span className="text-link"> *</span>}
+      </legend>
+      <div className="grid gap-2">
+        {options.map((option) => {
+          const selected = value.includes(option);
+          return (
+            <label
+              key={`${name}-${option}`}
+              className={cn(
+                'flex min-h-11 cursor-pointer items-center rounded-full border px-4 py-2 text-left text-sm font-semibold transition',
+                selected
+                  ? 'border-accent bg-accent text-accent-fg'
+                  : 'border-border-strong bg-surface text-text hover:bg-surface-sunken',
+              )}
+            >
+              <input
+                className="sr-only"
+                type="checkbox"
+                name={name}
+                value={option}
+                checked={selected}
+                onChange={() => toggle(option)}
+              />
+              {option}
+            </label>
+          );
+        })}
       </div>
     </fieldset>
   );
