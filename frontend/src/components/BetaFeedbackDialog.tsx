@@ -30,6 +30,7 @@ const FEATURE_OPTIONS = [
   'Changing the length of an interview session',
   'Practicing a particular question type',
   'History page',
+  'Ask Tutor chatbot in Session Feedback',
   'Saving a question',
   'Choosing interviewer accent and speed',
   'Adding a resume',
