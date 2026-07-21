@@ -86,6 +86,9 @@ def _build_context(
         transcript=turn.transcript_text,
         experience_level=level,
         category=brief.category if brief else None,
+        # Question-FORM axis — selects the rubric the five dimensions were
+        # scored against (and the labels used for them below).
+        question_category=turn.question_category,
         target_role=user.target_role,
         main_takeaway=fd.get("main_takeaway"),
         # Label the five generic dimension columns per the turn's question

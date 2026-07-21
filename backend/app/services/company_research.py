@@ -726,6 +726,22 @@ def _digest_serp(serp: dict) -> tuple[str, str]:
     return kg_desc, "\n".join(parts)
 
 
+async def search_web_digest(query: str) -> str:
+    """Run one Serper query and return the compact `_digest_serp` blob.
+
+    The public seam over Serper for callers that want raw search results rather
+    than a summarized `CompanyBrief` — today the Ask-Tutor `search_web` tool,
+    which hands the digest straight to the tutor model as tool output. Keeping it
+    here means Serper's URL / key / payload shape stay owned by one module.
+
+    Raises whatever `_serper_search` raises (missing key → `RuntimeError`, HTTP
+    → `httpx.HTTPError`); callers that must degrade gracefully catch it.
+    """
+    serp = await _serper_search(query)
+    _, digest = _digest_serp(serp)
+    return digest
+
+
 def _fallback_brief(kg_description: str) -> CompanyBrief:
     return CompanyBrief(
         description=kg_description or "No summary available.",

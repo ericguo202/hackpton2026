@@ -488,6 +488,24 @@ export default function AskTutorChat({
       </header>
 
       <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4" aria-live="polite">
+        {/* Opening blurb — deliberately NOT a message bubble: it's chrome that
+            frames what the tutor is for (and, on free tier, what it costs),
+            not something the tutor "said". Sits above the greeting and scrolls
+            away with the conversation. `remaining` is null for Pro / unknown,
+            which is also how the composer's quota UI reads "no cap", so the
+            usage line only renders when a cap actually applies. */}
+        <p className="mb-4 text-balance px-2 text-center text-xs leading-5 text-text-muted">
+          Welcome to Ask Tutor, your personal interview coach to help you review this
+          turn.
+          {remaining !== null && (
+            <>
+              {' '}
+              Your account is limited to {MAX_TUTOR_CHATS_PER_DAY} chats per day. You
+              have used {MAX_TUTOR_CHATS_PER_DAY - remaining}/{MAX_TUTOR_CHATS_PER_DAY}{' '}
+              chats already.
+            </>
+          )}
+        </p>
         <ul className="flex flex-col gap-4">
           {messages.map((m) => {
             // Tool-call step ("Retrieving company brief…") — a spinner while

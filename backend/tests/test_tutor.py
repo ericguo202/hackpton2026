@@ -8,7 +8,8 @@ import json
 from decimal import Decimal
 from types import SimpleNamespace
 
-from app.db.models.enums import ExperienceLevel
+from app.db.models.enums import ExperienceLevel, QuestionCategory
+from app.services import tutor as tutor_mod
 from app.services.tutor import (
     REDIRECT_LINE,
     TutorContext,
@@ -84,6 +85,7 @@ def _ctx(**kw):
         transcript="I disagreed with my manager.",
         experience_level=ExperienceLevel.entry,
         category="Finance and Investment",
+        question_category=QuestionCategory.experience_star,
         target_role="Analyst",
         main_takeaway="Add the outcome.",
         scores={
@@ -170,28 +172,99 @@ def test_fmt_score_formats():
 # ── tool executors ────────────────────────────────────────────────────────────
 
 
-def test_run_tool_improvement_moments():
-    out = json.loads(run_tool(_ctx(), "get_improvement_moments"))
+async def test_run_tool_improvement_moments():
+    out = json.loads(await run_tool(_ctx(), "get_improvement_moments"))
     assert out["improvement_moments"][0]["issue_type"] == "weak_wording"
 
 
-def test_run_tool_company_research():
-    out = json.loads(run_tool(_ctx(), "get_company_research"))
+async def test_run_tool_company_research():
+    out = json.loads(await run_tool(_ctx(), "get_company_research"))
     assert out["description"] == "Acme does things."
     assert out["values"] == ["integrity"]
     assert out["role_signals"] == ["ownership"]
     assert out["sample_question_themes"] == ["conflict resolution"]
 
 
-def test_run_tool_candidate_background():
-    out = json.loads(run_tool(_ctx(), "get_candidate_background"))
+async def test_run_tool_candidate_background():
+    out = json.loads(await run_tool(_ctx(), "get_candidate_background"))
     assert out["short_bio"] == "Bio here."
     assert out["resume_excerpt"] == "Resume excerpt."
 
 
-def test_run_tool_unknown():
-    out = json.loads(run_tool(_ctx(), "nope"))
+async def test_run_tool_unknown():
+    out = json.loads(await run_tool(_ctx(), "nope"))
     assert "error" in out
+
+
+# ── search_web ────────────────────────────────────────────────────────────────
+
+
+async def test_search_web_returns_digest(monkeypatch):
+    async def fake_digest(query):
+        assert query == "AWS S3 team engineering culture"
+        return "Top search results:\n- Blog: S3 team writes design docs."
+
+    monkeypatch.setattr(
+        "app.services.company_research.search_web_digest", fake_digest
+    )
+    out = json.loads(
+        await run_tool(
+            _ctx(),
+            "search_web",
+            json.dumps({"query": "AWS S3 team engineering culture"}),
+        )
+    )
+    assert out["query"] == "AWS S3 team engineering culture"
+    assert "design docs" in out["results"]
+
+
+async def test_search_web_fails_soft_on_serper_error(monkeypatch):
+    async def boom(query):
+        raise RuntimeError("SERPER_API_KEY is not set")
+
+    monkeypatch.setattr("app.services.company_research.search_web_digest", boom)
+    out = json.loads(
+        await run_tool(_ctx(), "search_web", json.dumps({"query": "acme culture"}))
+    )
+    # Degrades to a message the model can work around — never raises into the
+    # stream, which would kill the whole reply.
+    assert "unavailable" in out["error"]
+
+
+async def test_search_web_rejects_empty_query(monkeypatch):
+    called = False
+
+    async def fake_digest(query):
+        nonlocal called
+        called = True
+        return "x"
+
+    monkeypatch.setattr(
+        "app.services.company_research.search_web_digest", fake_digest
+    )
+    out = json.loads(await run_tool(_ctx(), "search_web", json.dumps({"query": "  "})))
+    assert "error" in out
+    assert not called
+
+
+async def test_search_web_survives_malformed_arguments(monkeypatch):
+    # A model can stream truncated/invalid JSON arguments; that's a model bug,
+    # not a request failure — we report a missing query instead of crashing.
+    out = json.loads(await run_tool(_ctx(), "search_web", '{"query": "unterminated'))
+    assert "error" in out
+
+
+async def test_search_web_result_is_clipped(monkeypatch):
+    async def fake_digest(query):
+        return "x" * 10_000
+
+    monkeypatch.setattr(
+        "app.services.company_research.search_web_digest", fake_digest
+    )
+    out = json.loads(
+        await run_tool(_ctx(), "search_web", json.dumps({"query": "acme"}))
+    )
+    assert len(out["results"]) == tutor_mod._MAX_SEARCH_RESULT_CHARS
 
 
 # ── streaming loop ────────────────────────────────────────────────────────────
@@ -244,6 +317,82 @@ async def test_stream_tool_then_answer():
     assert "Acme does things." in tool_msg["content"]
 
 
+async def test_stream_search_web_passes_query_through(monkeypatch):
+    seen: list = []
+
+    async def fake_digest(query):
+        seen.append(query)
+        return "Top search results:\n- Acme storage team ships weekly."
+
+    monkeypatch.setattr(
+        "app.services.company_research.search_web_digest", fake_digest
+    )
+    captured: list = []
+    rounds = [
+        [
+            _delta(
+                tool_calls=[
+                    _tool_call(
+                        0,
+                        id="call_1",
+                        name="search_web",
+                        args='{"query": "Acme storage team culture"}',
+                    )
+                ]
+            )
+        ],
+        [_delta(content="The storage team ships weekly.")],
+    ]
+    events = await _collect(
+        stream_tutor_reply(
+            _ctx(), [], "What's that team like?", client=_make_client(rounds, captured)
+        )
+    )
+    assert seen == ["Acme storage team culture"]
+    assert events[0]["label"] == "Searching the web"
+    tool_msg = next(m for m in captured[1]["messages"] if m["role"] == "tool")
+    assert "ships weekly" in tool_msg["content"]
+
+
+async def test_stream_caps_web_searches_per_reply(monkeypatch):
+    """Serper costs money per call, so the budget must hold even if the model
+    keeps asking. Over-budget calls are refused locally — no search, no chip."""
+    calls: list = []
+
+    async def fake_digest(query):
+        calls.append(query)
+        return "results"
+
+    monkeypatch.setattr(
+        "app.services.company_research.search_web_digest", fake_digest
+    )
+
+    def _search_round(i):
+        return [
+            _delta(
+                tool_calls=[
+                    _tool_call(
+                        0,
+                        id=f"call_{i}",
+                        name="search_web",
+                        args=json.dumps({"query": f"acme {i}"}),
+                    )
+                ]
+            )
+        ]
+
+    # Four consecutive search rounds; the budget is 2.
+    rounds = [_search_round(i) for i in range(tutor_mod._MAX_TOOL_ROUNDS)]
+    events = await _collect(
+        stream_tutor_reply(_ctx(), [], "search a lot", client=_make_client(rounds))
+    )
+    assert calls == ["acme 0", "acme 1"]
+    tool_events = [e for e in events if e["type"] == "tool"]
+    assert len(tool_events) == tutor_mod._MAX_WEB_SEARCHES_PER_REPLY
+    # Round cap still closes the stream cleanly rather than erroring.
+    assert events[-1] == {"type": "done"}
+
+
 async def test_stream_drops_tool_round_preamble():
     """Chatty narration emitted alongside a tool call must NOT reach the user;
     only the final round's content is shown."""
@@ -285,6 +434,7 @@ async def test_stream_passes_tools_and_disables_reasoning():
         "get_improvement_moments",
         "get_company_research",
         "get_candidate_background",
+        "search_web",
     }
 
 
