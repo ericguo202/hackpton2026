@@ -26,6 +26,7 @@ import { questionCategoryLabel } from '../../types/session';
 import type { TranscriptToken } from '../../lib/fillerWords';
 import { segmentTranscriptByImprovements } from '../../lib/transcriptHighlight';
 import FillerRateBar from './FillerRateBar';
+import SpeakingPaceBar from './SpeakingPaceBar';
 import { useMomentFlash } from './_momentFlash';
 import { useAskTutor } from './ask-tutor/_askTutor';
 import AskAboutThisButton from './ask-tutor/AskAboutThisButton';
@@ -417,10 +418,11 @@ export function ScoresSection({
           })}
         </div>
       )}
-      {/* Filler rate sits under the score stack. Transcript-derived, so it
-          shows even when the evaluation failed (no scores above). */}
-      <div className="mt-2">
+      {/* Delivery metrics sit under the score stack. Both are transcript-derived,
+          so they show even when the evaluation failed (no scores above). */}
+      <div className="mt-2 flex flex-col gap-2">
         <FillerRateBar rate={num(turn.filler_word_rate)} variant="row" />
+        <SpeakingPaceBar wpm={turn.speaking_pace_wpm} variant="row" />
       </div>
     </div>
   );

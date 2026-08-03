@@ -61,7 +61,12 @@ from app.services.daily_limit import (
 from app.services.coaching import generate_next_take
 from app.services.delivery_consent import has_active_delivery_analytics_consent
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
-from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
+from app.services.filler_words import (
+    count_filler_words,
+    count_words,
+    filler_rate_pct,
+    speaking_pace_wpm,
+)
 from app.services.followup import (
     generate_followup_transition,
     should_continue_followup,
@@ -1130,6 +1135,7 @@ async def _upsert_session_metrics(
     averages: dict[str, float | None],
     total_filler_word_count: int,
     total_word_count: int,
+    total_duration_seconds: float | None,
     overall_score: float | None,
     turns_evaluated: int,
 ) -> None:
@@ -1157,6 +1163,7 @@ async def _upsert_session_metrics(
         avg_delivery=averages["delivery"],
         total_filler_word_count=total_filler_word_count,
         total_word_count=total_word_count,
+        total_duration_seconds=total_duration_seconds,
         overall_score=overall_score,
         turns_evaluated=turns_evaluated,
     ))
@@ -1195,6 +1202,16 @@ async def _complete_session_from_turns(
     per_dim_avgs = _per_dimension_averages(all_turn_scores)
     total_fillers = sum(t[6] for t in all_turn_scores)
     total_words = sum(int(t.word_count or 0) for t in turns)
+    # Speech-span total for the session-level speaking pace (word-weighted:
+    # Σwords ÷ Σminutes, matching the lifetime filler rate in `me.py` — NOT a
+    # mean of per-turn WPMs). None when no turn carries a measurement, which is
+    # the case for every session finalized before migration 0030.
+    turn_durations = [
+        float(t.duration_seconds)
+        for t in turns
+        if t.transcript_text is not None and t.duration_seconds is not None
+    ]
+    total_duration = sum(turn_durations) if turn_durations else None
     flat_scores = [
         v for t in all_turn_scores for v in t[:6] if v is not None
     ]
@@ -1249,6 +1266,7 @@ async def _complete_session_from_turns(
         averages=per_dim_avgs,
         total_filler_word_count=total_fillers,
         total_word_count=total_words,
+        total_duration_seconds=total_duration,
         overall_score=overall,
         turns_evaluated=turns_evaluated,
     )
@@ -1499,7 +1517,8 @@ async def submit_turn(
     # 3. Transcribe. Bounded read so an oversized upload is rejected with 413
     #    before it can OOM the worker or be sent to ElevenLabs STT.
     audio_bytes = await _read_audio_bounded(audio)
-    transcript = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+    transcription = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+    transcript = transcription.text
 
     # 3a-pre. Deterministic prompt-injection gate. Free (no network) so it runs
     # BEFORE the billed moderation call: a transcript carrying an injection
@@ -1591,10 +1610,14 @@ async def submit_turn(
             evaluation_pending=False,
         )
 
-    # 4. Filler words (regex ground truth per CLAUDE.md) + total word count
-    #    (denominator for the filler rate).
+    # 4. Filler words (regex ground truth per CLAUDE.md) + total spoken word
+    #    count (the denominator for BOTH the filler rate and words-per-minute;
+    #    both counters scrub ElevenLabs audio-event tags first). The pace
+    #    denominator is the STT speech span, which is None on any unexpected
+    #    response shape — `speaking_pace_wpm` then yields None (no pace shown).
     filler_count, filler_breakdown = count_filler_words(transcript)
     word_count = count_words(transcript)
+    turn_pace_wpm = speaking_pace_wpm(word_count, transcription.duration_seconds)
 
     # 5. Collect prior evaluated turns for history context.
     prior_result = await db.execute(
@@ -1633,11 +1656,15 @@ async def submit_turn(
     #     Background tasks mutate this same row; persisting now means they
     #     always find a transcript to evaluate against and the row is durable
     #     even if a task crashes.
+    #     `transcript` keeps its audio-event tags verbatim — the evaluator
+    #     should see "(laughter)" and the candidate should read what they
+    #     actually said; only the counts above are computed on scrubbed text.
     current_turn.transcript_text       = transcript
     current_turn.cv_summary            = parsed_cv_summary
     current_turn.filler_word_count     = filler_count
     current_turn.filler_word_breakdown = filler_breakdown
     current_turn.word_count            = word_count
+    current_turn.duration_seconds      = transcription.duration_seconds
 
     # 8b. Branch: non-final returns the next question; final returns immediately
     #     after spawning session finalization below.
@@ -1788,6 +1815,7 @@ async def submit_turn(
             feedback_detail=None,
             filler_word_count=filler_count,
             filler_word_breakdown=filler_breakdown,
+            speaking_pace_wpm=turn_pace_wpm,
             next_question=next_q,
             next_question_audio_url=next_audio_url,
             next_question_is_followup=(route == "followup"),
@@ -1821,6 +1849,7 @@ async def submit_turn(
         feedback_detail=None,
         filler_word_count=filler_count,
         filler_word_breakdown=filler_breakdown,
+        speaking_pace_wpm=turn_pace_wpm,
         next_question=None,
         next_question_audio_url=None,
         is_final=True,
@@ -2148,6 +2177,9 @@ async def get_session(
             filler_word_count=t.filler_word_count or 0,
             filler_word_breakdown=t.filler_word_breakdown or {},
             filler_word_rate=filler_rate_pct(t.filler_word_count, t.word_count),
+            word_count=t.word_count or 0,
+            duration_seconds=t.duration_seconds,
+            speaking_pace_wpm=speaking_pace_wpm(t.word_count, t.duration_seconds),
             evaluated_at=t.evaluated_at,
             created_at=t.created_at,
         )
@@ -2173,6 +2205,10 @@ async def get_session(
         filler_word_rate=filler_rate_pct(
             metrics.total_filler_word_count if metrics else None,
             metrics.total_word_count if metrics else None,
+        ),
+        speaking_pace_wpm=speaking_pace_wpm(
+            metrics.total_word_count if metrics else None,
+            metrics.total_duration_seconds if metrics else None,
         ),
         turns_evaluated=metrics.turns_evaluated if metrics else 0,
         saved_question_id=session.saved_question_id,

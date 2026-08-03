@@ -39,6 +39,7 @@ import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { buildRadarData } from '../lib/radarData';
 import { scoreDimensionsFor, type ScoreKey } from '../lib/scoreDimensions';
+import { paceColor } from '../lib/speakingPace';
 import { questionCategoryLabel } from '../types/session';
 import type {
   SavedQuestionAttempt,
@@ -471,10 +472,21 @@ function AttemptRow({
       <span className="col-span-1 text-eyebrow uppercase tracking-eyebrow text-text-subtle tabular-nums">
         {String(ordinal).padStart(2, '0')}
       </span>
-      <span className="col-span-6 text-sm text-text-muted tabular-nums">
+      <span className="col-span-4 text-sm text-text-muted tabular-nums">
         {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
       </span>
-      <span className="col-span-5 text-right text-sm tabular-nums">
+      {/* Speaking pace is transcript-derived, so it's shown even for a failed
+          evaluation. Null (unmeasured attempt / too-short answer) → em-dash. */}
+      <span className="col-span-3 text-right text-sm tabular-nums">
+        {attempt.speaking_pace_wpm == null ? (
+          <span className="text-text-subtle">—</span>
+        ) : (
+          <span style={{ color: paceColor(attempt.speaking_pace_wpm) }}>
+            {attempt.speaking_pace_wpm} wpm
+          </span>
+        )}
+      </span>
+      <span className="col-span-4 text-right text-sm tabular-nums">
         {pending ? (
           <span className="text-text-subtle">Scoring in progress</span>
         ) : attempt.evaluation_failed ? (

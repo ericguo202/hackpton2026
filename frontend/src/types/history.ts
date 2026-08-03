@@ -116,6 +116,15 @@ export type TurnDetail = {
   filler_word_breakdown: Record<string, number>;
   /** Filler words ÷ this turn's words, percent (Decimal-as-string). Null when no transcript. */
   filler_word_rate: string | null;
+  /** Spoken words in this turn (ElevenLabs audio-event tags excluded). */
+  word_count: number;
+  /** Speech span in seconds (Decimal-as-string). Null on turns recorded before it was measured. */
+  duration_seconds: string | null;
+  /**
+   * Words per minute over the speech span. Null when the span is unknown or
+   * the answer was too short for pace to be meaningful (backend floor).
+   */
+  speaking_pace_wpm: number | null;
   evaluated_at: string | null;
   created_at: string;
 };
@@ -145,6 +154,11 @@ export type SessionDetail = {
   total_filler_word_count: number | null;
   /** Session-level filler rate, percent (Decimal-as-string). Null on legacy rows. */
   filler_word_rate: string | null;
+  /**
+   * Session-level speaking pace, word-weighted across turns (Σwords ÷ Σminutes
+   * of speech span). Null on sessions finalized before durations were measured.
+   */
+  speaking_pace_wpm: number | null;
   turns_evaluated: number;
   /**
    * Non-null when this session's opening question has been saved for
