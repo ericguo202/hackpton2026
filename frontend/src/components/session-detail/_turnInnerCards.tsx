@@ -27,6 +27,7 @@ import type { TranscriptToken } from '../../lib/fillerWords';
 import { segmentTranscriptByImprovements } from '../../lib/transcriptHighlight';
 import FillerRateBar from './FillerRateBar';
 import SpeakingPaceBar from './SpeakingPaceBar';
+import { paceCue } from '../../lib/speakingPace';
 import { useMomentFlash } from './_momentFlash';
 import { useAskTutor } from './ask-tutor/_askTutor';
 import AskAboutThisButton from './ask-tutor/AskAboutThisButton';
@@ -441,28 +442,36 @@ export function MainTakeawaySection({ turn }: { turn: TurnDetail }) {
 
 export function DeliveryFeedbackSection({ turn }: { turn: TurnDetail }) {
   const deliveryFeedback = turn.feedback_detail?.delivery_feedback;
-  if (!deliveryFeedback) return null;
+  const paceWpm = turn.speaking_pace_wpm;
+  // Pacing is transcript-derived, so it exists even when the camera was
+  // declined (no `delivery_feedback` at all) — the section renders for either.
+  if (!deliveryFeedback && paceWpm == null) return null;
 
   const rows: Array<[string, string]> = [];
-  if (deliveryFeedback.eye_contact) {
+  if (deliveryFeedback?.eye_contact) {
     rows.push(['Eye contact', deliveryFeedback.eye_contact]);
   }
-  if (deliveryFeedback.alignment) {
+  if (deliveryFeedback?.alignment) {
     rows.push(['Alignment', deliveryFeedback.alignment]);
   }
-  if (deliveryFeedback.posture) {
+  if (deliveryFeedback?.posture) {
     rows.push(['Posture', deliveryFeedback.posture]);
   }
-  if (deliveryFeedback.expression) {
+  if (deliveryFeedback?.expression) {
     rows.push(['Expression', deliveryFeedback.expression]);
+  }
+  if (paceWpm != null) {
+    rows.push(['Pacing', paceCue(paceWpm)]);
   }
 
   return (
     <div>
       <Eyebrow>Delivery cues</Eyebrow>
-      <p className="mt-2 text-sm leading-6 text-text">
-        {deliveryFeedback.summary}
-      </p>
+      {deliveryFeedback?.summary && (
+        <p className="mt-2 text-sm leading-6 text-text">
+          {deliveryFeedback.summary}
+        </p>
+      )}
       {rows.length > 0 && (
         <dl className="mt-3 flex flex-col gap-2">
           {rows.map(([label, detail]) => (

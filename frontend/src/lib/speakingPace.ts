@@ -28,13 +28,38 @@ export type PaceBand = {
   upTo: number;
   color: string;
   label: string;
+  /**
+   * Coaching cue for this band, phrased to complete
+   * "…words per minute, which is {cue}" (see `paceCue`).
+   */
+  cue: string;
 };
 
 export const PACE_BANDS: readonly PaceBand[] = [
-  { upTo: 120, color: 'var(--color-rate-bad)', label: 'Slow' },
-  { upTo: 160, color: 'var(--color-rate-good)', label: 'On target' },
-  { upTo: 175, color: 'var(--color-rate-ok)', label: 'Slightly fast' },
-  { upTo: PACE_TRACK_MAX, color: 'var(--color-rate-bad)', label: 'Fast' },
+  {
+    upTo: 120,
+    color: 'var(--color-rate-bad)',
+    label: 'Slow',
+    cue: "too slow. Speak faster to sound more confident and maintain the interviewer's attention.",
+  },
+  {
+    upTo: 160,
+    color: 'var(--color-rate-good)',
+    label: 'On target',
+    cue: "on target. This pace projects confidence and maintains the interviewer's attention without sacrificing clarity.",
+  },
+  {
+    upTo: 175,
+    color: 'var(--color-rate-ok)',
+    label: 'Slightly fast',
+    cue: 'slightly fast. Slow down slightly and pause briefly after important points to ensure clarity.',
+  },
+  {
+    upTo: PACE_TRACK_MAX,
+    color: 'var(--color-rate-bad)',
+    label: 'Fast',
+    cue: 'too fast. Speak slower to ensure clarity and that the interviewer understands your response.',
+  },
 ];
 
 function bandFor(wpm: number): PaceBand {
@@ -49,6 +74,15 @@ export function paceColor(wpm: number): string {
 /** Human verdict for a pace ("On target", "Fast", …) — used in the aria-label. */
 export function paceLabel(wpm: number): string {
   return bandFor(wpm).label;
+}
+
+/**
+ * Prose coaching cue for a pace — the Delivery-cues counterpart of the bar.
+ * Derived from the SAME `bandFor` as `paceColor`, so the sentence can never
+ * disagree with the color the candidate sees on the track.
+ */
+export function paceCue(wpm: number): string {
+  return `Pacing recorded at ${wpm} words per minute, which is ${bandFor(wpm).cue}`;
 }
 
 /**
