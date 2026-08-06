@@ -8,6 +8,7 @@ import BetaFeedbackGate from './components/BetaFeedbackGate';
 import BetaFeedbackLauncher from './components/BetaFeedbackLauncher';
 import EmailConflictNotice from './components/EmailConflictNotice';
 import PolicyAcceptanceGate from './components/PolicyAcceptanceGate';
+import RouteSeo from './components/RouteSeo';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
 import {
   RedirectIfOnboarded,
@@ -116,6 +117,7 @@ function SignedInHome() {
 function App() {
   return (
     <>
+      <RouteSeo />
       <AnalyticsProvider />
       <RouteErrorBoundary>
       <Suspense fallback={<RouteFallback />}>
