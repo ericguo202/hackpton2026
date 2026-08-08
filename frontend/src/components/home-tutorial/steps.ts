@@ -53,7 +53,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     selector: '[data-tour="advanced-trigger"]',
-    body: 'Choose interviewer accent and speed, add a job description for the target company, or choose a custom question to practice.',
+    body: 'Choose a custom question to practice, add a job description for the target company, or change interviewer accent and speed, .',
   },
   {
     selector: '[data-tour="privacy-trigger"]',

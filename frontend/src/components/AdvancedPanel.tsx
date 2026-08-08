@@ -14,6 +14,7 @@ import { Link } from 'react-router';
 
 import { CONTENT_POLICY_MESSAGE, violatesContentPolicy } from '../lib/contentPolicy';
 import type { CustomQuestion } from '../types/customQuestions';
+import { questionCategoryLabel } from '../types/session';
 import SpeechSpeedToggle from './SpeechSpeedToggle';
 import type { SpeechPace } from './SpeechSpeedToggle';
 import VoicePickerGrid from './VoicePickerGrid';
@@ -61,59 +62,11 @@ export default function AdvancedPanel({
   const policyError = jobDescription.trim() !== '' && violatesContentPolicy(jobDescription);
 
   return (
+    // Section order is deliberate: Custom question leads because the basic-panel
+    // question-type control links straight here (picking a custom question
+    // disables that picker), so the link must land on the section with no
+    // scrolling. Voice sits last as the least consequential refinement.
     <div className="space-y-6">
-      <Section
-        label="Voice"
-        hint="Pick an interviewer accent, or let us choose for you."
-      >
-        <VoicePickerGrid
-          voiceId={voiceId}
-          onSelect={onVoiceSelect}
-          disabled={disabled}
-        />
-        <SpeedToggle
-          speechPace={speechPace}
-          onChange={onSpeechPaceChange}
-          disabled={disabled}
-        />
-      </Section>
-
-      <Section
-        label="Job description"
-        hint="Paste a posting to tailor the opening question to this specific role. Optional."
-      >
-        <textarea
-          value={jobDescription}
-          onChange={(e) => onJobDescriptionChange(e.target.value)}
-          disabled={disabled}
-          maxLength={MAX_JOB_DESCRIPTION_CHARS}
-          rows={6}
-          placeholder="Paste the job description here…"
-          aria-invalid={policyError}
-          className="h-40 w-full resize-none overflow-y-auto rounded border border-border bg-surface-sunken px-3 py-2 text-sm text-text placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        <div className="flex items-center justify-between gap-3">
-          {policyError ? (
-            <p role="alert" className="text-sm text-critique">
-              {CONTENT_POLICY_MESSAGE}
-            </p>
-          ) : (
-            <span />
-          )}
-          {showCounter && (
-            <p
-              className={
-                remaining <= 0
-                  ? 'text-sm text-critique'
-                  : 'text-sm text-text-subtle'
-              }
-            >
-              {remaining.toLocaleString()} left
-            </p>
-          )}
-        </div>
-      </Section>
-
       <Section
         label="Custom question"
         hint={
@@ -169,7 +122,14 @@ export default function AdvancedPanel({
                     >
                       {selected && <Check className="h-3 w-3" />}
                     </span>
-                    <span className="min-w-0">{q.question_text}</span>
+                    {/* The classified type decides the rubric this question is
+                        graded by, so surface it next to the text. */}
+                    <span className="min-w-0">
+                      {q.question_text}{' '}
+                      <span className="text-text-subtle">
+                        ({questionCategoryLabel(q.question_category)})
+                      </span>
+                    </span>
                   </button>
                 </li>
               );
@@ -178,10 +138,64 @@ export default function AdvancedPanel({
         )}
         {selectedCustomQuestionId !== null && (
           <p className="text-xs text-text-subtle">
-            Your selected question replaces the opening question. The company you
-            enter still tailors the follow-up.
+            Your selected question replaces the opening question, and sets the
+            question type for the first turn. Any later questions are drawn from
+            the Recommended Mix. The company you enter still tailors the
+            follow-up.
           </p>
         )}
+      </Section>
+
+      <Section
+        label="Job description"
+        hint="Paste a posting to tailor the opening question to this specific role. Optional."
+      >
+        <textarea
+          value={jobDescription}
+          onChange={(e) => onJobDescriptionChange(e.target.value)}
+          disabled={disabled}
+          maxLength={MAX_JOB_DESCRIPTION_CHARS}
+          rows={6}
+          placeholder="Paste the job description here…"
+          aria-invalid={policyError}
+          className="h-40 w-full resize-none overflow-y-auto rounded border border-border bg-surface-sunken px-3 py-2 text-sm text-text placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        <div className="flex items-center justify-between gap-3">
+          {policyError ? (
+            <p role="alert" className="text-sm text-critique">
+              {CONTENT_POLICY_MESSAGE}
+            </p>
+          ) : (
+            <span />
+          )}
+          {showCounter && (
+            <p
+              className={
+                remaining <= 0
+                  ? 'text-sm text-critique'
+                  : 'text-sm text-text-subtle'
+              }
+            >
+              {remaining.toLocaleString()} left
+            </p>
+          )}
+        </div>
+      </Section>
+
+      <Section
+        label="Voice"
+        hint="Pick an interviewer accent, or let us choose for you."
+      >
+        <VoicePickerGrid
+          voiceId={voiceId}
+          onSelect={onVoiceSelect}
+          disabled={disabled}
+        />
+        <SpeedToggle
+          speechPace={speechPace}
+          onChange={onSpeechPaceChange}
+          disabled={disabled}
+        />
       </Section>
     </div>
   );
