@@ -142,9 +142,29 @@ async function main() {
   });
   const origin = server.resolvedUrls.local[0].replace(/\/$/, '');
 
-  const browser = await puppeteer.launch({
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
-  });
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      // --no-sandbox is required: CI build containers run as root, where
+      // Chrome's sandbox refuses to start.
+      args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    });
+  } catch (error) {
+    // The overwhelmingly common CI failure is a missing shared library, not a
+    // bug in this script. Chromium downloads fine and then can't start, which
+    // reads as a confusing puppeteer error unless you already know the cause.
+    if (/shared libraries|libnspr4|libnss3|error while loading/i.test(error.message)) {
+      throw new Error(
+        `${error.message}\n\n`
+          + "  → Chromium is present but its system libraries are not. On Vercel these\n"
+          + '    come from the `installCommand` dnf list in frontend/vercel.json; if the\n'
+          + '    build image changed, add the missing package there. To unblock a deploy\n'
+          + '    immediately, set the env var PRERENDER_SKIP=1 (public pages fall back to\n'
+          + '    client-only rendering, so non-JS crawlers lose per-route metadata).',
+      );
+    }
+    throw error;
+  }
 
   try {
     // Snapshot everything before writing anything: a file written mid-run would
