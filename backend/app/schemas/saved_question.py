@@ -104,6 +104,10 @@ class SavedQuestionAttempt(BaseModel):
     overall_score: Decimal | None
     turn1_scores: ScoresOut | None
     evaluation_failed: bool
+    # Speaking pace of the attempt's opening turn. Transcript-derived, so it's
+    # populated even when `evaluation_failed` — same contract as the filler
+    # rate. Null on legacy attempts (no measured span) or a too-short answer.
+    speaking_pace_wpm: int | None = None
 
 
 class SavedQuestionDetailOut(BaseModel):

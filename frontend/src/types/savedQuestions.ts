@@ -50,6 +50,9 @@ export type SavedQuestionAttempt = {
   } | null;
   /** True when turn 1's eval failed; shown with a marker, dropped from trend. */
   evaluation_failed: boolean;
+  /** Opening-turn speaking pace. Transcript-derived, so present even when
+   *  `evaluation_failed`. Null on legacy attempts / answers too short to rate. */
+  speaking_pace_wpm: number | null;
 };
 
 export type SavedQuestionDetail = {

@@ -289,13 +289,15 @@ _EXPORT_TURN_FIELDS = (
     "id", "session_id", "turn_number", "question_text", "transcript_text",
     "is_followup", "dimension_1_score", "dimension_2_score", "dimension_3_score",
     "dimension_4_score", "dimension_5_score", "delivery_score", "cv_summary",
-    "filler_word_count", "filler_word_breakdown", "word_count", "feedback",
+    "filler_word_count", "filler_word_breakdown", "word_count",
+    "duration_seconds", "feedback",
     "feedback_detail", "ai_model_used", "evaluated_at", "created_at",
 )
 _EXPORT_METRICS_FIELDS = (
     "avg_dimension_1", "avg_dimension_2", "avg_dimension_3", "avg_dimension_4",
     "avg_dimension_5", "avg_delivery", "total_filler_word_count",
-    "total_word_count", "overall_score", "turns_evaluated", "generated_at",
+    "total_word_count", "total_duration_seconds", "overall_score",
+    "turns_evaluated", "generated_at",
 )
 _EXPORT_SAVED_QUESTION_FIELDS = (
     "id", "question_text", "company", "job_title", "category",

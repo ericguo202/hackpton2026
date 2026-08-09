@@ -58,6 +58,13 @@ class SessionMetrics(Base):
     # session-level filler rate. Nullable like the filler total; legacy rows
     # finalized before migration 0011 are backfilled from transcript text.
     total_word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Sum of per-turn `duration_seconds` (speech span) across the session —
+    # denominator for the session-level speaking pace, which is word-weighted
+    # (Σwords ÷ Σminutes) rather than a mean of per-turn WPMs. Null on legacy
+    # rows finalized before migration 0030 (not backfillable).
+    total_duration_seconds: Mapped[Decimal | None] = mapped_column(
+        Numeric(8, 2), nullable=True
+    )
 
     overall_score: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
 

@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "dnf install -y nss atk at-spi2-atk cups-libs libdrm libXcomposite libXdamage libXrandr libxkbcommon mesa-libgbm pango alsa-lib && npm install",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],
@@ -25,6 +26,24 @@
           "key": "Content-Security-Policy-Report-Only",
           "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com https://*.clerk.accounts.dev https://www.googletagmanager.com https://*.google-analytics.com; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' https://tfpdo.space https://*.clerk.accounts.dev https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com; worker-src 'self' blob:; frame-src https://*.clerk.accounts.dev https://challenges.cloudflare.com"
         }
+      ]
+    },
+    {
+      "source": "/:path(sign-in|sign-up|sso-callback|onboarding|calibrate|practice|history|delivery-playground|personalize|settings)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/sessions/:path*",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/saved-question/:path*",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
       ]
     }
   ],
