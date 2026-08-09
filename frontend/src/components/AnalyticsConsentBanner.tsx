@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 
 import { useMe } from '../hooks/useMe';
@@ -22,10 +22,47 @@ import { Button } from './ui/button';
 // this only defers the *notice* until the visitor is past these flows.
 const SUPPRESSED_PATHS = ['/sign-in', '/sign-up', '/onboarding'];
 
+// Hard ceiling on the idle wait, for a tab that never goes idle (or a browser
+// without requestIdleCallback). The banner is never urgent — the visitor has to
+// read the page before the notice means anything.
+const BANNER_IDLE_TIMEOUT_MS = 1500;
+
+/**
+ * Defers the banner past the route's first paint.
+ *
+ * This component ships in the MAIN bundle, but every route page is lazy-loaded
+ * (`lazyWithRetry` in App.tsx), so the banner would otherwise commit a full
+ * network round-trip BEFORE the page it sits on top of — the visitor sees a
+ * consent notice floating over a bare "Loading" screen. Worse, that window is
+ * also what non-Google crawlers were snapshotting: with the route chunk still
+ * in flight, this banner's prose was the only text in the DOM, so it got
+ * scraped as the site's search-result description.
+ *
+ * `requestIdleCallback` is the honest signal here — "once the browser is done
+ * with the work that matters" — rather than a guessed delay.
+ */
+function useDeferredUntilIdle(): boolean {
+  const [idle, setIdle] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.requestIdleCallback !== 'function') {
+      const timer = window.setTimeout(() => setIdle(true), BANNER_IDLE_TIMEOUT_MS);
+      return () => window.clearTimeout(timer);
+    }
+    const handle = window.requestIdleCallback(() => setIdle(true), {
+      timeout: BANNER_IDLE_TIMEOUT_MS,
+    });
+    return () => window.cancelIdleCallback(handle);
+  }, []);
+
+  return idle;
+}
+
 export default function AnalyticsConsentBanner() {
   const { me } = useMe();
   const { pathname, search } = useLocation();
   const [dismissed, setDismissed] = useState(false);
+  const idle = useDeferredUntilIdle();
 
   // /calibrate is also reachable from the nav/Settings, where the banner SHOULD
   // show. Only suppress it as the final onboarding step (`?from=onboarding`),
@@ -46,7 +83,8 @@ export default function AnalyticsConsentBanner() {
   // fresh row here, flipping the gate and revealing the banner.
   const defaultOn = isDefaultOnRegion();
   const visible =
-    !dismissed
+    idle
+    && !dismissed
     && !suppressedPath
     && analyticsEnabled()
     && !gpcOptOut()
