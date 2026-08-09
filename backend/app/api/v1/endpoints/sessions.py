@@ -382,20 +382,29 @@ async def create_session(
         )
 
     # "Recommended Mix" mode: each story-block opening draws a calibrated category
-    # from the user's level + researched field. A custom question is verbatim user
-    # text (not a generated opening), so Mix never applies to it.
-    mixed_mode = body.calibrated_mix and custom_question is None
+    # from the user's level + researched field. A custom question only ever fills
+    # the FIRST opening (its own classified category), so every LATER opening in a
+    # custom-question session draws from the Mix too — hence Mix is forced on.
+    # (`body.question_category` is ignored for a custom question; the frontend
+    # disables the picker and stops sending it.)
+    mixed_mode = body.calibrated_mix or custom_question is not None
 
     # The category used to select the RESEARCH variant. The situational research
     # variant (accurate company principles + situational themes) is picked BEFORE
-    # research, so it needs a category up front. In Mix mode the field category
-    # (which drives the turn-1 draw) only exists AFTER research, so we can't
-    # pre-select the situational variant — Mix uses the standard/behavioral brief
-    # (see plan "Known limitations"). Custom questions are STAR verbatim.
+    # research, so it needs a category up front. A custom question is already
+    # classified, so its stored category selects the variant — a situational
+    # custom question gets the situational brief. In plain Mix mode the field
+    # category (which drives the turn-1 draw) only exists AFTER research, so we
+    # can't pre-select the situational variant — Mix uses the standard/behavioral
+    # brief (see plan "Known limitations").
     research_category = (
-        QuestionCategory.experience_star
-        if (custom_question is not None or mixed_mode)
-        else body.question_category
+        custom_question.question_category
+        if custom_question is not None
+        else (
+            QuestionCategory.experience_star
+            if mixed_mode
+            else body.question_category
+        )
     )
 
     try:
@@ -416,11 +425,14 @@ async def create_session(
         body.company, body.job_title, brief.category,
     )
 
-    # The FORM stamped on turn 1. In Mix mode, drawn from the calibrated weights
-    # now that the field category is known (turn 1 of a >2-turn session carries
-    # the "tell me about yourself" M&F bias); otherwise the picker's single
-    # category (STAR for custom questions). Later openings redraw in submit_turn.
-    if mixed_mode:
+    # The FORM stamped on turn 1. A custom question always wins — turn 1 IS that
+    # question, so it carries the category it was classified as. Otherwise, in
+    # Mix mode, drawn from the calibrated weights now that the field category is
+    # known (turn 1 of a >2-turn session carries the "tell me about yourself" M&F
+    # bias); else the picker's single category. Later openings redraw in
+    # submit_turn — for a custom session, turn 1's category is already in the
+    # no-repeat `used` set there, so the rest of the interview varies off it.
+    if mixed_mode and custom_question is None:
         question_category = draw_opening_category(
             field=brief.category,
             level=user.experience_level,
@@ -478,7 +490,8 @@ async def create_session(
             roll_recent=custom_question is None,
             # Persist the resolved pace so turn 2's TTS matches turn 1.
             speech_speed=speech_speed,
-            # Stamp turn 1 with the session's chosen category (STAR for custom).
+            # Stamp turn 1 with its category — the picker's choice, a Mix draw,
+            # or the custom question's own classified category.
             question_category=question_category,
             calibrated_mix=mixed_mode,
         ),

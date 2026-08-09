@@ -37,10 +37,16 @@ class CustomQuestionCreateIn(BaseModel):
 
 
 class CustomQuestionOut(BaseModel):
-    """A persisted custom question row."""
+    """A persisted custom question row.
+
+    `question_category` is the FORM the screening LLM classified the question as
+    (a `QuestionCategory` value). The frontend renders its label beside the text
+    and the session-create path uses it to pick the rubric / research variant.
+    """
 
     id: UUID
     question_text: str
+    question_category: str
     created_at: datetime
 
 

@@ -17,6 +17,13 @@ export const CUSTOM_QUESTION_CAP = 10;
 export type CustomQuestion = {
   id: string;
   question_text: string;
+  /**
+   * The question FORM, classified by the screening LLM at creation time (a
+   * `QuestionCategory` value — render via `questionCategoryLabel` from
+   * `types/session.ts`). Drives the rubric / follow-up prompts when practiced,
+   * so the setup picker is disabled while a custom question is selected.
+   */
+  question_category: string;
   created_at: string;
 };
 

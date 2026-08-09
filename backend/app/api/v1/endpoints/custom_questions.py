@@ -11,6 +11,10 @@ is stored:
   2. OpenAI moderation (billed)   — flagged → reject; outage → 503 (fail-closed)
   3. LLM validity / relevance     — invalid or off-domain → reject (fails open)
 
+Gate 3 also CLASSIFIES the question into one of the four `QuestionCategory`
+types, which is persisted on the row so practicing it uses the right rubric,
+follow-up prompts, and research variant.
+
 Bulk pastes are screened SEQUENTIALLY (the validator is a free-tier model and
 parallel calls trip its rate limit). The endpoint is partial-success: clean
 questions are inserted and committed; blocked ones come back in `rejected` with
@@ -27,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_db
 from app.db.models.custom_question import CustomQuestion
+from app.db.models.enums import QuestionCategory
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.custom_question import (
@@ -57,10 +62,18 @@ _REASON_MODERATION = "Flagged by our content policy."
 _REASON_CAP = f"You can store up to {CUSTOM_QUESTION_CAP} custom questions. Delete one to add more."
 
 
-async def _screen_one(text: str, user: User, db: AsyncSession) -> str | None:
-    """Run the three gates on one question. Return a rejection reason, or None
-    if the question is clean. Raises `ModerationUnavailableError` (→ 503) on a
-    moderation outage, which aborts the whole request before any insert."""
+async def _screen_one(
+    text: str, user: User, db: AsyncSession
+) -> tuple[str | None, QuestionCategory]:
+    """Run the three gates on one question.
+
+    Returns `(rejection_reason, category)` — the reason is None when the
+    question is clean. The category is only meaningful for a clean question
+    (gate 3 is what classifies it); the gates that reject before it runs return
+    the STAR default, which is never persisted. Raises
+    `ModerationUnavailableError` (→ 503) on a moderation outage, which aborts
+    the whole request before any insert.
+    """
     # 1. Free / local injection regex. Strict-long: a custom question is medium
     #    prose where prompt-hardening vocabulary is not legitimate.
     if contains_injection(text, strict=True, short_field=False):
@@ -70,25 +83,29 @@ async def _screen_one(text: str, user: User, db: AsyncSession) -> str | None:
             user=user,
             db=db,
         )
-        return _REASON_INJECTION
+        return _REASON_INJECTION, QuestionCategory.experience_star
 
     # 2. Billed moderation. flagged → reject; outage raises → 503 (fail-closed).
     moderation = await check_moderation(
         text, user=user, db=db, metadata={"source": "custom_questions"}
     )
     if moderation.flagged:
-        return _REASON_MODERATION
+        return _REASON_MODERATION, QuestionCategory.experience_star
 
-    # 3. LLM validity / relevance check (fails open).
+    # 3. LLM validity / relevance check + question-type classification (fails
+    #    open on both axes — `ok=True`, `category=experience_star`).
     check = await validate_custom_question(
         question_text=text,
         target_role=user.target_role,
         industry=user.industry,
     )
     if not check.ok:
-        return check.reason or "Not a valid or relevant interview question."
+        return (
+            check.reason or "Not a valid or relevant interview question.",
+            check.category,
+        )
 
-    return None
+    return None, check.category
 
 
 async def _count_existing(db: AsyncSession, user: User) -> int:
@@ -115,7 +132,10 @@ async def list_custom_questions(
     )
     return [
         CustomQuestionOut(
-            id=q.id, question_text=q.question_text, created_at=q.created_at
+            id=q.id,
+            question_text=q.question_text,
+            question_category=q.question_category.value,
+            created_at=q.created_at,
         )
         for q in result.scalars().all()
     ]
@@ -162,12 +182,14 @@ async def create_custom_questions(
         if len(accepted_rows) >= free_slots:
             rejected.append(RejectedQuestion(text=text, reason=_REASON_CAP))
             continue
-        # Screen sequentially (don't parallelize the free-tier validator).
-        reason = await _screen_one(text, user, db)
+        # Screen sequentially (don't parallelize the validator).
+        reason, category = await _screen_one(text, user, db)
         if reason is not None:
             rejected.append(RejectedQuestion(text=text, reason=reason))
             continue
-        row = CustomQuestion(user_id=user.id, question_text=text)
+        row = CustomQuestion(
+            user_id=user.id, question_text=text, question_category=category
+        )
         db.add(row)
         accepted_rows.append(row)
 
@@ -179,6 +201,7 @@ async def create_custom_questions(
                 CustomQuestionOut(
                     id=row.id,
                     question_text=row.question_text,
+                    question_category=row.question_category.value,
                     created_at=row.created_at,
                 )
             )

@@ -17,6 +17,12 @@
  *
  * Only categories with a real prompt stack are offered (see
  * `SELECTABLE_QUESTION_CATEGORIES`); the backend rejects unbuilt values.
+ *
+ * **Custom-question state.** A custom question carries its OWN classified
+ * category (it drives turn 1's rubric server-side), so while one is selected the
+ * picker can't apply — it reads "Custom Question" and the trigger becomes a
+ * shortcut into the Advanced panel's Custom question section instead of opening
+ * the listbox. Without this the picker silently did nothing.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -36,6 +42,14 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
+  /**
+   * True when a custom question is picked in the Advanced panel. The custom
+   * question's own category governs, so the listbox is replaced by a
+   * "Custom Question" shortcut back to that panel.
+   */
+  customQuestionSelected: boolean;
+  /** Opens the Advanced surface (drawer on desktop, sheet on mobile). */
+  onOpenCustomQuestion: () => void;
   /** `data-tour` hook for the Home tutorial (desktop instance only). */
   tourId?: string;
 };
@@ -44,6 +58,8 @@ export default function QuestionTypeField({
   value,
   onChange,
   disabled,
+  customQuestionSelected,
+  onOpenCustomQuestion,
   tourId,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -112,18 +128,30 @@ export default function QuestionTypeField({
         <button
           ref={triggerRef}
           type="button"
-          onClick={() => setOpen((o) => !o)}
+          onClick={
+            customQuestionSelected
+              ? onOpenCustomQuestion
+              : () => setOpen((o) => !o)
+          }
           disabled={disabled}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-label="Change question type"
+          {...(customQuestionSelected
+            ? { 'aria-label': 'Open custom question settings' }
+            : {
+                'aria-haspopup': 'listbox' as const,
+                'aria-expanded': open,
+                'aria-label': 'Change question type',
+              })}
           className="cursor-pointer rounded-sm font-medium text-link underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {questionCategoryLabel(value)}
+          {customQuestionSelected ? 'Custom Question' : questionCategoryLabel(value)}
         </button>
       </span>
 
+      {/* Gated on `!customQuestionSelected` too: on desktop the Advanced drawer
+          is non-modal, so a question can be picked while this popover is open —
+          the listbox must not linger once it stops applying. */}
       {open &&
+        !customQuestionSelected &&
         pos &&
         createPortal(
           <div

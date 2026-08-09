@@ -296,9 +296,14 @@ export default function Home() {
           // "Recommended Mix" is a UI-only sentinel: send `calibrated_mix` so the
           // backend draws a calibrated category per opening. An explicit type
           // keeps the single-category path (sends `question_category`).
-          ...(questionCategory === RECOMMENDED_MIX
-            ? { calibrated_mix: true }
-            : { question_category: questionCategory }),
+          // A custom question carries its own classified category and forces Mix
+          // for the later openings server-side, so send neither — the picker is
+          // disabled in that state and its value would just be ignored.
+          ...(selectedCustomQuestionId
+            ? {}
+            : questionCategory === RECOMMENDED_MIX
+              ? { calibrated_mix: true }
+              : { question_category: questionCategory }),
           speech_pace: speechPace,
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
@@ -516,6 +521,8 @@ export default function Home() {
                     value={questionCategory}
                     onChange={setQuestionCategory}
                     disabled={submitting}
+                    customQuestionSelected={selectedCustomQuestionId !== null}
+                    onOpenCustomQuestion={() => setSurface('advanced')}
                     tourId="question-type"
                   />
                 </div>
@@ -612,6 +619,8 @@ export default function Home() {
                     value={questionCategory}
                     onChange={setQuestionCategory}
                     disabled={submitting}
+                    customQuestionSelected={selectedCustomQuestionId !== null}
+                    onOpenCustomQuestion={() => setSurface('advanced')}
                   />
                 </div>
 
