@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "//installCommand": "scripts/prerender.mjs drives a headless Chromium at build time, but Vercel's build image (Amazon Linux 2023) ships none of Chrome's shared libraries — Chromium downloads fine and then dies with 'libnspr4.so: cannot open shared object file'. Vercel documents dnf installs via the Install Command, so we pull the libs in first. dnf resolves transitive deps (nss→nspr, pango→cairo/fontconfig, at-spi2-atk→atk/at-spi2-core), so this list stays deliberately short. `npm install` MUST stay on the end — overriding installCommand replaces the default, it does not append to it.",
   "installCommand": "dnf install -y nss atk at-spi2-atk cups-libs libdrm libXcomposite libXdamage libXrandr libxkbcommon mesa-libgbm pango alsa-lib && npm install",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
