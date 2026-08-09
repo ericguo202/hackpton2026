@@ -1,7 +1,7 @@
 """add question_category to custom_questions
 
-Revision ID: 0030_custom_question_cat
-Revises: 0029_feedback_features
+Revision ID: 0031_custom_question_cat
+Revises: 0030_turn_duration
 Create Date: 2026-08-03
 
 Custom questions predate the four-type question taxonomy, so every
@@ -23,8 +23,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "0030_custom_question_cat"
-down_revision: Union[str, None] = "0029_feedback_features"
+revision: str = "0031_custom_question_cat"
+down_revision: Union[str, None] = "0030_turn_duration"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
