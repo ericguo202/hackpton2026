@@ -44,6 +44,7 @@ from app.api.v1.endpoints.sessions import (
     _persist_session_and_turn,
 )
 from app.services.daily_limit import enforce_daily_limit
+from app.services.filler_words import speaking_pace_wpm
 from app.services.incidents import (
     log_interview_session_started,
     log_save_question,
@@ -365,6 +366,14 @@ async def get_saved_question(
             overall_score=s.overall_score,
             turn1_scores=turn1_scores,
             evaluation_failed=not evaluated,
+            # Transcript-derived, so it's computed off `evaluated` — a failed
+            # evaluation still spoke at a real pace. `t1` is already loaded
+            # above, so this costs no extra query.
+            speaking_pace_wpm=(
+                speaking_pace_wpm(t1.word_count, t1.duration_seconds)
+                if t1 is not None
+                else None
+            ),
         ))
 
     return SavedQuestionDetailOut(
