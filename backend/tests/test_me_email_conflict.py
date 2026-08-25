@@ -6,7 +6,7 @@ pre-onboarding caller's session-token email is already claimed by a DIFFERENT
 users row. These tests call the handler directly with a mocked AsyncSession —
 no Postgres — mirroring the service-level unit tests in this suite.
 
-A `pro`-tier user is used throughout so the free-tier `daily_check_and_reset`
+A `pro`-tier user is used throughout so the free-tier `check_and_reset_turns`
 branch is skipped (it's irrelevant to this logic and would need its own mock).
 """
 

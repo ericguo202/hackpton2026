@@ -22,6 +22,11 @@ const PUBLIC_ROUTE_METADATA: Record<string, PublicRouteMetadata> = {
     description:
       'See the role-aware rubrics InterviewPie uses to score structure, reasoning, impact, initiative, depth, and delivery in behavioral interview practice.',
   },
+  '/pricing': {
+    title: 'Pricing | InterviewPie',
+    description:
+      'InterviewPie is free: 10 interview questions a day, 10 practice sessions a week, AI scoring and feedback on every answer, and no credit card required.',
+  },
   '/legal/privacy': {
     title: 'Privacy Policy | InterviewPie',
     description:

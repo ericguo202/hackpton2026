@@ -45,8 +45,9 @@ from app.schemas.user import (
     PolicyAcceptanceIn,
     UserOut,
 )
-from app.services.daily_limit import check_and_reset as daily_check_and_reset
 from app.services.daily_limit import check_and_reset_chat
+from app.services.daily_limit import check_and_reset_turns
+from app.services.daily_limit import check_and_reset_week
 from app.services.delivery_consent import (
     DELIVERY_ANALYTICS_NOTICE_VERSION,
     purge_delivery_analytics_for_user,
@@ -71,14 +72,19 @@ async def get_me(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    # Roll over the free-tier daily counter at view time so Home's "X/5
-    # sessions today" reflects the user's local-calendar today, not the
-    # day they last started a session. Without this, a user who hit the
-    # cap last night sees a stale "5/5" the next morning even though the
-    # gate at POST /sessions would let them through. `check_and_reset`
-    # refreshes the attached ORM instance, so the value below is current.
+    # Roll over the free-tier counters at view time so Home's "X/10 questions
+    # today" reflects the user's local-calendar today, not the day they last
+    # answered a turn. Without this, a user who hit the cap last night sees a
+    # stale "10/10" the next morning — and a disabled Begin button — even though
+    # the gate at POST /sessions would let them through. Each helper refreshes
+    # the attached ORM instance, so the values serialized below are current.
+    # All three are zero-write in the steady state (see `daily_limit`), which
+    # matters because every route guard hits this endpoint.
     if user.tier == UserTier.free:
-        await daily_check_and_reset(db, user)
+        await check_and_reset_turns(db, user)
+        # The weekly session window rolls independently of the daily one — a
+        # Monday crossing resets this without touching the turn counter.
+        await check_and_reset_week(db, user)
         # Same rollover for the Ask Tutor daily chat counter so `daily_chat_count`
         # reflects the user's local-today, letting the chat composer disable /
         # show the "N left today" hint immediately on load.

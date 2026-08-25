@@ -10,6 +10,13 @@
 
 import type { SessionStatus } from './history';
 
+/**
+ * Hard cap on stored saved questions per user — mirrors `SAVED_QUESTION_CAP` in
+ * backend/app/api/v1/endpoints/saved_questions.py. Tier-independent (it's a
+ * storage cap, not a metered one), same convention as `CUSTOM_QUESTION_CAP`.
+ */
+export const SAVED_QUESTION_CAP = 5;
+
 /** One row in the History "Saved questions" section. */
 export type SavedQuestionListItem = {
   id: string;

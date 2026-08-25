@@ -31,7 +31,15 @@ class UserOut(BaseModel):
     # surfacing the late 409 from the onboarding UNIQUE(email) commit).
     email_conflict: bool = False
     tier: UserTier
-    daily_session_count: int
+    # Turns ANSWERED today (free tier capped at 10, `DAILY_TURN_LIMIT_FREE`).
+    # Rolled over to today's local date by GET /me, so the client can cap the
+    # session-length slider to what's left and gate the Begin button before the
+    # user spends a request finding out.
+    daily_turn_count: int
+    # Sessions started this local week, Monday-based (free tier capped at 10,
+    # `WEEKLY_SESSION_LIMIT_FREE`). Rolled over by GET /me alongside the daily
+    # counter; the two windows advance independently.
+    weekly_session_count: int
     # Successful Ask Tutor chat completions used today (free tier capped at 10).
     # Rolled over to today's local date by GET /me so the client can disable the
     # composer / show the "N left today" hint without a wasted send.

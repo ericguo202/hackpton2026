@@ -55,6 +55,7 @@ const Personalize = lazyWithRetry(
   'Personalize',
 );
 const Practice = lazyWithRetry(() => import('./pages/Practice'), 'Practice');
+const Pricing = lazyWithRetry(() => import('./pages/Pricing'), 'Pricing');
 const SavedQuestionDetail = lazyWithRetry(
   () => import('./pages/SavedQuestionDetail'),
   'SavedQuestionDetail',
@@ -135,6 +136,10 @@ function App() {
           methodology can read it before making an account. Static prose — no
           user data, nothing to gate. */}
       <Route path="/scoring" element={<Scoring />} />
+      {/* Also public: what the free plan gets you, which is exactly the
+          question a signed-out visitor is weighing. Static prose + shared cap
+          constants — no user data, nothing to gate. */}
+      <Route path="/pricing" element={<Pricing />} />
 
       <Route element={<RedirectIfOnboarded />}>
         <Route path="/sign-in" element={<SignIn />} />

@@ -34,6 +34,7 @@ import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import type { SpeechPace } from '../components/SpeechSpeedToggle';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
+import { useMe } from '../hooks/useMe';
 import { useSavedQuestionDetail } from '../hooks/useSavedQuestionDetail';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
@@ -41,6 +42,7 @@ import { buildRadarData } from '../lib/radarData';
 import { scoreDimensionsFor, type ScoreKey } from '../lib/scoreDimensions';
 import { paceColor } from '../lib/speakingPace';
 import { questionCategoryLabel } from '../types/session';
+import { usageBudget } from '../types/user';
 import type {
   SavedQuestionAttempt,
   SavedQuestionDetail as SavedQuestionDetailType,
@@ -146,6 +148,10 @@ export default function SavedQuestionDetail() {
   const navigate = useNavigate();
   const { saved, isLoading, error, errorStatus } = useSavedQuestionDetail(id);
   const { rePractice } = useSavedQuestions();
+  const { me } = useMe();
+  // Re-practice spends a full 2-turn session, so gate it on the same free-tier
+  // budget Home uses rather than letting the click earn a 429 flash.
+  const outOfQuota = usageBudget(me).blocked;
   const [rePracticing, setRePracticing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -291,7 +297,7 @@ export default function SavedQuestionDetail() {
                 <Button
                   type="button"
                   onClick={() => setDialogOpen(true)}
-                  disabled={rePracticing}
+                  disabled={rePracticing || outOfQuota}
                 >
                   {rePracticing ? 'Starting…' : 'Re-practice'}
                 </Button>

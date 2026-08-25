@@ -34,11 +34,16 @@ export type MeResponse = {
   // instead, so the duplicate-email case is caught before the form (not as a
   // 409 at submit). Always false once onboarded.
   email_conflict: boolean;
-  // Free users are capped at 5 completed sessions per local calendar day.
-  // The counter increments only when a session FINALIZES (not when it
-  // starts), so abandoning a session doesn't burn a slot.
+  // Free users are metered on two independent windows: answered TURNS per local
+  // calendar day, and SESSIONS per local week (Monday-based). Both counters are
+  // charged in `submit_turn` — one turn per answered turn, and the weekly slot
+  // on turn 1 — so starting a session and never answering costs nothing.
   tier: UserTier;
-  daily_session_count: number;
+  // Turns answered today. Rolled over to local-today by GET /me, so it's safe
+  // to derive "how much can this user still do" from it on load.
+  daily_turn_count: number;
+  // Sessions started this local week. Rolls independently of the daily counter.
+  weekly_session_count: number;
   // Successful Ask Tutor chat completions used today (free tier capped at 10).
   // Rolled over to local-today by GET /me; the chat composer uses it to seed
   // the remaining count (disable + "N left today" hint).
@@ -63,3 +68,51 @@ export type MeResponse = {
   created_at: string;
   updated_at: string;
 };
+
+// ── Free-tier usage caps ─────────────────────────────────────────────────────
+// Mirrors `DAILY_TURN_LIMIT_FREE` / `WEEKLY_SESSION_LIMIT_FREE` /
+// `MIN_SESSION_TURNS` in backend/app/services/daily_limit.py — change one,
+// change both. Same convention as `MAX_TUTOR_CHATS_PER_DAY` in types/tutor.ts:
+// the server owns enforcement, the client mirrors the numbers so it can gate
+// the UI before spending a request.
+
+/** Answered turns a free user gets per local calendar day. */
+export const MAX_TURNS_PER_DAY = 10;
+
+/** Sessions a free user gets per local week (resets Monday midnight). */
+export const MAX_SESSIONS_PER_WEEK = 10;
+
+/**
+ * Shortest session the backend can create (`interview_sessions.num_turns` is
+ * CHECKed BETWEEN 2 AND 8). A user with fewer turns left than this can't be
+ * given a shortened session, so they're blocked rather than clamped.
+ */
+export const MIN_TURNS_FOR_A_SESSION = 2;
+
+/**
+ * Turns / sessions a user may still spend, or `null` when unmetered (Pro, or
+ * `me` not loaded yet). Derived in one place so Home, the length slider and the
+ * re-practice entry points all agree.
+ */
+export type UsageBudget = {
+  turnsLeft: number | null;
+  sessionsLeft: number | null;
+  /** True when the user can't start ANY session right now. */
+  blocked: boolean;
+  /** Which cap is blocking — drives the "midnight" vs "Monday" copy. */
+  blockedBy: 'turns' | 'sessions' | null;
+};
+
+export function usageBudget(me: MeResponse | null | undefined): UsageBudget {
+  if (!me || me.tier !== 'free') {
+    return { turnsLeft: null, sessionsLeft: null, blocked: false, blockedBy: null };
+  }
+  const turnsLeft = Math.max(0, MAX_TURNS_PER_DAY - me.daily_turn_count);
+  const sessionsLeft = Math.max(0, MAX_SESSIONS_PER_WEEK - me.weekly_session_count);
+  // Weekly first, matching the backend's check order: it's the harder stop, and
+  // naming it is more useful than telling someone to come back tomorrow when
+  // tomorrow won't help.
+  const blockedBy =
+    sessionsLeft <= 0 ? 'sessions' : turnsLeft < MIN_TURNS_FOR_A_SESSION ? 'turns' : null;
+  return { turnsLeft, sessionsLeft, blocked: blockedBy !== null, blockedBy };
+}

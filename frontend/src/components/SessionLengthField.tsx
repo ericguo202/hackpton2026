@@ -38,6 +38,14 @@ type Props = {
   numTurns: number;
   onChange: (value: number) => void;
   disabled: boolean;
+  /**
+   * Upper bound for the slider, defaulting to the absolute max. Home passes the
+   * free-tier turns left today so an over-budget length can't be picked in the
+   * first place — the backend clamps `num_turns` on its own, and letting the
+   * user set 8 only to receive a 3-turn session is a worse experience than
+   * showing them the real ceiling up front.
+   */
+  maxTurns?: number;
 };
 
 export default function SessionLengthField({
@@ -46,7 +54,13 @@ export default function SessionLengthField({
   numTurns,
   onChange,
   disabled,
+  maxTurns = MAX_SESSION_TURNS,
 }: Props) {
+  // Never below the floor — a caller with 0-1 turns left would otherwise pass a
+  // max under the min and invert the range. Home blocks that case before the
+  // session starts; this just keeps the control coherent if it renders anyway.
+  const effectiveMax = Math.max(MIN_SESSION_TURNS, Math.min(MAX_SESSION_TURNS, maxTurns));
+  const capped = effectiveMax < MAX_SESSION_TURNS;
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(
     null,
@@ -144,7 +158,7 @@ export default function SessionLengthField({
               id={id}
               type="range"
               min={MIN_SESSION_TURNS}
-              max={MAX_SESSION_TURNS}
+              max={effectiveMax}
               step={1}
               value={numTurns}
               disabled={disabled}
@@ -154,10 +168,13 @@ export default function SessionLengthField({
             />
             <div className="mt-1 flex items-center justify-between text-xs tabular-nums text-text-subtle">
               <span>{MIN_SESSION_TURNS}</span>
-              <span>{MAX_SESSION_TURNS}</span>
+              <span>{effectiveMax}</span>
             </div>
             <p className="mt-2 text-xs text-text-subtle">
               Each turn is one question from the interviewer. Two by default.
+              {capped
+                ? ` You have ${effectiveMax} question${effectiveMax === 1 ? '' : 's'} left today.`
+                : ''}
             </p>
           </div>,
           document.body,

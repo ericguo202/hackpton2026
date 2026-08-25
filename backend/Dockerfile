@@ -1,9 +1,9 @@
 FROM python:3.11-slim
 
+# curl is for the HEALTHCHECK below. libgl1/libglib2.0-0/libgomp1 used to be
+# here solely for opencv-python-headless + mediapipe, which are no longer
+# installed (webcam analytics run in the browser) — dropped with them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgl1 \
-        libglib2.0-0 \
-        libgomp1 \
         curl \
     && rm -rf /var/lib/apt/lists/*
 

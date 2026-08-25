@@ -64,28 +64,45 @@ class User(Base):
         Boolean, nullable=False, server_default=text("FALSE")
     )
 
-    # Subscription tier. Free users are capped at 5 completed sessions per
-    # local calendar day; Pro users are unmetered. Defaults to free at
-    # signup so new rows behave correctly without a manual stamp.
+    # Subscription tier. Free users are capped at 10 answered turns per local
+    # calendar day and 10 sessions per local week; Pro users are unmetered.
+    # Defaults to free at signup so new rows behave correctly without a
+    # manual stamp.
     tier: Mapped[UserTier] = mapped_column(
         Enum(UserTier, name="user_tier", create_type=False),
         nullable=False,
         server_default=text("'free'"),
     )
 
-    # Daily session counter — increments on session finalization (NOT on
-    # session create). Reset lazily inside `daily_limit.check_and_reset` /
-    # `daily_limit.increment` via a single atomic UPDATE that flips the
-    # count back to 0/1 the first time the user is seen on a new local day.
-    daily_session_count: Mapped[int] = mapped_column(
+    # Daily TURN counter — increments once per ANSWERED turn, in `submit_turn`,
+    # in the same transaction as the transcript write (NOT at session
+    # finalization: variable-length sessions made "one session" a 2-8x range of
+    # spend, and a tab-close abandon never finalizes at all). Reset lazily
+    # inside `daily_limit.check_and_reset_turns` / `daily_limit.increment_turns`
+    # via a single atomic UPDATE that flips the count back to 0/1 the first time
+    # the user is seen on a new local day.
+    daily_turn_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
-    # Local-calendar date the counter was last stamped on. NULL until the
-    # user creates their first session. Compared against `_today_in_tz`
-    # using the user's stored IANA `timezone` (UTC fallback when missing).
+    # Local-calendar date the daily counter was last stamped on. NULL until the
+    # user answers their first turn. Compared against `_today_in_tz` using the
+    # user's stored IANA `timezone` (UTC fallback when missing). Name predates
+    # the sessions -> turns recast and is still accurate: it's the date the
+    # daily counter was stamped, whatever that counter counts.
     count_reset_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
-    # Ask Tutor analogue of the session counter above. Free users get 10
+    # Weekly SESSION counter — increments once per session, on that session's
+    # FIRST answered turn (`daily_limit.increment_week`). Bounds the per-session
+    # fixed spend (company research + opening question + TTS, all incurred at
+    # create) that the per-turn counter above can't see. Reset lazily against
+    # `week_reset_date`, which holds the MONDAY of the user's local week
+    # (`daily_limit._week_start_in_tz`); NULL until their first session.
+    weekly_session_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    week_reset_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Ask Tutor analogue of the turn counter above. Free users get 10
     # SUCCESSFUL chat completions (not sent messages) per local calendar day;
     # the counter increments only when the LLM responds successfully (see
     # `daily_limit.record_chat_completion`) and resets lazily on a new local

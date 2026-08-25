@@ -55,8 +55,9 @@ from app.services.company_research import (
 from app.services._field_categories import FieldCategory
 from app.services._injection import contains_injection
 from app.services.daily_limit import (
-    enforce_daily_limit,
-    increment as daily_increment,
+    enforce_session_start_limits,
+    increment_turns,
+    increment_week,
 )
 from app.services.coaching import generate_next_take
 from app.services.delivery_consent import has_active_delivery_analytics_consent
@@ -116,7 +117,9 @@ def _spawn_finalize(
     Holds a strong reference to the task (so it isn't GC'd mid-flight) and
     records the session id so the lazy reaper in `get_session` won't start a
     second, concurrent finalizer for a session this worker is already
-    finishing — which would otherwise double the free-tier daily increment.
+    finishing — which would otherwise duplicate the evaluator spend and race
+    the metrics upsert. (Usage counters are charged per answered turn in
+    `submit_turn` and are unaffected by a double finalize.)
     """
     if session_id in _finalizing_sessions:
         return
@@ -228,12 +231,22 @@ async def create_session(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> SessionCreateOut:
-    # Persist the client's latest timezone and enforce the free-tier daily cap
+    # Persist the client's latest timezone and enforce both free-tier caps
     # BEFORE moderation / research / TTS so a rate-limited request never spends
-    # Serper, OpenRouter, or ElevenLabs credits. The counter itself only
-    # advances at session finalization (`daily_increment` in the final-turn
-    # branch of `submit_turn`).
-    await enforce_daily_limit(db, user, timezone=body.timezone)
+    # Serper, OpenRouter, or ElevenLabs credits. The counters themselves advance
+    # in `submit_turn` — once per answered turn, plus the weekly session slot on
+    # turn 1 — so this is a pre-check, not a reservation.
+    #
+    # The return value is the session length the caller can actually afford: a
+    # user with fewer turns left today than they asked for gets a SHORTENED
+    # session rather than a 429 (only < 2 turns left is refused). Everything
+    # downstream must read `effective_num_turns`, never `body.num_turns` — the
+    # value is echoed on the response, and Practice renders its "Question X of
+    # N" from that echo, so a missed substitution shows up as a session that
+    # ends early with no explanation.
+    effective_num_turns = await enforce_session_start_limits(
+        db, user, timezone=body.timezone, requested_turns=body.num_turns
+    )
 
     # Deterministic prompt-injection gate on the two user-authored inputs that
     # feed company research + every downstream prompt. Free (no network) so it
@@ -436,7 +449,10 @@ async def create_session(
         question_category = draw_opening_category(
             field=brief.category,
             level=user.experience_level,
-            num_turns=body.num_turns,
+            # The clamped length, not the requested one: the turn-1 M&F bias
+            # only applies to sessions longer than 2 turns, so a request for 8
+            # clamped down to 2 must draw under the 2-turn exception.
+            num_turns=effective_num_turns,
             used=set(),
             is_first_opening=True,
         )
@@ -484,7 +500,7 @@ async def create_session(
             session_id=session_id,
             voice_id=voice_id,
             experience_level=user.experience_level,
-            num_turns=body.num_turns,
+            num_turns=effective_num_turns,
             # A custom question is a deliberate, reusable pick — don't push it
             # into the generation avoid-list (it isn't a generated question).
             roll_recent=custom_question is None,
@@ -503,7 +519,8 @@ async def create_session(
         metadata={
             "company": body.company,
             "job_title": body.job_title,
-            "num_turns": body.num_turns,
+            "num_turns": effective_num_turns,
+            "requested_num_turns": body.num_turns,
             "custom_question": custom_question is not None,
         },
     )
@@ -513,7 +530,7 @@ async def create_session(
         summary=CompanyBriefOut(**brief.model_dump()),
         first_question=opening_q,
         first_question_category=question_category.value,
-        num_turns=body.num_turns,
+        num_turns=effective_num_turns,
         calibrated_mix=mixed_mode,
         first_question_audio_url=audio_url,
     )
@@ -1187,7 +1204,6 @@ async def _complete_session_from_turns(
     db: AsyncSession,
     *,
     session: InterviewSession,
-    user: User,
     turns: list[InterviewTurn],
 ) -> bool:
     """Aggregate evaluated turns and mark the session completed.
@@ -1247,8 +1263,9 @@ async def _complete_session_from_turns(
     # it can't see across them. Flip the status with a conditional UPDATE
     # instead: under READ COMMITTED the second writer blocks on this row's lock,
     # then re-checks the predicate after the first commits, matches zero rows,
-    # and bails — so the daily-counter bump and metrics write happen exactly
-    # once no matter how many finalizers race.
+    # and bails — so the metrics write happens exactly once no matter how many
+    # finalizers race. (Usage counters no longer ride this path at all; they're
+    # charged per answered turn in `submit_turn`.)
     result = await db.execute(
         update(InterviewSession)
         .where(
@@ -1264,7 +1281,7 @@ async def _complete_session_from_turns(
     if result.rowcount == 0:
         logger.info(
             "Session %s already finalized by another worker; skipping metrics "
-            "upsert and daily increment.",
+            "upsert.",
             session.id,
         )
         return False
@@ -1283,9 +1300,6 @@ async def _complete_session_from_turns(
         overall_score=overall,
         turns_evaluated=turns_evaluated,
     )
-
-    if user.tier == UserTier.free:
-        await daily_increment(db, user)
 
     return True
 
@@ -1411,7 +1425,6 @@ async def _run_background_finalize(
             completed = await _complete_session_from_turns(
                 db,
                 session=session,
-                user=user,
                 turns=turns,
             )
             if completed:
@@ -1679,6 +1692,27 @@ async def submit_turn(
     current_turn.word_count            = word_count
     current_turn.duration_seconds      = transcription.duration_seconds
 
+    # 8a-bis. Free-tier metering. Both counters ride whichever commit closes this
+    # handler (the non-final branch's, or the final branch's below), so a failure
+    # in next-question generation / TTS rolls the charge back together with the
+    # turn — the candidate is never billed for an answer that wasn't persisted.
+    #
+    # A TURN is charged when answered, not when the session finalizes. Every
+    # submitted turn fires evaluator + coaching + next-question + TTS, and a
+    # session abandoned by closing the tab never finalizes at all (the lazy
+    # reaper deliberately won't touch a session with an unanswered turn), so
+    # finalization-time counting under-charges exactly the expensive case.
+    #
+    # Turn 1 additionally claims the weekly SESSION slot. Claiming it at create
+    # would burn one of only 10 weekly slots on a mic failure; claiming it at
+    # finalization would let the same tab-close abandon evade the weekly cap.
+    # This sits after the clarification-retry early return above, so a re-ask
+    # stays free — it neither scores nor advances the turn.
+    if user.tier == UserTier.free:
+        await increment_turns(db, user)
+        if current_turn.turn_number == 1:
+            await increment_week(db, user)
+
     # 8b. Branch: non-final returns the next question; final returns immediately
     #     after spawning session finalization below.
     if not is_final:
@@ -1886,9 +1920,12 @@ async def end_session_early(
 
     Requires ≥ 1 answered (transcript-bearing) turn; the frontend only calls
     this in that case (a zero-turn quit stays a pure client-side abandon with
-    no record and no daily-limit charge). The completed session counts toward
-    the free-tier daily limit like any other finalized session — the normal
-    finalize path increments the counter.
+    no record and no usage charge, since nothing is charged until turn 1 is
+    submitted). This endpoint moves no counters itself: the turns the candidate
+    answered were already charged as they were submitted, and turn 1 already
+    claimed the weekly session slot. Quitting early therefore costs exactly what
+    was used — the unanswered remainder of the session is refunded by never
+    having been charged.
 
     Mirrors the final-turn finalize: trims the dangling unanswered turn, then
     spawns the same detached `_run_background_finalize`. Returning immediately

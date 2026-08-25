@@ -16,12 +16,13 @@
 
 import { useAuth } from '@clerk/react';
 import { type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 
 import AccountButton from '../components/AccountButton';
 import CategoryScoringSection, {
   type CategoryContent,
 } from '../components/scoring/CategoryScoringSection';
+import SignInLink from '../components/SignInLink';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 
 function ScoringNav() {
@@ -36,20 +37,6 @@ function ScoringNav() {
       <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
       <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
     </>
-  );
-}
-
-/** Signed-out right slot — mirrors the Hero masthead's sign-in link. */
-function SignInLink() {
-  const navigate = useNavigate();
-  return (
-    <button
-      type="button"
-      onClick={() => navigate('/sign-in')}
-      className="relative cursor-pointer rounded-xs text-sm text-text-muted underline decoration-border-strong underline-offset-[6px] transition-colors hover:text-text hover:decoration-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface before:absolute before:-inset-[14px] before:content-['']"
-    >
-      Sign in
-    </button>
   );
 }
 

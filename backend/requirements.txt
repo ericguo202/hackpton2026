@@ -14,9 +14,13 @@ alembic
 pydantic-settings
 python-dotenv
 
-# Computer-vision heuristics for the interview analyzer prototype
-opencv-python-headless
-mediapipe
+# NOTE: opencv-python-headless + mediapipe were removed. All delivery/webcam
+# analytics run in the BROWSER (frontend MediaPipe → `cv_summary` posted with
+# the turn); the backend only reads that JSON in `_compute_delivery_score`.
+# The only Python users of cv2/mediapipe are the standalone dev prototypes
+# `backend/opencv.py` and `backend/opencv/calibrate_face_ranges.py`, which are
+# never imported by the app and need a local display anyway — install them
+# ad hoc (`pip install opencv-python mediapipe`) if you run those.
 
 # Clerk JWT verification:
 #   python-jose handles JWT decode + RS256 signature check.

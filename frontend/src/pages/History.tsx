@@ -41,6 +41,7 @@ import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import type { SpeechPace } from '../components/SpeechSpeedToggle';
 import TopBar, { TopBarNavLink } from '../components/TopBar';
 import { Button } from '../components/ui/button';
+import { useMe } from '../hooks/useMe';
 import { useMeStats, type MeStatsFilter } from '../hooks/useMeStats';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { useSessions } from '../hooks/useSessions';
@@ -48,8 +49,12 @@ import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { buildCategoryRadarData, buildRadarData } from '../lib/radarData';
 import { SCORE_DIMENSIONS, scoreDimensionsFor, type ScoreKey } from '../lib/scoreDimensions';
 import type { FillerWordStat, SessionListItem } from '../types/history';
-import type { SavedQuestionListItem } from '../types/savedQuestions';
+import {
+  SAVED_QUESTION_CAP,
+  type SavedQuestionListItem,
+} from '../types/savedQuestions';
 import { questionCategoryLabel } from '../types/session';
+import { usageBudget } from '../types/user';
 import type { PracticeLocationState } from './Practice';
 
 type DimensionKey = ScoreKey;
@@ -930,6 +935,11 @@ function SavedQuestionsSection({
 }) {
   const navigate = useNavigate();
   const { saved, isLoading, remove, rePractice } = useSavedQuestions();
+  const { me } = useMe();
+  // A re-practice is a full 2-turn session, so it's gated by the same free-tier
+  // budget as Home's Begin button. Without this the row stays enabled at zero
+  // quota and the only feedback is a 429 flash after the round-trip.
+  const outOfQuota = usageBudget(me).blocked;
   const [busyId, setBusyId] = useState<string | null>(null);
   // The saved question pending in the voice picker (null = dialog closed).
   const [pendingSq, setPendingSq] = useState<SavedQuestionListItem | null>(null);
@@ -1009,7 +1019,7 @@ function SavedQuestionsSection({
           Saved questions
         </h2>
         <p className="text-eyebrow uppercase tracking-eyebrow text-text-subtle tabular-nums">
-          {saved!.length}/5 saved
+          {saved!.length}/{SAVED_QUESTION_CAP} saved
         </p>
       </div>
       <p className="mb-4 text-sm leading-[1.6] text-text-muted">
@@ -1025,6 +1035,7 @@ function SavedQuestionsSection({
             key={sq.id}
             sq={sq}
             busy={busyId === sq.id}
+            disabled={outOfQuota}
             onOpen={() => navigate(`/saved-question/${sq.id}`)}
             onRePractice={() => setPendingSq(sq)}
             onDelete={() => void remove(sq.id)}
@@ -1048,12 +1059,15 @@ function SavedQuestionsSection({
 function SavedQuestionRow({
   sq,
   busy,
+  disabled,
   onOpen,
   onRePractice,
   onDelete,
 }: {
   sq: SavedQuestionListItem;
   busy: boolean;
+  /** Free-tier budget exhausted — re-practice would 429. */
+  disabled: boolean;
   onOpen: () => void;
   onRePractice: () => void;
   onDelete: () => void;
@@ -1095,7 +1109,12 @@ function SavedQuestionRow({
       </span>
 
       <div className="col-span-5 min-[900px]:col-span-3 flex items-center justify-end gap-3">
-        <Button variant="outline" type="button" onClick={onRePractice} disabled={busy}>
+        <Button
+          variant="outline"
+          type="button"
+          onClick={onRePractice}
+          disabled={busy || disabled}
+        >
           {busy ? 'Starting…' : 'Re-practice'}
         </Button>
         <button

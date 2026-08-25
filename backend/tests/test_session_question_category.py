@@ -16,7 +16,12 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.v1.endpoints import sessions as sessions_module
-from app.db.models.enums import ExperienceLevel, QuestionCategory, SessionStatus
+from app.db.models.enums import (
+    ExperienceLevel,
+    QuestionCategory,
+    SessionStatus,
+    UserTier,
+)
 from app.schemas.session import CompanyBriefOut, SessionCreateIn
 from app.services.stt import Transcription
 
@@ -235,7 +240,9 @@ def _patch_submit_io(monkeypatch):
 async def test_submit_turn_inherits_session_category(monkeypatch, category):
     _patch_submit_io(monkeypatch)
 
-    user = SimpleNamespace(id=uuid.uuid4())
+    # Pro tier so the free-tier usage charge in `submit_turn` is skipped — it's
+    # covered in `test_usage_limits.py` and would need its own counter stubs.
+    user = SimpleNamespace(id=uuid.uuid4(), tier=UserTier.pro)
     brief_json = CompanyBriefOut(
         description="An investment bank.",
         headlines=[],
