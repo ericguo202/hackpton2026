@@ -7,7 +7,8 @@
 Run from `frontend/`:
 
 - `npm run dev` — Vite dev server (http://localhost:5173; CORS allowlisted on backend)
-- `npm run build` — `tsc -b` then `vite build`. **Fails on unused locals/params** (`noUnusedLocals`/`noUnusedParameters`).
+- `npm run build` — `tsc -b` → `vite build` → `npm run prerender`. **Fails on unused locals/params** (`noUnusedLocals`/`noUnusedParameters`).
+- `npm run prerender` — the SEO prerender stage (see "Build-time prerender"). Needs a fresh `vite build` first; re-running it over an already-prerendered `dist/` fails loud.
 - `npm run lint` — flat-config ESLint over all `.ts`/`.tsx`
 - `npm run preview` — serve production build locally
 
@@ -45,6 +46,18 @@ VITE_GA_FORCE_REGION=                      # optional dev-only; force a bucket: 
 ### App shell
 
 `main.tsx` wraps `<App />` in `<ClerkProvider>` → `<BrowserRouter>` (react-router v7). `App.tsx` is a route table; auth/onboarding gates in `route-guards.tsx`. Full route table + Setup→Practice handoff in `../CLAUDE.md` "Frontend Routing".
+
+### Build-time prerender (SEO) — `scripts/prerender.mjs`
+
+Vite emits ONE `index.html` with an empty `<div id="root">`, so crawlers that don't run JS (Bing, Slack/LinkedIn/X unfurlers, most AI crawlers) saw no copy and the homepage's metadata on **every** URL. The build's last stage renders the five public pages to their own files: `dist/index.html`, `dist/scoring/index.html`, `dist/legal/*/index.html`.
+
+- **Plain Node `renderToString`, no browser.** `src/prerender/entry.tsx` mounts each page directly under `StaticRouter`, **bypassing `Root.tsx`/`App.tsx`** — that shell is client-only by construction (`ClerkProvider` + `BrowserRouter`, and `AnalyticsConsentBanner` reads `document.cookie` during render). An earlier headless-Chromium version was removed: Vercel restores its `node_modules` build cache *before* install, so puppeteer's postinstall never re-downloaded Chrome, and the browser lived outside the (non-configurable) cached paths. Warm cache ⇒ permanently broken deploys.
+- **One SSR-only alias closes the only gap.** `@clerk/react` → `src/prerender/clerk-stub.tsx`, passed **inline** to vite's `build()` and never written into `vite.config.ts`, so it cannot reach the client bundle. The blocker was a missing React *context* (`useAuth` in `Scoring.tsx`), not a browser API. The stub answers "signed out", which is the app's genuine first frame anyway (Clerk loads async). **It answers `false` for any page added to the list, silently** — fine while those pages only vary their *chrome* by auth.
+- **`main.tsx` uses `createRoot`, NOT `hydrateRoot`.** React clears `#root` and re-renders, making prerendered markup a crawler-only artifact with zero hydration-mismatch surface. Don't "optimize" this without understanding the trade.
+- **Three files must move together when you add a public page:** `public/sitemap.xml` (the route list is *derived* from it), `src/lib/routeMetadata.ts` (title/description/canonical), and `PRERENDER_PAGES` in `src/prerender/entry.tsx`. Miss one and **the build fails loud** naming the missing file — this used to be a silent-drift trap.
+- **`lib/routeMetadata.ts` is the single source of truth**, read by `RouteSeo.tsx` at runtime *and* by the prerenderer at build time. Keep the tag set the prerenderer injects in sync with the one `RouteSeo` writes.
+- `PRERENDER_SKIP=1` degrades to **metadata-only** (head tags, no body copy) rather than skipping everything.
+- The consent banner is now *absent* from the render tree rather than suppressed inside it, so its copy can't be frozen in as a page's search-result description.
 
 ### Analytics consent (geo-gated)
 
