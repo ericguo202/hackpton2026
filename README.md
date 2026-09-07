@@ -259,7 +259,3 @@ Browser (React + Vite)
   Structure and Impact scores trail the median for entry-level SWE
   candidates") would turn the trend chart from a self-comparison into a
   benchmark.
-- **Production hardening** — exponential backoff on the ElevenLabs / Gemini
-  rate limits and an actual test suite beyond the evaluator unit tests.
-  Per-user daily caps and the internal incidents table already ship; broader
-  usage metering (per-hour rate limits, monthly Pro quotas) is the next layer.
