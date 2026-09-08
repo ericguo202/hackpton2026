@@ -400,3 +400,9 @@ Routes: `/` → `HomeRoute` (auth-bivalent); `/sign-in`, `/sign-up` (both `Redir
 - [ ] **Incidents**: first auth creates `user_created`; same Clerk `sid` dedupes `user_signed_in`; moderation hard-block writes `moderation_request` with `severity='warning'`; session start logs only after session row commit
 - [ ] **E2E**: log in → onboard → start session ("Google") → complete turns aloud → summary shows non-zero scores → refresh → session appears
 - [ ] **Failure mode**: kill ElevenLabs key mid-session → clear error, not blank screen
+
+## Future improvements
+- **Production hardening** — exponential backoff on the ElevenLabs / Gemini
+  rate limits and an actual test suite beyond the evaluator unit tests.
+  Per-user daily caps and the internal incidents table already ship; broader
+  usage metering (per-hour rate limits, monthly Pro quotas) is the next layer.

@@ -1,53 +1,54 @@
 /**
  * Build-time prerenderer for the public marketing/legal pages.
  *
- * WHY A HEADLESS BROWSER, NOT NODE-SIDE SSG:
- * The app shell is client-only by construction — `Root.tsx` hard-codes
- * `<BrowserRouter>` inside `<ClerkProvider>` (a CSR SDK), and
- * `AnalyticsConsentBanner` reads `document.cookie` / `localStorage` during
- * render. Rendering that tree through `renderToString` in Node throws. A real
- * browser sidesteps all of it, and for five pages of static copy the output is
- * identical to true SSG.
- *
  * WHAT IT BUYS:
  * Vite emits a single `index.html` whose <body> is an empty `<div id="root">`.
  * Crawlers that don't execute JavaScript (Bing, Slack/LinkedIn/X unfurlers, and
  * most AI crawlers) therefore saw no content and no per-route metadata — every
- * URL served the homepage's title and description. This walks each public route
- * in Chromium, lets the app boot so `RouteSeo.tsx` writes that route's real
- * <head> tags, and freezes the result to its own HTML file.
+ * URL served the homepage's title and description. This renders each public
+ * route to HTML and writes it to its own file, with that route's real <head>.
+ *
+ * HOW (and what it replaced): a `renderToString` pass in plain Node over
+ * `src/prerender/entry.tsx`, which mounts each page directly under
+ * `StaticRouter`, bypassing the client-only app shell. This used to drive a
+ * headless Chromium over a `vite preview` server. That failed on Vercel for a
+ * structural reason: Vercel restores its build cache — covering `node_modules`
+ * — BEFORE the install step, so `npm install` no-ops for puppeteer and its
+ * postinstall never downloads Chrome, while the browser itself lives outside
+ * the (non-configurable) cached path set. Warm cache meant puppeteer present,
+ * browser absent, permanently. Node-side rendering has no browser, no system
+ * libraries and no cache interaction — and runs in ~2s instead of ~29s.
  *
  * Because `main.tsx` uses `createRoot()` (not `hydrateRoot()`), React clears
  * `#root` on mount and re-renders from scratch. The prerendered markup is a
  * crawler-only artifact — there is no hydration-mismatch surface to worry about.
+ * Do not "optimize" that to `hydrateRoot` without understanding the trade.
  *
- * Run automatically as part of `npm run build`. Set PRERENDER_SKIP=1 to bypass.
+ * Runs as the final step of `npm run build`.
+ *
+ * PRERENDER_SKIP=1 degrades to METADATA-ONLY: per-route <head> tags are still
+ * written, bodies are not. A future breakage then costs body text rather than
+ * everything. Its one limit: it still builds the SSR bundle, because the
+ * metadata is read from it — that is the price of `lib/routeMetadata.ts` being a
+ * single source of truth shared with `RouteSeo.tsx`. If the bundle itself won't
+ * build, the deploy fails, which is the correct outcome.
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { preview } from 'vite';
+import { build } from 'vite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'dist');
+const SSR_OUT = path.join(ROOT, 'dist-ssr');
+const SSR_ENTRY = path.join(ROOT, 'src', 'prerender', 'entry.tsx');
+const CLERK_STUB = path.join(ROOT, 'src', 'prerender', 'clerk-stub.tsx');
+const SSR_BUNDLE = path.join(SSR_OUT, 'entry.mjs');
 
-// How long a single route gets to boot and render its <h1> before we call it a
-// failure. Generous: a cold Chromium plus Clerk's async load is not fast.
-const ROUTE_TIMEOUT_MS = 30_000;
-
-/**
- * A phrase that must NEVER appear in a snapshot.
- *
- * The consent banner is the single most dangerous thing to freeze into static
- * HTML: it is long prose that renders above the fold, and it is precisely what
- * Bing was already scraping as the site's search-result description. If it
- * leaks into a snapshot we'd make that bug permanent, so this is a hard build
- * failure rather than a warning.
- */
-const BANNER_GUARD_PHRASE = 'uses Google Analytics to understand page views';
+const METADATA_ONLY = process.env.PRERENDER_SKIP === '1';
 
 /**
  * Routes come from the sitemap so the two can never drift. The sitemap is the
@@ -71,122 +72,219 @@ function outputPathFor(route) {
   return path.join(DIST, route.replace(/^\//, ''), 'index.html');
 }
 
-async function snapshot(browser, origin, route) {
-  const page = await browser.newPage();
-  try {
-    // The theme is written onto <html> pre-paint by the inline script in
-    // index.html, reading prefers-color-scheme. Pin it light so the snapshot
-    // never ships `class="dark"` to visitors whose own theme we don't know yet.
-    await page.emulateMediaFeatures([
-      { name: 'prefers-color-scheme', value: 'light' },
-    ]);
+/**
+ * Bundles `src/prerender/entry.tsx` for Node.
+ *
+ * The `@clerk/react` alias is passed INLINE here and deliberately never written
+ * into `vite.config.ts`, so it applies to this pass only and cannot leak into
+ * the client build. Vite merges inline config over the config file with
+ * `mergeConfig`, which merges object-form aliases key-by-key — so the `'@'`
+ * alias declared in `vite.config.ts` survives alongside this one.
+ */
+async function buildSsrBundle() {
+  await rm(SSR_OUT, { recursive: true, force: true });
+  await build({
+    root: ROOT,
+    logLevel: 'warn',
+    resolve: { alias: { '@clerk/react': CLERK_STUB } },
+    build: {
+      ssr: SSR_ENTRY,
+      outDir: SSR_OUT,
+      emptyOutDir: true,
+      minify: false,
+      rollupOptions: { output: { entryFileNames: 'entry.mjs' } },
+    },
+  });
+  return import(new URL(`file://${SSR_BUNDLE.split(path.sep).join('/')}`).href);
+}
 
-    // Suppress the consent banner at the source. `getAnalyticsConsent() !== null`
-    // short-circuits its visibility check, so it never enters the DOM at all —
-    // which is stronger than deleting the node before serializing.
-    await page.evaluateOnNewDocument(() => {
-      try {
-        localStorage.setItem('interviewpie_analytics_consent', 'denied');
-        localStorage.setItem('interviewpie_analytics_notice_ack', '1');
-      } catch {
-        // Private-mode style failures can't happen in our own Chromium, but a
-        // throw here would abort the whole page script.
-      }
-    });
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
-    const response = await page.goto(`${origin}${route}`, {
-      waitUntil: 'networkidle0',
-      timeout: ROUTE_TIMEOUT_MS,
-    });
-    if (!response || !response.ok()) {
-      throw new Error(`HTTP ${response ? response.status() : 'no response'}`);
-    }
-
-    // Every public page renders exactly one <h1>. Waiting on it (rather than on
-    // a timer) is what makes this deterministic: it proves the lazy route chunk
-    // downloaded, React committed, and RouteSeo's effect has run.
-    await page.waitForSelector('#root h1', { timeout: ROUTE_TIMEOUT_MS });
-
-    const html = await page.evaluate(
-      () => `<!doctype html>\n${document.documentElement.outerHTML}`,
+/**
+ * Replaces a single <head> tag, asserting it matched EXACTLY once.
+ *
+ * The assertion is the point. A silent no-match would leave the template's
+ * homepage title/description on every route — which is precisely the bug this
+ * script exists to fix, and it would ship green.
+ */
+function replaceOnce(html, pattern, replacement, label, route) {
+  const matches = html.match(pattern);
+  if (!matches || matches.length !== 1) {
+    throw new Error(
+      `${route}: expected exactly 1 "${label}" tag in dist/index.html, found `
+        + `${matches ? matches.length : 0}. The template changed — update the `
+        + 'matcher in scripts/prerender.mjs.',
     );
-
-    if (html.includes(BANNER_GUARD_PHRASE)) {
-      throw new Error(
-        'consent-banner copy leaked into the snapshot — it would be served as '
-          + "the page's search-result description",
-      );
-    }
-    const title = await page.title();
-    return { html, title };
-  } finally {
-    await page.close();
   }
+  return html.replace(pattern, () => replacement);
+}
+
+/** Writes one route's metadata into a copy of the built index.html template. */
+function injectHead(template, route, meta) {
+  const title = escapeHtml(meta.title);
+  const description = escapeHtml(meta.description);
+  const ogUrl = escapeHtml(meta.ogUrl);
+
+  // Mirrors exactly the tag set RouteSeo.tsx writes at runtime. Change one,
+  // change the other.
+  const edits = [
+    ['title', /<title>[\s\S]*?<\/title>/g, `<title>${title}</title>`],
+    [
+      'meta[name=description]',
+      /<meta\s[^>]*name="description"[^>]*>/g,
+      `<meta name="description" content="${description}" />`,
+    ],
+    [
+      'meta[name=robots]',
+      /<meta\s[^>]*name="robots"[^>]*>/g,
+      `<meta name="robots" content="${escapeHtml(meta.robots)}" />`,
+    ],
+    [
+      'meta[property=og:title]',
+      /<meta\s[^>]*property="og:title"[^>]*>/g,
+      `<meta property="og:title" content="${title}" />`,
+    ],
+    [
+      'meta[property=og:description]',
+      /<meta\s[^>]*property="og:description"[^>]*>/g,
+      `<meta property="og:description" content="${description}" />`,
+    ],
+    [
+      'meta[property=og:url]',
+      /<meta\s[^>]*property="og:url"[^>]*>/g,
+      `<meta property="og:url" content="${ogUrl}" />`,
+    ],
+    [
+      'meta[name=twitter:title]',
+      /<meta\s[^>]*name="twitter:title"[^>]*>/g,
+      `<meta name="twitter:title" content="${title}" />`,
+    ],
+    [
+      'meta[name=twitter:description]',
+      /<meta\s[^>]*name="twitter:description"[^>]*>/g,
+      `<meta name="twitter:description" content="${description}" />`,
+    ],
+  ];
+
+  let html = template;
+  for (const [label, pattern, replacement] of edits) {
+    html = replaceOnce(html, pattern, replacement, label, route);
+  }
+
+  // Canonical is the one tag that can legitimately be absent (account-only
+  // routes have none), so it is handled outside the exactly-once set. Every
+  // route we prerender comes from the sitemap and is therefore public.
+  const canonicalTag = `<link rel="canonical" href="${escapeHtml(
+    meta.canonical ?? meta.ogUrl,
+  )}" />`;
+  html = replaceOnce(
+    html,
+    /<link\s[^>]*rel="canonical"[^>]*>/g,
+    canonicalTag,
+    'link[rel=canonical]',
+    route,
+  );
+
+  return html;
+}
+
+/** Drops the rendered page HTML into the empty `<div id="root">`. */
+function injectBody(html, body, route) {
+  return replaceOnce(
+    html,
+    /<div id="root"><\/div>/g,
+    `<div id="root">${body}</div>`,
+    'div#root',
+    route,
+  );
+}
+
+/**
+ * The template MUST be the untouched shell vite emitted.
+ *
+ * `/` is written back to `dist/index.html`, so a second run over the same dist/
+ * would otherwise read an already-rendered page as its template and stamp the
+ * HOMEPAGE's body onto every route. The full path happens to catch that (its
+ * `div#root` replacement finds no match and throws), but metadata-only mode has
+ * no body step and would ship the wrong copy silently — so assert it up front,
+ * for both modes.
+ */
+function assertPristineTemplate(html) {
+  if ((html.match(/<div id="root"><\/div>/g) || []).length === 1) return;
+  throw new Error(
+    'dist/index.html is not a pristine build shell — its <div id="root"> is '
+      + 'already filled in, so it has been prerendered before.\n'
+      + '  → Re-run `vite build` (or `npm run build`) before prerendering; this '
+      + 'script needs the empty shell as its template.',
+  );
 }
 
 async function main() {
-  if (process.env.PRERENDER_SKIP === '1') {
-    console.log('[prerender] PRERENDER_SKIP=1 — skipping.');
-    return;
-  }
-
   const routes = await routesFromSitemap();
 
-  // Imported lazily so `PRERENDER_SKIP=1` works even where Chromium is absent.
-  const { default: puppeteer } = await import('puppeteer');
+  // Read the template BEFORE anything is written: `/` overwrites
+  // dist/index.html, so reading it later would pick up an already-rendered page.
+  const template = await readFile(path.join(DIST, 'index.html'), 'utf8');
+  assertPristineTemplate(template);
 
-  const server = await preview({
-    root: ROOT,
-    preview: { port: 4173, strictPort: false, open: false },
-    logLevel: 'warn',
+  const { PRERENDER_PAGES, renderRoute, resolveRouteMetadata } =
+    await buildSsrBundle();
+
+  // Fail loud on drift. Adding a public page means touching sitemap.xml,
+  // lib/routeMetadata.ts AND entry.tsx's page map; nothing else in the codebase
+  // notices when one of the three is missed.
+  const missing = routes.flatMap((route) => {
+    const problems = [];
+    if (!resolveRouteMetadata(route).isPublic) {
+      problems.push(`${route} → no entry in src/lib/routeMetadata.ts`);
+    }
+    if (!PRERENDER_PAGES[route]) {
+      problems.push(`${route} → no entry in src/prerender/entry.tsx`);
+    }
+    return problems;
   });
-  const origin = server.resolvedUrls.local[0].replace(/\/$/, '');
-
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      // --no-sandbox is required: CI build containers run as root, where
-      // Chrome's sandbox refuses to start.
-      args: ['--no-sandbox', '--disable-dev-shm-usage'],
-    });
-  } catch (error) {
-    // The overwhelmingly common CI failure is a missing shared library, not a
-    // bug in this script. Chromium downloads fine and then can't start, which
-    // reads as a confusing puppeteer error unless you already know the cause.
-    if (/shared libraries|libnspr4|libnss3|error while loading/i.test(error.message)) {
-      throw new Error(
-        `${error.message}\n\n`
-          + "  → Chromium is present but its system libraries are not. On Vercel these\n"
-          + '    come from the `installCommand` dnf list in frontend/vercel.json; if the\n'
-          + '    build image changed, add the missing package there. To unblock a deploy\n'
-          + '    immediately, set the env var PRERENDER_SKIP=1 (public pages fall back to\n'
-          + '    client-only rendering, so non-JS crawlers lose per-route metadata).',
-      );
-    }
-    throw error;
+  if (missing.length > 0) {
+    throw new Error(
+      `sitemap.xml lists routes the prerenderer can't render:\n  ${missing.join(
+        '\n  ',
+      )}`,
+    );
   }
 
-  try {
-    // Snapshot everything before writing anything: a file written mid-run would
-    // be served by the preview server to a later route, making the build's
-    // output depend on route ordering.
-    const results = [];
-    for (const route of routes) {
-      const { html, title } = await snapshot(browser, origin, route);
-      results.push({ route, html });
-      console.log(`[prerender] ${route.padEnd(34)} ${title}`);
+  // Render everything before writing anything, so a failure halfway through
+  // leaves dist/ untouched rather than half-updated.
+  const results = routes.map((route) => {
+    const meta = resolveRouteMetadata(route);
+    let html = injectHead(template, route, meta);
+    let words = 0;
+    if (!METADATA_ONLY) {
+      const body = renderRoute(route);
+      html = injectBody(html, body, route);
+      words = body.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
     }
+    return { route, html, title: meta.title, words };
+  });
 
-    for (const { route, html } of results) {
-      const outputPath = outputPathFor(route);
-      await mkdir(path.dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, html, 'utf8');
-    }
-    console.log(`[prerender] wrote ${results.length} pages.`);
-  } finally {
-    await browser.close();
-    await server.close();
+  for (const { route, html } of results) {
+    const outputPath = outputPathFor(route);
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, html, 'utf8');
   }
+
+  for (const { route, title, words } of results) {
+    const size = METADATA_ONLY ? 'metadata only' : `${words} words`;
+    console.log(`[prerender] ${route.padEnd(34)} ${size.padEnd(14)} ${title}`);
+  }
+  console.log(
+    `[prerender] wrote ${results.length} pages`
+      + `${METADATA_ONLY ? ' (PRERENDER_SKIP=1 — no body copy)' : ''}.`,
+  );
 }
 
 main().catch((error) => {

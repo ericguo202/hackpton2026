@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "dnf install -y nss atk at-spi2-atk cups-libs libdrm libXcomposite libXdamage libXrandr libxkbcommon mesa-libgbm pango alsa-lib && npm install",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],

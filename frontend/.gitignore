@@ -33,5 +33,3 @@ skills-lock.json
 # screenshot output from scripts/shot.mjs (visual QA helper)
 shots
 
-# Chromium for the build-time prerenderer, pinned here by .puppeteerrc.cjs
-.cache
