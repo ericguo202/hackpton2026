@@ -17,6 +17,8 @@
  * against this table so the two can't silently drift.
  */
 
+import { MAX_SESSIONS_PER_WEEK, MAX_TURNS_PER_DAY } from '../types/user';
+
 export const SITE_ORIGIN = 'https://www.interviewpie.com';
 
 export const DEFAULT_DESCRIPTION =
@@ -41,6 +43,16 @@ export const PUBLIC_ROUTE_METADATA: Record<string, PublicRouteMetadata> = {
     title: 'How InterviewPie Scores Behavioral Interview Answers',
     description:
       'See the role-aware rubrics InterviewPie uses to score structure, reasoning, impact, initiative, depth, and delivery in behavioral interview practice.',
+  },
+  '/pricing': {
+    title: 'Pricing | Free AI Interview Practice on InterviewPie',
+    // Caps are interpolated from the same shared constants Pricing.tsx renders,
+    // so a limit change updates the search-result snippet too.
+    description:
+      `InterviewPie is free: ${MAX_TURNS_PER_DAY} interview questions a day, `
+      + `${MAX_SESSIONS_PER_WEEK} sessions a week, all four question types, `
+      + 'per-answer scoring, transcript feedback, and delivery coaching. '
+      + 'No credit card needed.',
   },
   '/legal/privacy': {
     title: 'Privacy Policy | InterviewPie',
