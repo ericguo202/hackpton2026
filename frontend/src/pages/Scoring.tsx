@@ -23,22 +23,8 @@ import CategoryScoringSection, {
   type CategoryContent,
 } from '../components/scoring/CategoryScoringSection';
 import SignInLink from '../components/SignInLink';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
-
-function ScoringNav() {
-  return (
-    <>
-      <TopBarNavLink to="/" matchPatterns={['/practice']}>
-        Practice
-      </TopBarNavLink>
-      <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-        History
-      </TopBarNavLink>
-      <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
-      <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
-    </>
-  );
-}
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 
 /** External citation link — consistent styling for the research references. */
 function Cite({ href, children }: { href: string; children: ReactNode }) {
@@ -216,7 +202,7 @@ export default function Scoring() {
   return (
     <div className="min-h-screen bg-surface text-text">
       <TopBar
-        nav={isSignedIn ? <ScoringNav /> : undefined}
+        nav={isSignedIn ? <AppNav /> : undefined}
         legalMenu={!isSignedIn}
         rightSlot={isSignedIn ? <AccountButton /> : <SignInLink />}
       />

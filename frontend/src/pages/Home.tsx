@@ -51,7 +51,8 @@ import {
 } from '../types/user';
 import RoleSwitcher from '../components/RoleSwitcher';
 import SiteFooter from '../components/SiteFooter';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
 import { useCustomQuestions } from '../hooks/useCustomQuestions';
@@ -463,18 +464,7 @@ export default function Home() {
       <TopBar
         nav={
           <>
-            <TopBarNavLink to="/" matchPatterns={['/practice']} tourId="nav-practice">
-              Practice
-            </TopBarNavLink>
-            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']} tourId="nav-history">
-              History
-            </TopBarNavLink>
-            <TopBarNavLink to="/personalize" tourId="nav-personalize">
-              Personalize
-            </TopBarNavLink>
-            <TopBarNavLink to="/calibrate" tourId="nav-calibration">
-              Calibration
-            </TopBarNavLink>
+            <AppNav withTourIds />
           </>
         }
         rightSlot={<AccountButton />}

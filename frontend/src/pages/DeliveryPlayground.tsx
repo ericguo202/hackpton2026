@@ -16,7 +16,8 @@ import { useEffect, useMemo, useState } from 'react';
 
 import AccountButton from '../components/AccountButton';
 import { CameraPreview } from '../components/CameraPreview';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useFaceAnalyzer } from '../hooks/useFaceAnalyzer';
 import { useMe } from '../hooks/useMe';
@@ -186,21 +187,6 @@ function metricTone(value: number): string {
   if (value >= 75) return 'bg-chart-3';
   if (value >= 55) return 'bg-highlight';
   return 'bg-critique';
-}
-
-function DeliveryNav() {
-  return (
-    <>
-      <TopBarNavLink to="/" matchPatterns={['/practice']}>
-        Practice
-      </TopBarNavLink>
-      <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-        History
-      </TopBarNavLink>
-      <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
-      <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
-    </>
-  );
 }
 
 function QuestionSelector({
@@ -525,7 +511,7 @@ export default function DeliveryPlayground() {
 
   return (
     <div className="min-h-screen bg-surface text-text">
-      <TopBar nav={<DeliveryNav />} rightSlot={<AccountButton />} />
+      <TopBar nav={<AppNav />} rightSlot={<AccountButton />} />
 
       <main className="mx-auto flex w-full max-w-[92rem] flex-col gap-8 px-8 py-8 md:px-16 md:py-12">
         <div className="space-y-4">

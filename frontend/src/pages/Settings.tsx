@@ -23,7 +23,8 @@ import { CreditCard, ShieldCheck } from 'lucide-react';
 import AccountButton from '../components/AccountButton';
 import PricingSettings from '../components/settings/PricingSettings';
 import PrivacySettings from '../components/settings/PrivacySettings';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 
 export default function Settings() {
   return (
@@ -31,14 +32,7 @@ export default function Settings() {
       <TopBar
         nav={
           <>
-            <TopBarNavLink to="/" matchPatterns={['/practice']}>
-              Practice
-            </TopBarNavLink>
-            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-              History
-            </TopBarNavLink>
-            <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
-            <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
+            <AppNav />
           </>
         }
         rightSlot={<AccountButton />}

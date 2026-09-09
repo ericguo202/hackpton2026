@@ -8,7 +8,7 @@
  *
  * Every cap number is interpolated from the shared frontend constants that
  * mirror the backend (`MAX_TURNS_PER_DAY` / `MAX_SESSIONS_PER_WEEK` in
- * types/user.ts, `MAX_TUTOR_CHATS_PER_DAY` in types/tutor.ts,
+ * types/user.ts, `MAX_CHAT_CREDITS_PER_DAY` in types/tutor.ts,
  * `CUSTOM_QUESTION_CAP` / `SAVED_QUESTION_CAP` in their type modules) — never
  * typed as a literal, so a cap change lands here for free.
  *
@@ -26,27 +26,17 @@ import { Link, useNavigate } from 'react-router';
 import AccountButton from '../components/AccountButton';
 import SignInLink from '../components/SignInLink';
 import SiteFooter from '../components/SiteFooter';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 import { GetStartedButton } from '../components/ui/get-started-button';
 import { CUSTOM_QUESTION_CAP } from '../types/customQuestions';
 import { SAVED_QUESTION_CAP } from '../types/savedQuestions';
-import { MAX_TUTOR_CHATS_PER_DAY } from '../types/tutor';
+import {
+  GENERAL_CHAT_CREDIT_COST,
+  MAX_CHAT_CREDITS_PER_DAY,
+  TURN_CHAT_CREDIT_COST,
+} from '../types/tutor';
 import { MAX_SESSIONS_PER_WEEK, MAX_TURNS_PER_DAY } from '../types/user';
-
-function PricingNav() {
-  return (
-    <>
-      <TopBarNavLink to="/" matchPatterns={['/practice']}>
-        Practice
-      </TopBarNavLink>
-      <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-        History
-      </TopBarNavLink>
-      <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
-      <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
-    </>
-  );
-}
 
 /** The metered caps, with the reset boundary stated where it's relevant. */
 const LIMITS: { label: string; note?: string }[] = [
@@ -59,8 +49,13 @@ const LIMITS: { label: string; note?: string }[] = [
     note: 'Resets Monday, your local time',
   },
   {
-    label: `${MAX_TUTOR_CHATS_PER_DAY} Ask Tutor messages a day`,
-    note: 'The coach that explains your feedback',
+    // One budget, two prices. Spelling out both costs here is the only place a
+    // visitor learns why the number on Settings falls by 2 some days: the
+    // general coach runs a much stronger model with live web search.
+    label: `${MAX_CHAT_CREDITS_PER_DAY} Ask Tutor chat credits a day`,
+    note:
+      `Asking about one answer costs ${TURN_CHAT_CREDIT_COST} credit; asking `
+      + `the general interview coach costs ${GENERAL_CHAT_CREDIT_COST}`,
   },
   { label: `${CUSTOM_QUESTION_CAP} custom questions stored at a time` },
   { label: `${SAVED_QUESTION_CAP} saved questions stored at a time` },
@@ -78,6 +73,7 @@ const INCLUDED: string[] = [
   'Filler-word rate and speaking pace on every answer',
   'Write your own questions, save the ones worth repeating, re-practice any of them',
   'Full history with progress charts across every dimension',
+  'A general interview coach that researches companies and reads your progress',
 ];
 
 function ListItem({ children }: { children: ReactNode }) {
@@ -105,7 +101,7 @@ export default function Pricing() {
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
       <TopBar
-        nav={isSignedIn ? <PricingNav /> : undefined}
+        nav={isSignedIn ? <AppNav /> : undefined}
         legalMenu={!isSignedIn}
         rightSlot={isSignedIn ? <AccountButton /> : <SignInLink />}
       />
