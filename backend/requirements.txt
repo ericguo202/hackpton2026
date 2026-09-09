@@ -56,3 +56,14 @@ openai
 # lets `async def test_*` functions run without explicit decoration.
 pytest
 pytest-asyncio
+
+# IANA time-zone database for `zoneinfo`. Every free-tier counter in
+# `daily_limit.py` resolves the user's local day through `ZoneInfo(...)`, which
+# reads the SYSTEM tz database and raises `ZoneInfoNotFoundError` when there
+# isn't one. The Linux image happens to ship /usr/share/zoneinfo, so this was
+# working by accident: on Windows (dev, tests) and on any slim/distroless base
+# there is no system copy, every zone silently fails the lookup, and the UTC
+# fallback swallows it — which is the exact bug the seed-once timezone on
+# `GET /me` exists to fix, but applied to every user at once. Pinning the
+# database as a dependency makes the resolution platform-independent.
+tzdata

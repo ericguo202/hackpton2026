@@ -48,6 +48,7 @@ from app.schemas.user import (
 from app.services.daily_limit import check_and_reset_chat
 from app.services.daily_limit import check_and_reset_turns
 from app.services.daily_limit import check_and_reset_week
+from app.services.daily_limit import is_known_timezone
 from app.services.delivery_consent import (
     DELIVERY_ANALYTICS_NOTICE_VERSION,
     purge_delivery_analytics_for_user,
@@ -71,7 +72,39 @@ async def get_me(
     claims: ClerkClaims = Depends(current_user),
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
+    tz: str | None = Query(default=None, alias="timezone", max_length=64),
 ) -> User:
+    # Seed the caller's IANA timezone on first sight, BEFORE the rollovers below
+    # read it.
+    #
+    # `users.timezone` used to be written in exactly one place —
+    # `enforce_session_start_limits`, reachable only from POST /sessions and the
+    # re-practice route — so a user who chatted with Ask Tutor before ever
+    # starting an interview kept a NULL timezone, and all three counters rolled
+    # on UTC instead of their local day. Practising at 10pm Eastern stamped the
+    # spend against the NEXT UTC date, and the counter then visibly failed to
+    # reset at local midnight. /me is the first authenticated call on every page
+    # load, which makes it the only place the timezone is certain to be captured
+    # before the user does anything chargeable.
+    #
+    # SEED-ONCE, deliberately: this writes only while the column is NULL and
+    # never overwrites. The rollover guards in `daily_limit` are
+    # `IS DISTINCT FROM`, so a stored date can move BACKWARDS as well as
+    # forwards — a caller able to change their timezone on an endpoint this hot
+    # could zero any counter on demand by alternating between two far-apart
+    # zones. Travel is still picked up at POST /sessions, where each flip costs a
+    # weekly session slot and is therefore self-limiting.
+    #
+    # Ordering is load-bearing: written after the rollovers, the first /me of
+    # each day would still stamp a UTC date, and the `IS DISTINCT FROM` guard
+    # wouldn't fire again until that wrong date had passed.
+    #
+    # Junk is dropped rather than stored (`is_known_timezone`) — with no second
+    # write to correct it, one bad value would pin the user to UTC forever.
+    if user.timezone is None and is_known_timezone(tz):
+        user.timezone = tz
+        await db.commit()
+
     # Roll over the free-tier counters at view time so Home's "X/10 questions
     # today" reflects the user's local-calendar today, not the day they last
     # answered a turn. Without this, a user who hit the cap last night sees a

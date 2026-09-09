@@ -86,6 +86,31 @@ TURN_CHAT_CREDIT_COST = 1
 GENERAL_CHAT_CREDIT_COST = 2
 
 
+def is_known_timezone(tz_name: str | None) -> bool:
+    """True when `tz_name` resolves to a real IANA zone.
+
+    Exists for the WRITE side. `GET /me` seeds `users.timezone` from the browser
+    and then never overwrites it (see that handler for why the write is
+    seed-once), so a junk value stored once would pin that user to the UTC
+    fallback permanently. Validating before the store is what makes seed-once
+    safe to do.
+
+    `ValueError` is caught alongside `ZoneInfoNotFoundError` because `ZoneInfo`
+    rejects some keys outright instead of reporting them as not-found — an
+    absolute path, a `..` segment, an empty component. Every wire field carrying
+    a timezone accepts an arbitrary 64-char string, so those are reachable
+    input, and before this the `_today_in_tz` fallback below let a stored
+    `ValueError` key escape as a 500.
+    """
+    if not tz_name:
+        return False
+    try:
+        ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
+
+
 def _today_in_tz(tz_name: str | None) -> date:
     """User's "today" in their local timezone.
 
@@ -93,11 +118,8 @@ def _today_in_tz(tz_name: str | None) -> date:
     bad value silently degrades rather than raising — a stale or stripped
     timezone string should never block a legitimate session.
     """
-    if tz_name:
-        try:
-            return datetime.now(ZoneInfo(tz_name)).date()
-        except ZoneInfoNotFoundError:
-            pass
+    if tz_name and is_known_timezone(tz_name):
+        return datetime.now(ZoneInfo(tz_name)).date()
     return datetime.now(timezone.utc).date()
 
 
