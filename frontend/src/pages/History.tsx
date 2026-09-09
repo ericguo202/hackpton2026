@@ -39,7 +39,8 @@ import QuestionCategoryFilterMenu, {
 import { StrengthsRadarPanel } from '../components/StrengthsRadar';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import type { SpeechPace } from '../components/SpeechSpeedToggle';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useMe } from '../hooks/useMe';
 import { useMeStats, type MeStatsFilter } from '../hooks/useMeStats';
@@ -531,18 +532,7 @@ export default function History() {
       <TopBar
         nav={
           <>
-            <TopBarNavLink to="/" matchPatterns={['/practice']}>
-              Practice
-            </TopBarNavLink>
-            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-              History
-            </TopBarNavLink>
-            <TopBarNavLink to="/personalize">
-              Personalize
-            </TopBarNavLink>
-            <TopBarNavLink to="/calibrate">
-              Calibration
-            </TopBarNavLink>
+            <AppNav />
           </>
         }
         rightSlot={<AccountButton />}

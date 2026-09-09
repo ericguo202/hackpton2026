@@ -102,12 +102,16 @@ class User(Base):
     )
     week_reset_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
-    # Ask Tutor analogue of the turn counter above. Free users get 10
-    # SUCCESSFUL chat completions (not sent messages) per local calendar day;
-    # the counter increments only when the LLM responds successfully (see
-    # `daily_limit.record_chat_completion`) and resets lazily on a new local
-    # day, keyed on the same `timezone`. `chat_count_reset_date` is NULL until
-    # the user's first chat.
+    # Ask Tutor analogue of the turn counter above, in CREDITS rather than
+    # messages: free users get 20 chat credits per local calendar day, and the
+    # two tutor surfaces charge different amounts against them (a chat about one
+    # answer costs 1, the general coach on /tutor costs 2 — it runs a far more
+    # expensive model with live web search). Only a SUCCESSFUL completion is
+    # charged, so a failed reply is free (see
+    # `daily_limit.record_chat_completion`); the counter resets lazily on a new
+    # local day, keyed on the same `timezone`. `chat_count_reset_date` is NULL
+    # until the user's first chat. The column keeps its name from the
+    # one-credit-per-chat era — it holds whatever the chat counter counts.
     daily_chat_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )

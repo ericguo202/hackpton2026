@@ -2,9 +2,10 @@
  * Ordered coach-mark steps for the Home first-run tutorial.
  *
  * Each step points at an existing element located by its `[data-tour="..."]`
- * attribute (added in `Home.tsx` + `TopBar.tsx`). Order is the walkthrough
- * order: the four TopBar nav links first, then the Home form controls top to
- * bottom. Copy is product-owned — keep it in sync with the approved plan.
+ * attribute (added in `Home.tsx` + `AppNav.tsx`). Order is the walkthrough
+ * order: the five TopBar nav links first (in nav order), then the Home form
+ * controls top to bottom. Copy is product-owned — keep it in sync with the
+ * approved plan.
  */
 
 export type TutorialStep = {
@@ -26,6 +27,10 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     selector: '[data-tour="nav-history"]',
     body: 'View progress over time and individual session feedback.',
+  },
+  {
+    selector: '[data-tour="nav-tutor"]',
+    body: "Ask an AI interview coach about a company's interview process, a question type you want to get better at, or what your practice history says you should work on.",
   },
   {
     selector: '[data-tour="nav-personalize"]',

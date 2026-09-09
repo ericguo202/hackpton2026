@@ -16,6 +16,12 @@ turn's `QuestionCategory`. Two per-category, position-ordered tuples live here:
     (`frontend/src/pages/Scoring.tsx` `CATEGORY_CONTENT`). Used by the Ask-Tutor
     prompt so the model explains a score against the same rubric wording the
     candidate can read on the site. Keep the two in sync.
+  - `CATEGORY_SUBTITLES` / `CATEGORY_COACHING_TIPS` — the same Scoring page's
+    per-category `subtitle` and `tips`, for the general-mode Ask-Tutor
+    `get_rubric` tool. The page's tips are JSX (several embed `<Cite>` research
+    links), so they CANNOT be imported — these are hand-mirrored, with the
+    citation links dropped and the prose transliterated to plain ASCII. Keep the
+    two in sync.
 
 `QUESTION_CATEGORY_LABELS` (mirror of the frontend `types/session.ts` map) names
 the category itself, for surfaces that print the type rather than a dimension.
@@ -149,6 +155,92 @@ CONTENT_DIMENSION_DESCRIPTIONS: dict[
     ),
 }
 
+# One-line description of what each question category ASKS, mirroring the
+# Scoring page's per-category `subtitle`. ASCII-transliterated, same rationale as
+# CONTENT_DIMENSION_DESCRIPTIONS above.
+CATEGORY_SUBTITLES: dict[QuestionCategory, str] = {
+    QuestionCategory.experience_star: (
+        '"Tell me about a time..." - questions about what you actually did.'
+    ),
+    QuestionCategory.self_assessment_growth: (
+        "Strengths and weaknesses, biggest failure, feedback you've received."
+    ),
+    QuestionCategory.motivation_fit: (
+        '"Tell me about yourself," "why this company," "why this field."'
+    ),
+    QuestionCategory.situational: (
+        '"What would you do if..." - hypotheticals that test your reasoning '
+        "before you have lived the situation."
+    ),
+}
+
+# The Scoring page's per-category coaching `tips` - what a strong answer of this
+# type actually does. Hand-mirrored from the JSX (research citation links
+# dropped, typographic characters flattened to ASCII). Consumed by the
+# general-mode Ask-Tutor `get_rubric` tool so the coach answers "how do I get
+# better at this question type" in the same words the candidate can go read.
+CATEGORY_COACHING_TIPS: dict[QuestionCategory, tuple[str, ...]] = {
+    QuestionCategory.experience_star: (
+        "Spend the least time on setup and the most on what you did.",
+        'Say "I," not only "we." Credit your team, but be precise about which '
+        "decision or action was yours.",
+        "Be specific - give a few concrete details that prove you were actually "
+        "there.",
+        "Name trade-offs you considered and alternatives you rejected, and why, "
+        "to show critical thinking.",
+        "Numbers (a percentage or a count) beat adjectives. Top companies grade "
+        "whether the scope of your impact matches your level.",
+        "Close out strong - connect the result to your action: interviewers "
+        "listen for whether your contribution caused the outcome.",
+    ),
+    QuestionCategory.self_assessment_growth: (
+        "One trait, well-evidenced, beats a list of five.",
+        "Name a real, role-relevant weakness a manager would recognize. Skip the "
+        "cliches and the strengths-in-disguise - interviewers assess honesty, "
+        "and disguised strengths read as evasive.",
+        "Know how others see you - it can differ from how you see yourself. "
+        "Quote feedback you have actually received.",
+        "Anchor each claim to a specific incident - when, what you did, what was "
+        "said.",
+        "A growth mindset is good but not enough. Describe the mechanism - a "
+        "habit, a system, a feedback loop - then the change it produced.",
+        "Own your part plainly, without blaming circumstances. Do not claim a "
+        'weakness is fully "fixed"; show it is managed.',
+    ),
+    QuestionCategory.motivation_fit: (
+        "Select the two or three high-impact experiences from your resume "
+        "specific to your target role.",
+        'Make the connection out loud. "I did X, which is why I can do this '
+        "role's Y\" is much stronger than just \"I did X.\"",
+        "Cite something specific and accurate - a product, a documented value, a "
+        "recent move - and link it to your own motivation. Employers screen "
+        "candidates against the specific skills and values they have published.",
+        "Research the company and your role at the company. Generic praise "
+        '("great culture") comes off as unprepared.',
+        "Explain career transitions. Interviewers test your stated motivation "
+        "against choices you have actually made.",
+        "Be enthusiastic, but attach your enthusiasm to at least one specific "
+        "motivator: what you would want to work on first, why this team, why "
+        "now.",
+    ),
+    QuestionCategory.situational: (
+        "Commit to a decision. Playing both sides without ever choosing comes "
+        "off as evasive.",
+        "Acknowledge the trade-off - what your choice costs, who it affects, and "
+        "what could go wrong downstream.",
+        'Say the "why" behind the "what." Justifying why the rejected option '
+        "lost is the fastest way to show judgment rather than reflex.",
+        "Give a concrete first step based on your experience level and the "
+        "information you are given. Do not assume authority, resources, or facts "
+        "the scenario did not provide.",
+        'Ground decisions in prior experience - "I would do X, because when Y '
+        'happened, Z worked." Recruiters discount purely theoretical answers '
+        "when you have real experience to draw on - and if you are early-career, "
+        "coursework, clubs, and projects count fully.",
+    ),
+}
+
+
 _DEFAULT = QuestionCategory.experience_star
 
 
@@ -181,4 +273,16 @@ def question_category_label(category: QuestionCategory | None) -> str:
     """Return the human name of the question category itself (STAR fallback)."""
     return QUESTION_CATEGORY_LABELS.get(
         category or _DEFAULT, QUESTION_CATEGORY_LABELS[_DEFAULT]
+    )
+
+
+def category_subtitle(category: QuestionCategory | None) -> str:
+    """Return the one-line "what this type asks" subtitle (STAR fallback)."""
+    return CATEGORY_SUBTITLES.get(category or _DEFAULT, CATEGORY_SUBTITLES[_DEFAULT])
+
+
+def category_coaching_tips(category: QuestionCategory | None) -> tuple[str, ...]:
+    """Return the Scoring page's coaching tips for `category` (STAR fallback)."""
+    return CATEGORY_COACHING_TIPS.get(
+        category or _DEFAULT, CATEGORY_COACHING_TIPS[_DEFAULT]
     )

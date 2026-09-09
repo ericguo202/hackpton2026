@@ -23,8 +23,15 @@ local calendar:
   turn: charging at create would burn one of only 10 weekly slots on a mic
   failure, and charging at finalization would let a tab-close abandon evade the
   cap entirely.
-* `daily_chat_count` / `chat_count_reset_date` — successful Ask Tutor chat
-  completions today (cap 10). Unchanged.
+* `daily_chat_count` / `chat_count_reset_date` — Ask Tutor chat CREDITS spent
+  today (cap 20). The column counts credits, not messages: the two tutor
+  surfaces cost wildly different amounts, so a turn-scoped chat
+  (`deepseek/deepseek-v4-flash`, short reply, in-memory tools) costs 1 credit and
+  a general-coach chat (`openai/gpt-5.6-luna` at high reasoning, longer reply,
+  up to 4 live web searches) costs 2. One shared budget keeps the user-facing
+  story simple — "N chat credits left today" — while stopping a free user from
+  spending the whole day on the expensive surface. Credits are charged only on a
+  SUCCESSFUL completion, so a failed reply is never billed.
 
 The pre-check at `POST /sessions` only READS the session counters, so a race
 between two concurrent starts can let one extra session through; the next start
@@ -71,7 +78,12 @@ MIN_SESSION_TURNS = 2
 
 # Per-day cap on Ask Tutor chat COMPLETIONS for free-tier users. A completion
 # is a successful LLM response, not a sent message — see `record_chat_completion`.
-DAILY_CHAT_LIMIT_FREE = 10
+# Free-tier Ask Tutor budget, in CREDITS per local day (see the module docstring
+# for why this is credits and not messages). Mirrored in
+# `frontend/src/types/tutor.ts` — change one, change both.
+DAILY_CHAT_CREDITS_FREE = 20
+TURN_CHAT_CREDIT_COST = 1
+GENERAL_CHAT_CREDIT_COST = 2
 
 
 def _today_in_tz(tz_name: str | None) -> date:
@@ -314,13 +326,14 @@ async def increment_week(db: AsyncSession, user: User) -> None:
     await db.execute(stmt)
 
 
-# ── Ask Tutor chat-completion daily limit ──────────────────────────────────────
+# ── Ask Tutor chat-credit daily limit ─────────────────────────────────────────
 # Same shape as the turn limit above, on the `daily_chat_count` /
 # `chat_count_reset_date` columns, keyed on the same `_today_in_tz` local day.
+# The counter holds CREDITS SPENT, not messages sent — see the module docstring.
 
 
 async def check_and_reset_chat(db: AsyncSession, user: User) -> int:
-    """Atomically roll the chat counter over if stale, then return its value.
+    """Atomically roll the chat-credit counter over if stale, then return it.
 
     Mirrors `check_and_reset_turns` on the Ask Tutor columns: gated by
     `chat_count_reset_date IS DISTINCT FROM :today` so the steady-state path
@@ -351,39 +364,49 @@ async def check_and_reset_chat(db: AsyncSession, user: User) -> int:
     return user.daily_chat_count
 
 
-async def enforce_chat_daily_limit(db: AsyncSession, user: User) -> None:
-    """429 if the free-tier daily Ask Tutor chat cap is already hit.
+async def enforce_chat_daily_limit(
+    db: AsyncSession, user: User, *, cost: int = TURN_CHAT_CREDIT_COST
+) -> None:
+    """429 if the free-tier daily chat-credit budget can't cover `cost`.
 
-    Read-only pre-check (no increment) — the counter only advances on a
-    successful completion via `record_chat_completion`. Pro users skip the gate.
-    Run before any moderation / LLM spend so an over-limit caller costs nothing.
+    Read-only pre-check (no increment) — credits only advance on a successful
+    completion via `record_chat_completion`. Pro users skip the gate. Run before
+    any moderation / LLM spend so an over-budget caller costs nothing.
+
+    The check is `remaining < cost`, not `remaining == 0`: with 1 credit left a
+    turn-scoped chat still goes through while the 2-credit general coach does
+    not, which is the whole point of a weighted budget.
     """
     if user.tier != UserTier.free:
         return
     current_count = await check_and_reset_chat(db, user)
-    if current_count >= DAILY_CHAT_LIMIT_FREE:
+    remaining = max(0, DAILY_CHAT_CREDITS_FREE - current_count)
+    if remaining < cost:
         logger.info(
-            "Free-tier daily chat limit hit clerk_user_id=%s count=%s",
-            user.clerk_user_id, current_count,
+            "Free-tier chat credits exhausted clerk_user_id=%s used=%s cost=%s",
+            user.clerk_user_id, current_count, cost,
         )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
-                f"You have reached your daily limit of {DAILY_CHAT_LIMIT_FREE} "
-                "tutor chats. It resets at midnight."
+                f"You have {remaining} of your "
+                f"{DAILY_CHAT_CREDITS_FREE} daily chat credits left, and this "
+                f"chat costs {cost}. Your credits reset at midnight."
             ),
         )
 
 
-async def record_chat_completion(user_id: UUID, tz_name: str | None) -> int:
-    """Count one successful chat completion; return the caller's remaining quota.
+async def record_chat_completion(
+    user_id: UUID, tz_name: str | None, *, cost: int = TURN_CHAT_CREDIT_COST
+) -> int:
+    """Charge `cost` credits for one successful chat; return credits remaining.
 
     Called from inside the Ask Tutor SSE generator AFTER a reply streams
     successfully, which is past the request-scoped DB session's lifecycle — so
     this opens its OWN session (same isolation rationale as incident logging)
-    and commits inline. The atomic `CASE` both increments and rolls the counter
-    over on a new local day, so a completion straddling midnight opens a fresh
-    day at 1. Returns `max(0, limit - new_count)` remaining for the wire.
+    and commits inline. The atomic `CASE` both charges and rolls the counter over
+    on a new local day, so a completion straddling midnight opens a fresh day at
+    `cost`. Returns `max(0, limit - new_count)` remaining for the wire.
     """
     today = _today_in_tz(tz_name)
     async with AsyncSessionLocal() as session:
@@ -397,9 +420,9 @@ async def record_chat_completion(user_id: UUID, tz_name: str | None) -> int:
                             User.chat_count_reset_date.is_(None),
                             User.chat_count_reset_date < today,
                         ),
-                        1,
+                        cost,
                     ),
-                    else_=User.daily_chat_count + 1,
+                    else_=User.daily_chat_count + cost,
                 ),
                 chat_count_reset_date=today,
             )
@@ -407,4 +430,4 @@ async def record_chat_completion(user_id: UUID, tz_name: str | None) -> int:
         )
         new_count = (await session.execute(stmt)).scalar_one()
         await session.commit()
-    return max(0, DAILY_CHAT_LIMIT_FREE - new_count)
+    return max(0, DAILY_CHAT_CREDITS_FREE - new_count)

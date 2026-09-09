@@ -20,7 +20,8 @@ import {
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import CalibrationConsentDialog from '../components/CalibrationConsentDialog';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { trackEvent } from '../lib/analytics';
 import {
@@ -153,21 +154,6 @@ function formatConsentDate(value: string): string {
     day: 'numeric',
     year: 'numeric',
   })}`;
-}
-
-function SignedInNav() {
-  return (
-    <>
-      <TopBarNavLink to="/" matchPatterns={['/practice']}>
-        Practice
-      </TopBarNavLink>
-      <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-        History
-      </TopBarNavLink>
-      <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
-      <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
-    </>
-  );
 }
 
 export default function Calibration() {
@@ -520,7 +506,7 @@ export default function Calibration() {
   return (
     <div className="min-h-screen bg-surface text-text">
       <TopBar
-        nav={fromOnboarding ? undefined : <SignedInNav />}
+        nav={fromOnboarding ? undefined : <AppNav />}
         rightSlot={<AccountButton />}
       />
 

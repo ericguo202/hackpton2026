@@ -15,7 +15,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import AccountButton from '../components/AccountButton';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 import {
   FolderTabs,
   PagerArrow,
@@ -109,18 +110,7 @@ export default function SessionDetail() {
       <TopBar
         nav={
           <>
-            <TopBarNavLink to="/" matchPatterns={['/practice']}>
-              Practice
-            </TopBarNavLink>
-            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-              History
-            </TopBarNavLink>
-            <TopBarNavLink to="/personalize">
-              Personalize
-            </TopBarNavLink>
-            <TopBarNavLink to="/calibrate">
-              Calibration
-            </TopBarNavLink>
+            <AppNav />
           </>
         }
         rightSlot={<AccountButton />}

@@ -25,7 +25,11 @@ import { useMe } from '../../hooks/useMe';
 import { useSavedQuestions } from '../../hooks/useSavedQuestions';
 import { CUSTOM_QUESTION_CAP } from '../../types/customQuestions';
 import { SAVED_QUESTION_CAP } from '../../types/savedQuestions';
-import { MAX_TUTOR_CHATS_PER_DAY } from '../../types/tutor';
+import {
+  GENERAL_CHAT_CREDIT_COST,
+  MAX_CHAT_CREDITS_PER_DAY,
+  TURN_CHAT_CREDIT_COST,
+} from '../../types/tutor';
 import { MAX_SESSIONS_PER_WEEK, MAX_TURNS_PER_DAY } from '../../types/user';
 
 /**
@@ -145,10 +149,14 @@ export default function PricingSettings() {
             limit={windowedLimit(MAX_SESSIONS_PER_WEEK)}
           />
           <UsageRow
-            label="Ask Tutor messages today"
-            note="Resets at midnight, your local time"
+            label="Ask Tutor chat credits today"
+            note={
+              `${TURN_CHAT_CREDIT_COST} credit per question-specific chat, `
+              + `${GENERAL_CHAT_CREDIT_COST} for the general coach. Resets at `
+              + 'midnight, your local time'
+            }
             used={me ? me.daily_chat_count : null}
-            limit={windowedLimit(MAX_TUTOR_CHATS_PER_DAY)}
+            limit={windowedLimit(MAX_CHAT_CREDITS_PER_DAY)}
           />
           <UsageRow
             label="Custom questions stored"

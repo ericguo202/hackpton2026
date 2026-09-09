@@ -66,6 +66,7 @@ const SessionDetail = lazyWithRetry(
   () => import('./pages/SessionDetail'),
   'SessionDetail',
 );
+const Tutor = lazyWithRetry(() => import('./pages/Tutor'), 'Tutor');
 const SignIn = lazyWithRetry(() => import('./pages/SignIn'), 'SignIn');
 const SignUp = lazyWithRetry(() => import('./pages/SignUp'), 'SignUp');
 const SsoCallback = lazyWithRetry(
@@ -154,6 +155,10 @@ function App() {
         <Route element={<RequireOnboarded />}>
           <Route path="/practice" element={<Practice />} />
           <Route path="/history" element={<History />} />
+          {/* The general interview coach. Behind RequireOnboarded because its
+              prompt is built from the candidate's experience level and target
+              roles — there is nothing to coach before onboarding. */}
+          <Route path="/tutor" element={<Tutor />} />
           <Route path="/delivery-playground" element={<DeliveryPlayground />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
           <Route path="/saved-question/:id" element={<SavedQuestionDetail />} />

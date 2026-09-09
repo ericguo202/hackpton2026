@@ -77,6 +77,7 @@ const PRIVATE_ROUTE_TITLES: Record<string, string> = {
   '/onboarding': 'Set Up Your Interview Profile | InterviewPie',
   '/practice': 'Interview Practice | InterviewPie',
   '/history': 'Practice History | InterviewPie',
+  '/tutor': 'Ask Tutor | InterviewPie',
   '/personalize': 'Personalize Interview Practice | InterviewPie',
   '/calibrate': 'Delivery Calibration | InterviewPie',
   '/delivery-playground': 'Delivery Playground | InterviewPie',
