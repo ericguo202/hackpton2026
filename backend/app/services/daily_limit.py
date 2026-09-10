@@ -41,6 +41,21 @@ lock across research + TTS.
 Every helper below does its lazy reset in a single atomic `UPDATE`. A
 read-modify-write in Python would have a TOCTOU window across the day boundary;
 SQL-side `CASE` is race-free because Postgres row-locks on the UPDATE.
+
+**Windows move FORWARD only.** Every reset is gated on `stored IS NULL OR
+stored < <period>`, and every write stamps `GREATEST(stored, <period>)` rather
+than assigning the period outright. The window is derived from
+`users.timezone`, which the user supplies, so an ungated `IS DISTINCT FROM`
+would let a stored date move BACKWARDS: alternate two far-apart zones and every
+counter zeroes on each flip, without limit. `POST /sessions` overwrites the
+timezone and costs no counter (the weekly slot is charged on turn 1, in
+`submit_turn`), so a scripted client could have run that loop for free.
+Monotonicity closes it at the only place it can be closed — the comparison
+itself — rather than trying to police who may change a timezone.
+
+The one accepted cost: a user travelling WEST re-enters a local date they have
+already been stamped with, so their next reset lands up to a day late. Eastward
+travel is unaffected, and the delay is bounded by the size of the hop.
 """
 
 from __future__ import annotations
@@ -51,7 +66,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
-from sqlalchemy import case, or_, update
+from sqlalchemy import case, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.enums import UserTier
@@ -143,12 +158,16 @@ def _week_start_in_tz(tz_name: str | None) -> date:
 async def check_and_reset_turns(db: AsyncSession, user: User) -> int:
     """Atomically roll the daily TURN counter over if stale, then return it.
 
-    The UPDATE is gated by `count_reset_date IS DISTINCT FROM :today` so
-    the common path (counter already current for today's local date) does
-    zero writes — `/me` is hit on every route guard, so writing every
-    call would multiply write load by the read load. `IS DISTINCT FROM`
-    also handles the NULL case (first-ever call for a user) in the same
-    predicate, since `NULL IS DISTINCT FROM <date>` is TRUE.
+    The UPDATE is gated by `count_reset_date IS NULL OR count_reset_date <
+    :today` so the common path (counter already current for today's local
+    date) does zero writes — `/me` is hit on every route guard, so writing
+    every call would multiply write load by the read load. The explicit
+    `IS NULL` branch carries the first-ever call for a user, which a bare `<`
+    would drop (`NULL < <date>` is NULL, not TRUE).
+
+    The comparison is `<`, NOT `IS DISTINCT FROM`: see the module docstring —
+    a not-equal test lets a user-supplied timezone walk the window backwards
+    and re-trigger the reset at will.
 
     When the UPDATE does fire, it's atomic + race-free: Postgres row-locks
     the user row, so two concurrent callers crossing the day boundary
@@ -162,7 +181,10 @@ async def check_and_reset_turns(db: AsyncSession, user: User) -> int:
         update(User)
         .where(
             User.id == user.id,
-            User.count_reset_date.is_distinct_from(today),
+            or_(
+                User.count_reset_date.is_(None),
+                User.count_reset_date < today,
+            ),
         )
         .values(
             daily_turn_count=0,
@@ -190,15 +212,19 @@ async def check_and_reset_week(db: AsyncSession, user: User) -> int:
 
     Identical shape to `check_and_reset_turns` on the `weekly_session_count` /
     `week_reset_date` pair, keyed on `_week_start_in_tz` instead of the local
-    day. Zero writes in steady state; `IS DISTINCT FROM` covers the first-ever
-    (NULL) case so the column self-seeds without a backfill.
+    day. Zero writes in steady state; the `IS NULL` branch covers the
+    first-ever case so the column self-seeds without a backfill, and the `<`
+    keeps the window forward-only (module docstring).
     """
     week_start = _week_start_in_tz(user.timezone)
     stmt = (
         update(User)
         .where(
             User.id == user.id,
-            User.week_reset_date.is_distinct_from(week_start),
+            or_(
+                User.week_reset_date.is_(None),
+                User.week_reset_date < week_start,
+            ),
         )
         .values(
             weekly_session_count=0,
@@ -293,6 +319,12 @@ async def increment_turns(db: AsyncSession, user: User) -> None:
     transaction: if question generation or TTS then raises and the handler
     rolls back, the turn isn't persisted and the user isn't charged for it.
 
+    The date is stamped `GREATEST(stored, today)`, never a bare `today`: a bare
+    assignment moves the window backwards when the user's timezone hops west,
+    re-arming the forward-only reset guard and handing back a fresh budget.
+    `GREATEST` also absorbs the NULL first-charge case (Postgres ignores NULL
+    arguments), so the column still self-seeds.
+
     A turn is charged when ANSWERED rather than when the session finalizes.
     Every submitted turn fires an evaluator call, a coaching call, a
     next-question call and a TTS synthesis, so a session abandoned by closing
@@ -314,7 +346,7 @@ async def increment_turns(db: AsyncSession, user: User) -> None:
                 ),
                 else_=User.daily_turn_count + 1,
             ),
-            count_reset_date=today,
+            count_reset_date=func.greatest(User.count_reset_date, today),
         )
     )
     await db.execute(stmt)
@@ -342,7 +374,7 @@ async def increment_week(db: AsyncSession, user: User) -> None:
                 ),
                 else_=User.weekly_session_count + 1,
             ),
-            week_reset_date=week_start,
+            week_reset_date=func.greatest(User.week_reset_date, week_start),
         )
     )
     await db.execute(stmt)
@@ -358,16 +390,20 @@ async def check_and_reset_chat(db: AsyncSession, user: User) -> int:
     """Atomically roll the chat-credit counter over if stale, then return it.
 
     Mirrors `check_and_reset_turns` on the Ask Tutor columns: gated by
-    `chat_count_reset_date IS DISTINCT FROM :today` so the steady-state path
-    (already current for today) does zero writes — `/me` calls this on every
-    view. `IS DISTINCT FROM` also covers the first-ever (NULL) case.
+    `chat_count_reset_date IS NULL OR chat_count_reset_date < :today` so the
+    steady-state path (already current for today) does zero writes — `/me`
+    calls this on every view. The `IS NULL` branch covers the first-ever case;
+    the `<` keeps the window forward-only (module docstring).
     """
     today = _today_in_tz(user.timezone)
     stmt = (
         update(User)
         .where(
             User.id == user.id,
-            User.chat_count_reset_date.is_distinct_from(today),
+            or_(
+                User.chat_count_reset_date.is_(None),
+                User.chat_count_reset_date < today,
+            ),
         )
         .values(
             daily_chat_count=0,
@@ -446,7 +482,9 @@ async def record_chat_completion(
                     ),
                     else_=User.daily_chat_count + cost,
                 ),
-                chat_count_reset_date=today,
+                chat_count_reset_date=func.greatest(
+                    User.chat_count_reset_date, today
+                ),
             )
             .returning(User.daily_chat_count)
         )
