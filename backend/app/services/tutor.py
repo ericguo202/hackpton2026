@@ -276,7 +276,7 @@ description of what you are about to do. Lead with the answer, not a preamble.
 
 _FORMAT_GENERAL = """
 Response format (strict — keep replies focused and skimmable):
-- Keep every reply to at most 7-8 sentences, OR a list of at most 6 items. You \
+- Keep every reply to at most 10 sentences, OR a list of at most 8 items. You \
 have more room than a short chat bubble, but this is still a conversation, not a \
 document. Do not write an essay.
 - Answer the ONE thing they asked. Do not pre-empt every related topic or dump a \
