@@ -417,3 +417,113 @@ def test_jd_system_prompt_hardened_against_hallucination():
     # The narrow carve-out keeps description/category usable for obscure JDs.
     assert "NARROW CARVE-OUT" in prompt
     assert "`description`" in prompt and "`category`" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Result URLs in the digest (Ask-Tutor `search_web` citations)
+# ---------------------------------------------------------------------------
+
+
+def _fake_serp_with_links() -> dict:
+    return {
+        "knowledgeGraph": {
+            "title": "Acme Robotics",
+            "type": "Technology company",
+            "description": "Acme Robotics builds autonomous warehouse robots.",
+            "website": "https://acmerobotics.com",
+        },
+        "organic": [
+            {
+                "title": "How Acme interviews engineers",
+                "link": "https://acmerobotics.com/careers/interviewing",
+                "snippet": "Our behavioral loop screens for ownership.",
+            },
+            {
+                "title": "Acme interview experience (r/cscareerquestions)",
+                "link": "https://www.reddit.com/r/cscareerquestions/comments/abc123/",
+                "snippet": "Two behavioral rounds, heavy on conflict stories.",
+            },
+        ],
+    }
+
+
+def test_digest_serp_omits_links_by_default():
+    """The research path feeds this digest to Gemini to build a CompanyBrief,
+    whose fields hold no URL. Links there are dead prompt weight, so the default
+    stays OFF — that is what keeps the research path byte-identical."""
+    _, digest = company_research._digest_serp(_fake_serp_with_links())
+
+    assert "https://" not in digest
+    # The substance is still all there; only the URLs are dropped.
+    assert "How Acme interviews engineers" in digest
+    assert "Our behavioral loop screens for ownership." in digest
+
+
+def test_digest_serp_includes_links_when_requested():
+    """`include_links=True` must surface every organic result's URL plus the
+    knowledge graph's canonical website."""
+    _, digest = company_research._digest_serp(
+        _fake_serp_with_links(), include_links=True
+    )
+
+    assert "https://acmerobotics.com/careers/interviewing" in digest
+    assert "https://www.reddit.com/r/cscareerquestions/comments/abc123/" in digest
+    assert "Website: https://acmerobotics.com" in digest
+    # Each URL sits on its own labelled line, so punctuation inside it can't be
+    # misread as part of the title or the snippet.
+    assert "Link: https://acmerobotics.com/careers/interviewing" in digest
+
+
+def test_digest_serp_tolerates_a_result_with_no_link():
+    """Serper occasionally returns an entry with no `link`; it must still be
+    rendered, just without a URL, rather than dropped or raising."""
+    serp = {
+        "organic": [
+            {"title": "No link here", "snippet": "Still useful context."},
+            {
+                "title": "Has a link",
+                "link": "https://example.com/a",
+                "snippet": "More context.",
+            },
+        ]
+    }
+    _, digest = company_research._digest_serp(serp, include_links=True)
+
+    assert "No link here: Still useful context." in digest
+    assert "Link: https://example.com/a" in digest
+
+
+async def test_search_web_digest_carries_result_urls(monkeypatch):
+    """The Ask-Tutor seam MUST include links: the tutor prompt forbids it from
+    producing a URL it did not receive from search_web, so a link-free digest
+    left it able to name a source but never to cite one."""
+    monkeypatch.setattr(company_research.settings, "SERPER_API_KEY", "test-key")
+    _mock_serper(monkeypatch, _fake_serp_with_links())
+
+    digest = await company_research.search_web_digest(
+        "how does Acme run behavioral interviews"
+    )
+
+    assert "https://acmerobotics.com/careers/interviewing" in digest
+    assert "https://www.reddit.com/r/cscareerquestions/comments/abc123/" in digest
+
+
+async def test_research_company_prompt_receives_no_urls(monkeypatch):
+    """End-to-end guard on the default: the blob handed to Gemini on the
+    research path carries no URL for it to weave into a headline."""
+    monkeypatch.setattr(company_research.settings, "SERPER_API_KEY", "test-key")
+    _mock_serper(monkeypatch, _fake_serp_with_links())
+    fake_client = _make_fake_client(_WELL_FORMED_JSON)
+    monkeypatch.setattr(
+        "app.services.company_research.get_client", lambda: fake_client
+    )
+
+    await research_company("Acme Robotics", "Robotics Engineer")
+
+    sent = "".join(
+        str(message.get("content", ""))
+        for call in fake_client.calls
+        for message in call["messages"]
+    )
+    assert sent  # guard: we actually captured the prompt
+    assert "https://" not in sent

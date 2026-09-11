@@ -122,7 +122,7 @@ def test_prompt_uses_the_general_redirect_not_the_turn_one():
 
 def test_prompt_states_the_longer_length_budget():
     prompt = build_general_tutor_system_prompt(_ctx())
-    assert "7-8 sentences" in prompt
+    assert "at most 10 sentences" in prompt
     assert "3-4 short sentences" not in prompt
 
 
