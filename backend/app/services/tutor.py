@@ -158,7 +158,11 @@ _MAX_WEB_SEARCHES_GENERAL = 4
 _MAX_SEARCH_QUERY_CHARS = 200
 # Serper digests run long (knowledge graph + 8 results + related searches). Clip
 # before it lands in context; we spent the whole design keeping this prompt lean.
-_MAX_SEARCH_RESULT_CHARS = 2500
+# Raised from 2500 when the digest began carrying result URLs
+# (`_digest_serp(include_links=True)`): eight links plus their labels add roughly
+# 550-720 chars, so the old ceiling would have clipped the tail results — and a
+# clipped result is a source the model is then forbidden to cite.
+_MAX_SEARCH_RESULT_CHARS = 3000
 
 
 @dataclass
@@ -276,7 +280,7 @@ description of what you are about to do. Lead with the answer, not a preamble.
 
 _FORMAT_GENERAL = """
 Response format (strict — keep replies focused and skimmable):
-- Keep every reply to at most 7-8 sentences, OR a list of at most 6 items. You \
+- Keep every reply to at most 10 sentences, OR a list of at most 8 items. You \
 have more room than a short chat bubble, but this is still a conversation, not a \
 document. Do not write an essay.
 - Answer the ONE thing they asked. Do not pre-empt every related topic or dump a \

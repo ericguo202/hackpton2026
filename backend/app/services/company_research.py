@@ -690,11 +690,21 @@ async def _serper_search(query: str) -> dict:
     return resp.json()
 
 
-def _digest_serp(serp: dict) -> tuple[str, str]:
+def _digest_serp(serp: dict, *, include_links: bool = False) -> tuple[str, str]:
     """Return (knowledge_graph_description, compact_digest_for_gemini).
 
     The first value is used as a fallback description if Gemini parsing
     fails; the second is the blob we feed Gemini.
+
+    `include_links` adds each result's URL (and the knowledge graph's canonical
+    website) to the digest. It defaults to OFF because the research path — the
+    original caller — turns these results into a `CompanyBrief`, whose fields
+    (description / headlines / values) hold no URL: there the links are dead
+    weight in the prompt and one more thing for Gemini to weave into a headline.
+    The Ask-Tutor `search_web` tool is the opposite case — citing sources is its
+    whole job, and without the URLs the model can only NAME a page it is then
+    forbidden to link (its prompt bans reconstructing a URL from memory), so it
+    reports that no source URLs came back. Turn it ON for that caller only.
     """
     kg = serp.get("knowledgeGraph") or {}
     kg_desc = (kg.get("description") or "").strip()
@@ -706,6 +716,9 @@ def _digest_serp(serp: dict) -> tuple[str, str]:
         parts.append(f"  Type: {kg.get('type', '')}")
         if kg_desc:
             parts.append(f"  Description: {kg_desc}")
+        kg_site = (kg.get("website") or "").strip()
+        if include_links and kg_site:
+            parts.append(f"  Website: {kg_site}")
         for attr, val in (kg.get("attributes") or {}).items():
             parts.append(f"  {attr}: {val}")
 
@@ -715,7 +728,13 @@ def _digest_serp(serp: dict) -> tuple[str, str]:
         for r in organic:
             title = r.get("title", "")
             snippet = r.get("snippet", "")
-            parts.append(f"- {title}: {snippet}")
+            link = (r.get("link") or "").strip() if include_links else ""
+            if link:
+                # URL on its own line: a link carrying punctuation (parentheses,
+                # colons) can't then be misread as part of title or snippet.
+                parts.append(f"- {title}\n  Link: {link}\n  {snippet}")
+            else:
+                parts.append(f"- {title}: {snippet}")
 
     related = (serp.get("relatedSearches") or [])[:5]
     if related:
@@ -734,11 +753,16 @@ async def search_web_digest(query: str) -> str:
     which hands the digest straight to the tutor model as tool output. Keeping it
     here means Serper's URL / key / payload shape stay owned by one module.
 
+    Unlike the research path, this digest CARRIES THE RESULT URLs
+    (`include_links=True`): the tutor is required to cite its sources and is
+    forbidden to produce a link it did not receive here, so dropping them left
+    it able to name a source but never to link one.
+
     Raises whatever `_serper_search` raises (missing key → `RuntimeError`, HTTP
     → `httpx.HTTPError`); callers that must degrade gracefully catch it.
     """
     serp = await _serper_search(query)
-    _, digest = _digest_serp(serp)
+    _, digest = _digest_serp(serp, include_links=True)
     return digest
 
 
