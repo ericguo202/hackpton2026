@@ -14,6 +14,7 @@ from app.services.delivery_retention_scheduler import (
 )
 from app.services.incidents import log_error
 from app.services.policy_notifications import start_policy_notification_sweep
+from app.services.tts import SpeechSynthesisUnavailableError
 from app.services.moderation import (
     ModerationUnavailableError,
     ensure_moderation_configured,
@@ -106,6 +107,37 @@ async def moderation_unavailable_handler(
         content={
             "detail": (
                 "Content checks are temporarily unavailable. "
+                "Please try again in a moment."
+            )
+        },
+        headers={"Retry-After": "30"},
+    )
+
+
+@app.exception_handler(SpeechSynthesisUnavailableError)
+async def speech_synthesis_unavailable_handler(
+    request: Request, exc: SpeechSynthesisUnavailableError
+):
+    # ElevenLabs was unreachable or errored (DNS, timeout, 5xx, quota). The
+    # question text was generated but has no audio, and the wire contract
+    # requires audio, so the request fails — as a retryable 503 rather than an
+    # opaque 500. Logged as an error incident so the outage is visible in ops.
+    await log_error(
+        exc,
+        user_id=getattr(request.state, "user_id", None),
+        clerk_user_id=getattr(request.state, "clerk_user_id", None),
+        metadata={
+            "source": "speech_synthesis_unavailable",
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": 503,
+        },
+    )
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": (
+                "The interviewer's voice is temporarily unavailable. "
                 "Please try again in a moment."
             )
         },

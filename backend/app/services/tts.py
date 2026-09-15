@@ -45,6 +45,18 @@ MIN_SPEED = 0.7
 MAX_SPEED = 1.2
 
 
+class SpeechSynthesisUnavailableError(Exception):
+    """Raised when ElevenLabs cannot produce audio for a question.
+
+    Covers any transport failure (DNS resolution, connect/read timeout, TLS)
+    and any non-2xx response. Every interview question ships with inline
+    audio, so a caller cannot degrade to text-only — endpoints surface this
+    as a retryable 503 via the handler in `main.py` instead of a bare 500.
+    Configuration errors (missing key / voice) stay `RuntimeError`: those are
+    deploy bugs, not transient outages.
+    """
+
+
 def clamp_speed(speed: float | None) -> float:
     """Coerce an incoming speed into the ElevenLabs-supported range.
 
@@ -87,21 +99,41 @@ async def synthesize_speech(
         )
 
     url = ELEVENLABS_URL.format(voice_id=effective_voice_id)
-    async with httpx.AsyncClient(timeout=ELEVENLABS_TIMEOUT_SECONDS) as client:
-        resp = await client.post(
-            url,
-            headers={
-                "xi-api-key": settings.ELEVENLABS_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json={
-                "text": text,
-                "model_id": DEFAULT_MODEL_ID,
-                "output_format": DEFAULT_OUTPUT_FORMAT,
-                "voice_settings": {"speed": clamp_speed(speed)},
-            },
+    try:
+        async with httpx.AsyncClient(timeout=ELEVENLABS_TIMEOUT_SECONDS) as client:
+            resp = await client.post(
+                url,
+                headers={
+                    "xi-api-key": settings.ELEVENLABS_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "text": text,
+                    "model_id": DEFAULT_MODEL_ID,
+                    "output_format": DEFAULT_OUTPUT_FORMAT,
+                    "voice_settings": {"speed": clamp_speed(speed)},
+                },
+            )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        # Body is ElevenLabs' JSON error; clip it so a log line stays a line.
+        logger.error(
+            "ElevenLabs TTS returned %s for voice %s: %s",
+            exc.response.status_code, effective_voice_id, exc.response.text[:300],
         )
-    resp.raise_for_status()
+        raise SpeechSynthesisUnavailableError(
+            f"ElevenLabs returned HTTP {exc.response.status_code}"
+        ) from exc
+    except httpx.HTTPError as exc:
+        # ConnectError (incl. DNS "No address associated with hostname"),
+        # timeouts, TLS — the request never got a usable response.
+        logger.error(
+            "ElevenLabs TTS request failed for voice %s: %s: %s",
+            effective_voice_id, type(exc).__name__, exc,
+        )
+        raise SpeechSynthesisUnavailableError(
+            f"ElevenLabs unreachable: {type(exc).__name__}"
+        ) from exc
 
     b64 = base64.b64encode(resp.content).decode("ascii")
     return f"data:audio/mpeg;base64,{b64}"

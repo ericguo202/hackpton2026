@@ -78,3 +78,35 @@ async def test_missing_voice_id_raises(monkeypatch):
 
     with pytest.raises(RuntimeError, match="ELEVENLABS_VOICE_ID"):
         await synthesize_speech("Hello.")
+
+
+async def test_connect_error_maps_to_unavailable(monkeypatch):
+    """A DNS/transport failure must surface as the typed outage error, not
+    leak httpx.ConnectError to the generic 500 handler."""
+    import httpx
+
+    monkeypatch.setattr(tts.settings, "ELEVENLABS_API_KEY", "test-key")
+
+    async def _boom(self, *args, **kwargs):
+        raise httpx.ConnectError("[Errno -5] No address associated with hostname")
+
+    monkeypatch.setattr("httpx.AsyncClient.post", _boom)
+
+    with pytest.raises(tts.SpeechSynthesisUnavailableError) as info:
+        await synthesize_speech("Hello.", voice_id="v1")
+    assert isinstance(info.value.__cause__, httpx.ConnectError)
+
+
+async def test_http_status_error_maps_to_unavailable(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(tts.settings, "ELEVENLABS_API_KEY", "test-key")
+
+    async def _fake_post(self, url, *args, **kwargs):
+        req = httpx.Request("POST", url)
+        return httpx.Response(429, request=req, json={"detail": "quota"})
+
+    monkeypatch.setattr("httpx.AsyncClient.post", _fake_post)
+
+    with pytest.raises(tts.SpeechSynthesisUnavailableError, match="HTTP 429"):
+        await synthesize_speech("Hello.", voice_id="v1")

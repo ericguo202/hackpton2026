@@ -48,12 +48,16 @@ logger = logging.getLogger(__name__)
 # capped at 10/user, so the spend is negligible.
 #
 # The category axis is a genuine four-way classification (harder than the old
-# binary valid/relevant call), so the paid Flash model leads and the small
-# free-tier model is the fallback — the reverse of the original pairing.
+# binary valid/relevant call), so the no-reasoning Flash model leads and the
+# low-reasoning one is the fallback — the reverse of the JD match-check's
+# pairing, which leads with the reasoning model.
 VALIDATE_MODEL = "deepseek/deepseek-v4-flash"
-# Free fallback when the primary is erroring. The path still fails open, so this
-# mainly raises the odds of a real judgement before the default takes over.
-VALIDATE_FALLBACK_MODEL = "openai/gpt-oss-120b:free"
+# Fallback when the primary is erroring. Was `openai/gpt-oss-120b:free` until
+# that free model was discontinued (2026-09-12); the pinned Flash snapshot took
+# its place and keeps the low-reasoning setting. Same family as the primary now,
+# so it no longer hedges against a family-wide outage. The path still fails open,
+# so this mainly raises the odds of a real judgement before the default.
+VALIDATE_FALLBACK_MODEL = "deepseek/deepseek-v4-flash-0731"
 VALIDATE_LLM_TIMEOUT_SECONDS = 20.0
 
 # Slug -> enum for the category axis. Anything else the model emits (a typo, a

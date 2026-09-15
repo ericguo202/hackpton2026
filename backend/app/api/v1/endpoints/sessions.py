@@ -474,9 +474,8 @@ async def create_session(
         )
 
     # Generate the session UUID up front so the voice can be resolved
-    # before the row hits the DB. This lets TTS and the INSERT run in
-    # parallel instead of waiting on the DB to hand back a
-    # server-generated UUID.
+    # before the row hits the DB (the voice is derived from the id on the
+    # "Surprise me" path and persisted on the row).
     session_id = uuid.uuid4()
     # Honor the candidate's picker choice when valid, else a deterministic
     # per-session voice (see `resolve_voice`). The resolved voice is persisted
@@ -488,29 +487,38 @@ async def create_session(
     # reused verbatim by turn 2's follow-up TTS.
     speech_speed = resolve_speed(voice_id, body.speech_pace)
 
-    audio_url, _ = await asyncio.gather(
-        synthesize_speech(opening_q, voice_id=voice_id, speed=speech_speed),
-        _persist_session_and_turn(
-            db,
-            user,
-            company=body.company,
-            job_title=body.job_title,
-            company_summary=brief.model_dump_json(),
-            opening_q=opening_q,
-            session_id=session_id,
-            voice_id=voice_id,
-            experience_level=user.experience_level,
-            num_turns=effective_num_turns,
-            # A custom question is a deliberate, reusable pick — don't push it
-            # into the generation avoid-list (it isn't a generated question).
-            roll_recent=custom_question is None,
-            # Persist the resolved pace so turn 2's TTS matches turn 1.
-            speech_speed=speech_speed,
-            # Stamp turn 1 with its category — the picker's choice, a Mix draw,
-            # or the custom question's own classified category.
-            question_category=question_category,
-            calibrated_mix=mixed_mode,
-        ),
+    # TTS BEFORE the INSERT, deliberately sequential (mirrors re-practice in
+    # saved_questions.py). These used to run in one asyncio.gather, but
+    # `_persist_session_and_turn` COMMITS — so an ElevenLabs failure (DNS,
+    # timeout, 5xx) propagated out of gather while the row was already, or
+    # still being, written, leaving an orphan in_progress session with a
+    # pending turn the candidate never saw. Synthesis has no side effects, so
+    # failing here (→ 503 via SpeechSynthesisUnavailableError) leaves nothing
+    # behind. Cost: the DB round-trip is no longer hidden under the ~1s TTS
+    # call — tens of milliseconds.
+    audio_url = await synthesize_speech(
+        opening_q, voice_id=voice_id, speed=speech_speed
+    )
+    await _persist_session_and_turn(
+        db,
+        user,
+        company=body.company,
+        job_title=body.job_title,
+        company_summary=brief.model_dump_json(),
+        opening_q=opening_q,
+        session_id=session_id,
+        voice_id=voice_id,
+        experience_level=user.experience_level,
+        num_turns=effective_num_turns,
+        # A custom question is a deliberate, reusable pick — don't push it
+        # into the generation avoid-list (it isn't a generated question).
+        roll_recent=custom_question is None,
+        # Persist the resolved pace so turn 2's TTS matches turn 1.
+        speech_speed=speech_speed,
+        # Stamp turn 1 with its category — the picker's choice, a Mix draw,
+        # or the custom question's own classified category.
+        question_category=question_category,
+        calibrated_mix=mixed_mode,
     )
     await log_interview_session_started(
         db,

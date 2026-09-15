@@ -40,14 +40,16 @@ from app.services._openrouter import (
 
 logger = logging.getLogger(__name__)
 
-# Cheap, fast, free model with optional reasoning — adequate for a binary
-# consistency judgement. Distinct from the autocomplete fallback
-# (`openai/gpt-oss-120b`, no `:free`); this path is gated on a non-empty JD
-# and fails open, so the free tier's rate limits are acceptable.
-MATCH_MODEL = "openai/gpt-oss-120b:free"
-# Paid fallback when the free primary is rate-limited or erroring, run without
-# reasoning. The path still fails open, so this mainly raises the odds of a real
-# judgement before the fail-open default takes over.
+# Cheap, fast model run with low reasoning — adequate for a binary consistency
+# judgement. Was `openai/gpt-oss-120b:free` until that free model was
+# discontinued (2026-09-12); the pinned Flash snapshot took its place and keeps
+# the low-reasoning setting. This path is gated on a non-empty JD and fails open.
+MATCH_MODEL = "deepseek/deepseek-v4-flash-0731"
+# Fallback when the primary is rate-limited or erroring, run without reasoning.
+# Since the swap this is the SAME model family as the primary (pinned snapshot
+# vs. floating tag), so it no longer hedges against a family-wide outage — it
+# still covers a bad snapshot or a per-model rate limit. The path fails open, so
+# this mainly raises the odds of a real judgement before the default takes over.
 MATCH_FALLBACK_MODEL = "deepseek/deepseek-v4-flash"
 MATCH_LLM_TIMEOUT_SECONDS = 20.0
 
