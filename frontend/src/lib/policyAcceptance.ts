@@ -10,8 +10,8 @@
 
 import type { MeResponse } from '../types/user';
 
-export const CURRENT_TERMS_VERSION = 1 as const;
-export const CURRENT_PRIVACY_VERSION = 1 as const;
+export const CURRENT_TERMS_VERSION = 2 as const;
+export const CURRENT_PRIVACY_VERSION = 2 as const;
 
 type AcceptanceFields = Pick<
   MeResponse,
