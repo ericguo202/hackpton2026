@@ -100,7 +100,18 @@ write_upstream() {
 
 reload_or_start_caddy() {
     compose up -d --no-deps caddy
-    compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+    # When `up` (re)creates the container, Caddy's admin API (:2019) isn't
+    # listening yet and an immediate reload is refused. Retry until it answers;
+    # reload is idempotent, so a container that already booted with the new
+    # upstream is unaffected.
+    for _ in $(seq 1 15); do
+        if compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "[deploy] Caddy admin API never accepted the reload"
+    return 1
 }
 
 rollback_caddy() {
