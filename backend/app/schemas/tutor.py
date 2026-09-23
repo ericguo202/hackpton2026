@@ -37,3 +37,19 @@ class TutorMessageIn(BaseModel):
     # message the model sees so it knows which part they're referring to. Carries
     # a transcript excerpt (not user-typed input), so it keeps its larger cap.
     context_snippet: str | None = Field(default=None, max_length=2000)
+
+
+class GeneralTutorMessageIn(BaseModel):
+    """Request body for the general coach (`POST /api/v1/tutor`).
+
+    Same ephemeral contract as `TutorMessageIn` — the client re-sends the running
+    history each time — with two differences. The message cap is larger (a
+    general question names companies, assessments and sources: "how do I prepare
+    for the IBM behavioral online assessment, and what do candidates report on
+    Reddit?" doesn't fit in 300 chars), and there is no `context_snippet` because
+    there is no transcript to point at.
+    """
+
+    # Mirrors `MAX_GENERAL_MESSAGE_CHARS` in frontend/src/types/tutor.ts.
+    message: str = Field(min_length=1, max_length=1000)
+    history: list[TutorHistoryItem] = Field(default_factory=list, max_length=40)

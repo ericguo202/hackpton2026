@@ -7,7 +7,7 @@
  * `vite.config.ts`, so it cannot reach the client build. Nothing in the app
  * imports this module.
  *
- * WHY IT EXISTS: the only thing stopping the five public pages from rendering in
+ * WHY IT EXISTS: the only thing stopping the public pages from rendering in
  * plain Node is a missing React *context*, not a browser API — `Scoring.tsx`
  * calls `useAuth()`, which throws outside `<ClerkProvider>`. A context-free stub
  * fixes that completely, which is why no other component in the public tree

@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { scoreDimensionsFor, type ScoreKey } from '../../lib/scoreDimensions';
 import type { DimensionAverages, SessionDetail } from '../../types/history';
 import FillerRateBar from './FillerRateBar';
+import SpeakingPaceBar from './SpeakingPaceBar';
 import { isMixedCategorySession, num } from './_helpers';
 
 type Props = {
@@ -39,6 +40,7 @@ export default function OverviewPanel({ session, sessionCompleted }: Props) {
         mixed={isMixedCategorySession(session.turns)}
         averages={session.averages}
         fillerRate={num(session.filler_word_rate)}
+        paceWpm={session.speaking_pace_wpm}
         caption={
           sessionCompleted
             ? undefined
@@ -115,17 +117,25 @@ export function ScoresOverviewColumn({
   averages,
   caption,
   fillerRate,
+  paceWpm,
   category,
   mixed = false,
 }: {
   averages: DimensionAverages;
   caption?: ReactNode;
   /**
-   * Session-level filler rate (percent). Rendered as a distinct, full-width
-   * traffic-light bar BELOW the six score tiles — a different kind of metric
-   * (lower is better), so deliberately not a 7th tile. Omitted when null.
+   * Session-level filler rate (percent). Rendered as a distinct traffic-light
+   * bar BELOW the six score tiles — a different kind of metric (lower is
+   * better), so deliberately not a 7th tile. Omitted when null.
    */
   fillerRate?: number | null;
+  /**
+   * Session-level speaking pace (words per minute), word-weighted across
+   * turns. Sits beside the filler rate in the same delivery-metrics row — also
+   * transcript-derived rather than scored, and two-sided rather than
+   * lower-is-better. Omitted when null (unmeasured / too short).
+   */
+  paceWpm?: number | null;
   /**
    * The session's question category (single-category per session). Resolves the
    * per-position tile labels (STAR vs Motivation & Fit). Omitted/unknown → STAR.
@@ -170,9 +180,20 @@ export function ScoresOverviewColumn({
         ))}
       </div>
 
-      {fillerRate != null && (
-        <div className="mt-3 rounded-lg bg-surface-sunken p-4">
-          <FillerRateBar rate={fillerRate} variant="block" />
+      {/* Delivery metrics, side by side on desktop. Either can be null
+          independently, in which case the other takes the full width. */}
+      {(fillerRate != null || paceWpm != null) && (
+        <div className="mt-3 grid gap-3 min-[900px]:grid-cols-2">
+          {fillerRate != null && (
+            <div className="rounded-lg bg-surface-sunken p-4">
+              <FillerRateBar rate={fillerRate} variant="block" />
+            </div>
+          )}
+          {paceWpm != null && (
+            <div className="rounded-lg bg-surface-sunken p-4">
+              <SpeakingPaceBar wpm={paceWpm} variant="block" />
+            </div>
+          )}
         </div>
       )}
     </section>

@@ -7,17 +7,19 @@
  * copyright above a two-column link grid; ≥900px it's a single row with the
  * columns pulled to the right.
  *
- * The "About" column is shown on BOTH surfaces: Scoring is a public
- * transparency page, and a signed-out visitor questioning our methodology is
- * exactly who needs it. `signedIn` only adds the Delivery Playground link —
- * that page is auth-gated (it re-derives a score from your own calibration),
- * so linking it signed-out would just bounce to /sign-in.
+ * The "About" column is shown on BOTH surfaces: Scoring and Pricing are public
+ * pages, and a signed-out visitor weighing our methodology or wondering what
+ * "free" actually means is exactly who needs them. `signedIn` only adds the
+ * Delivery Playground link — that page is auth-gated (it re-derives a score
+ * from your own calibration), so linking it signed-out would just bounce to
+ * /sign-in.
  */
 
 import { Link } from 'react-router';
 
 import { LEGAL_LINKS } from '../lib/legalLinks';
 
+const PRICING_LINK = { to: '/pricing', label: 'Pricing' } as const;
 const SCORING_LINK = { to: '/scoring', label: 'Scoring' } as const;
 const DELIVERY_PLAYGROUND_LINK = {
   to: '/delivery-playground',
@@ -60,8 +62,8 @@ type Props = { signedIn?: boolean };
 
 export default function SiteFooter({ signedIn = false }: Props) {
   const aboutLinks: FooterLink[] = signedIn
-    ? [SCORING_LINK, DELIVERY_PLAYGROUND_LINK]
-    : [SCORING_LINK];
+    ? [PRICING_LINK, SCORING_LINK, DELIVERY_PLAYGROUND_LINK]
+    : [PRICING_LINK, SCORING_LINK];
 
   return (
     <footer className="flex flex-col gap-6 border-t border-border px-8 md:px-16 py-7 min-[900px]:flex-row min-[900px]:items-start min-[900px]:justify-between">

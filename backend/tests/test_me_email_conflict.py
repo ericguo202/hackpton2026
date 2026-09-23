@@ -6,7 +6,7 @@ pre-onboarding caller's session-token email is already claimed by a DIFFERENT
 users row. These tests call the handler directly with a mocked AsyncSession —
 no Postgres — mirroring the service-level unit tests in this suite.
 
-A `pro`-tier user is used throughout so the free-tier `daily_check_and_reset`
+A `pro`-tier user is used throughout so the free-tier `check_and_reset_turns`
 branch is skipped (it's irrelevant to this logic and would need its own mock).
 """
 
@@ -24,7 +24,8 @@ def _claims(sub: str = "user_new", email: str | None = "dup@example.com") -> Cle
 
 
 def _user(**overrides) -> SimpleNamespace:
-    base = dict(tier=UserTier.pro, completed_registration=False)
+    # `timezone` is read by the seed-once block at the top of `get_me`.
+    base = dict(tier=UserTier.pro, completed_registration=False, timezone="UTC")
     base.update(overrides)
     return SimpleNamespace(**base)
 
@@ -34,7 +35,7 @@ async def test_flags_conflict_when_email_claimed_by_other_row():
     db = AsyncMock()
     db.scalar.return_value = uuid.uuid4()  # another row owns this email
 
-    result = await me_module.get_me(claims=_claims(), user=user, db=db)
+    result = await me_module.get_me(claims=_claims(), user=user, db=db, tz=None)
 
     assert result.email_conflict is True
     db.scalar.assert_awaited_once()
@@ -45,7 +46,7 @@ async def test_no_conflict_when_email_unclaimed():
     db = AsyncMock()
     db.scalar.return_value = None
 
-    result = await me_module.get_me(claims=_claims(), user=user, db=db)
+    result = await me_module.get_me(claims=_claims(), user=user, db=db, tz=None)
 
     assert result.email_conflict is False
 
@@ -54,7 +55,7 @@ async def test_skips_check_once_onboarded():
     user = _user(completed_registration=True)
     db = AsyncMock()
 
-    result = await me_module.get_me(claims=_claims(), user=user, db=db)
+    result = await me_module.get_me(claims=_claims(), user=user, db=db, tz=None)
 
     db.scalar.assert_not_called()
     # Never stamped → UserOut's default (False) applies.
@@ -66,7 +67,7 @@ async def test_fails_open_when_email_claim_absent():
     user = _user()
     db = AsyncMock()
 
-    result = await me_module.get_me(claims=_claims(email=None), user=user, db=db)
+    result = await me_module.get_me(claims=_claims(email=None), user=user, db=db, tz=None)
 
     db.scalar.assert_not_called()
     assert getattr(result, "email_conflict", False) is False

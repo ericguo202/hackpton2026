@@ -32,6 +32,7 @@ import AdvancedPanel, { SPEECH_PACE_DEFAULT } from '../components/AdvancedPanel'
 import type { SpeechPace } from '../components/AdvancedPanel';
 import AdvancedPanelDrawer from '../components/AdvancedPanelDrawer';
 import SessionLengthField, {
+  MAX_SESSION_TURNS,
   MIN_SESSION_TURNS,
 } from '../components/SessionLengthField';
 import DeliveryConsentDialog from '../components/DeliveryConsentDialog';
@@ -43,9 +44,15 @@ import PrivacyPanel from '../components/PrivacyPanel';
 import PrivacyPanelDrawer from '../components/PrivacyPanelDrawer';
 import QuestionTypeField from '../components/QuestionTypeField';
 import { RECOMMENDED_MIX } from '../types/session';
+import {
+  MAX_SESSIONS_PER_WEEK,
+  MAX_TURNS_PER_DAY,
+  usageBudget,
+} from '../types/user';
 import RoleSwitcher from '../components/RoleSwitcher';
 import SiteFooter from '../components/SiteFooter';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { useApi } from '../hooks/useApi';
 import { useCustomQuestions } from '../hooks/useCustomQuestions';
@@ -292,13 +299,23 @@ export default function Home() {
           // user's "today" for the free-tier daily-limit reset. Untrusted
           // on the server side (UTC fallback on parse failure).
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          num_turns: numTurns,
+          // Clamped to what's left of today's turn budget. The backend clamps
+          // too (and echoes the result back as `num_turns` below) — doing it
+          // here as well keeps the slider, the request and the session that
+          // actually runs in agreement, so the length never silently shrinks
+          // between what the user set and what they get.
+          num_turns: Math.min(numTurns, budget.turnsLeft ?? numTurns),
           // "Recommended Mix" is a UI-only sentinel: send `calibrated_mix` so the
           // backend draws a calibrated category per opening. An explicit type
           // keeps the single-category path (sends `question_category`).
-          ...(questionCategory === RECOMMENDED_MIX
-            ? { calibrated_mix: true }
-            : { question_category: questionCategory }),
+          // A custom question carries its own classified category and forces Mix
+          // for the later openings server-side, so send neither — the picker is
+          // disabled in that state and its value would just be ignored.
+          ...(selectedCustomQuestionId
+            ? {}
+            : questionCategory === RECOMMENDED_MIX
+              ? { calibrated_mix: true }
+              : { question_category: questionCategory }),
           speech_pace: speechPace,
           ...(voiceId ? { voice_id: voiceId } : {}),
           ...(jd ? { job_description: jd } : {}),
@@ -388,21 +405,50 @@ export default function Home() {
     <RoleSwitcher me={me} refetch={refetch} />
   ) : null;
 
-  // Free-tier usage indicator. Pro users see nothing — the counter is
+  // Free-tier usage indicator. Pro users see nothing — the counters are
   // meaningless to them. Rendered as data, not celebration: no progress
   // bar, no streak, no color. Refreshes automatically when the user
   // returns to Home after completing a session (useMe refetches on mount).
+  //
+  // Two independent windows, so both are shown: turns are what a long session
+  // spends, sessions are what the week allows. Seeing only one would leave a
+  // user with 8 turns left but no weekly sessions confused about the block.
+  const budget = usageBudget(me);
   const dailyLimitBadge = me?.tier === 'free' ? (
     <p className="text-sm text-text-subtle">
-      <span className="text-text-muted">{me.daily_session_count}/5</span> sessions today
+      <span className="text-text-muted">{me.daily_turn_count}/{MAX_TURNS_PER_DAY}</span>{' '}
+      questions today
+      <span aria-hidden className="mx-2 text-border-strong">·</span>
+      <span className="text-text-muted">
+        {me.weekly_session_count}/{MAX_SESSIONS_PER_WEEK}
+      </span>{' '}
+      sessions this week
     </p>
   ) : null;
 
-  // Compact daily-count status under the mobile pinned Begin button. The target
+  // Why the Begin button is off, stated where the counter is — so the user
+  // learns it before submitting rather than from a flash banner afterwards.
+  // The 429 path below stays as the backstop for the read-only pre-check race.
+  const limitNotice = budget.blocked ? (
+    <p role="alert" className="text-sm leading-[1.6] text-critique">
+      {budget.blockedBy === 'sessions'
+        ? `You've used all ${MAX_SESSIONS_PER_WEEK} interviews this week. Your sessions reset Monday.`
+        : `You've used all ${MAX_TURNS_PER_DAY} interview questions today. They reset at midnight.`}
+    </p>
+  ) : null;
+
+  // Compact usage status under the mobile pinned Begin button. The target
   // role now lives in the mobile slab as its own switcher (see below), so the
-  // pinned bar only carries the free-tier daily count. Empty (hidden) otherwise.
+  // pinned bar only carries the free-tier count. Empty (hidden) otherwise.
+  // Narrow bar, so it names only the binding limit rather than both windows.
   const mobileBarStatus =
-    me?.tier === 'free' ? `${me.daily_session_count}/5 today` : '';
+    me?.tier !== 'free'
+      ? ''
+      : budget.blockedBy === 'sessions'
+        ? 'No sessions left this week'
+        : budget.blockedBy === 'turns'
+          ? 'No questions left today'
+          : `${budget.turnsLeft} questions left today`;
 
   const errorBlock = setupError ? (
     <p role="alert" aria-live="polite" className="mt-10 text-sm leading-[1.6] text-text-muted">
@@ -418,18 +464,7 @@ export default function Home() {
       <TopBar
         nav={
           <>
-            <TopBarNavLink to="/" matchPatterns={['/practice']} tourId="nav-practice">
-              Practice
-            </TopBarNavLink>
-            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']} tourId="nav-history">
-              History
-            </TopBarNavLink>
-            <TopBarNavLink to="/personalize" tourId="nav-personalize">
-              Personalize
-            </TopBarNavLink>
-            <TopBarNavLink to="/calibrate" tourId="nav-calibration">
-              Calibration
-            </TopBarNavLink>
+            <AppNav withTourIds />
           </>
         }
         rightSlot={<AccountButton />}
@@ -511,11 +546,14 @@ export default function Home() {
                     numTurns={numTurns}
                     onChange={setNumTurns}
                     disabled={submitting}
+                    maxTurns={budget.turnsLeft ?? MAX_SESSION_TURNS}
                   />
                   <QuestionTypeField
                     value={questionCategory}
                     onChange={setQuestionCategory}
                     disabled={submitting}
+                    customQuestionSelected={selectedCustomQuestionId !== null}
+                    onOpenCustomQuestion={() => setSurface('advanced')}
                     tourId="question-type"
                   />
                 </div>
@@ -553,12 +591,12 @@ export default function Home() {
                 >
                   <Button
                     type="submit"
-                    disabled={!company.trim() || submitting}
+                    disabled={!company.trim() || submitting || budget.blocked}
                   >
                     {submitting ? 'Starting...' : 'Begin session'}
                   </Button>
                   {targetRoleBadge}
-                  {dailyLimitBadge}
+                  {limitNotice ?? dailyLimitBadge}
                 </div>
 
                 {errorBlock}
@@ -607,11 +645,14 @@ export default function Home() {
                     numTurns={numTurns}
                     onChange={setNumTurns}
                     disabled={submitting}
+                    maxTurns={budget.turnsLeft ?? MAX_SESSION_TURNS}
                   />
                   <QuestionTypeField
                     value={questionCategory}
                     onChange={setQuestionCategory}
                     disabled={submitting}
+                    customQuestionSelected={selectedCustomQuestionId !== null}
+                    onOpenCustomQuestion={() => setSurface('advanced')}
                   />
                 </div>
 
@@ -717,13 +758,17 @@ export default function Home() {
           <Button
             type="submit"
             form="setup-form"
-            disabled={!company.trim() || submitting}
+            disabled={!company.trim() || submitting || budget.blocked}
             className="w-full"
           >
             {submitting ? 'Starting...' : 'Begin session'}
           </Button>
           {mobileBarStatus && (
-            <p className="mt-2 text-center text-xs text-text-subtle">
+            <p
+              className={`mt-2 text-center text-xs ${
+                budget.blocked ? 'text-critique' : 'text-text-subtle'
+              }`}
+            >
               {mobileBarStatus}
             </p>
           )}

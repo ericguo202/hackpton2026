@@ -22,6 +22,7 @@ from fastapi import HTTPException
 
 from app.api.v1.endpoints import sessions as sessions_module
 from app.db.models.enums import SessionStatus
+from app.services.stt import Transcription
 
 
 class _LockingResult:
@@ -87,7 +88,9 @@ def _patch_io(monkeypatch, *, transcript):
     """Stub STT/moderation/TTS so the endpoint reaches the branch under test."""
 
     async def _fake_transcribe(_bytes, _filename):
-        return transcript
+        # STT returns transcript + speech span (the words-per-minute
+        # denominator); the span is irrelevant to these branches.
+        return Transcription(text=transcript, duration_seconds=12.0)
 
     async def _fake_read_audio(_audio):
         return b"x"

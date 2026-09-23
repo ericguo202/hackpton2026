@@ -55,6 +55,7 @@ const Personalize = lazyWithRetry(
   'Personalize',
 );
 const Practice = lazyWithRetry(() => import('./pages/Practice'), 'Practice');
+const Pricing = lazyWithRetry(() => import('./pages/Pricing'), 'Pricing');
 const SavedQuestionDetail = lazyWithRetry(
   () => import('./pages/SavedQuestionDetail'),
   'SavedQuestionDetail',
@@ -65,6 +66,7 @@ const SessionDetail = lazyWithRetry(
   () => import('./pages/SessionDetail'),
   'SessionDetail',
 );
+const Tutor = lazyWithRetry(() => import('./pages/Tutor'), 'Tutor');
 const SignIn = lazyWithRetry(() => import('./pages/SignIn'), 'SignIn');
 const SignUp = lazyWithRetry(() => import('./pages/SignUp'), 'SignUp');
 const SsoCallback = lazyWithRetry(
@@ -135,6 +137,10 @@ function App() {
           methodology can read it before making an account. Static prose — no
           user data, nothing to gate. */}
       <Route path="/scoring" element={<Scoring />} />
+      {/* Also public: what the free plan gets you, which is exactly the
+          question a signed-out visitor is weighing. Static prose + shared cap
+          constants — no user data, nothing to gate. */}
+      <Route path="/pricing" element={<Pricing />} />
 
       <Route element={<RedirectIfOnboarded />}>
         <Route path="/sign-in" element={<SignIn />} />
@@ -149,6 +155,10 @@ function App() {
         <Route element={<RequireOnboarded />}>
           <Route path="/practice" element={<Practice />} />
           <Route path="/history" element={<History />} />
+          {/* The general interview coach. Behind RequireOnboarded because its
+              prompt is built from the candidate's experience level and target
+              roles — there is nothing to coach before onboarding. */}
+          <Route path="/tutor" element={<Tutor />} />
           <Route path="/delivery-playground" element={<DeliveryPlayground />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
           <Route path="/saved-question/:id" element={<SavedQuestionDetail />} />

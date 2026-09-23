@@ -9,3 +9,8 @@ __pycache__/
 tests/
 *.md
 interview_feedback_latest.json
+
+# Standalone cv2/mediapipe dev prototypes — never imported by the app, and
+# opencv/ carries a ~4.7 MB face_landmarker.task model + local recordings.
+opencv.py
+opencv/

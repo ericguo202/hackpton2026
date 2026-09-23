@@ -185,11 +185,15 @@
   --color-chart-6: #48538e;  /* indigo     — delivery        */
 
   /* ---------- Rate quality (traffic-light) ----------
-     Threshold colors for the filler-word rate bar (lower is better):
+     Threshold colors for the two transcript-derived delivery bars.
+     FillerRateBar (lower is better):
        good ≤5% · ok ≤10% · warn ≤15% · bad >15%.
+     SpeakingPaceBar (two-sided — see lib/speakingPace.ts):
+       bad <120 wpm · good 120-160 · ok 160-175 · bad >175. (warn is unused
+       there; pace has one amber band, not two.)
      Muted greens/ambers/terracotta/brick so the scale reads as a traffic
-     light without breaking the palette. Used only by FillerRateBar;
-     re-resolved per theme in the html.dark block below. */
+     light without breaking the palette; re-resolved per theme in the
+     html.dark block below. */
   --color-rate-good: #4a7a4a;  /* forest green */
   --color-rate-ok:   #b58a2c;  /* amber        */
   --color-rate-warn: #c2683a;  /* terracotta   */

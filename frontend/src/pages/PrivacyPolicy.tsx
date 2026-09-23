@@ -12,8 +12,7 @@
  * Deliberately PUBLIC (no auth guard) so anyone can read it, and so it can be
  * linked from consent surfaces and sign-up.
  *
- * This is a DRAFT pending legal review — see PRIVACY_REVIEW.md for the
- * data-flow inventory, law-by-law analysis, and open questions for counsel.
+ * See PRIVACY_REVIEW.md for the data-flow inventory and law-by-law analysis.
  * Keep biometric/voice retention specifics in the Biometric Data Retention
  * Policy (single source of truth for the 12-month figure); cross-reference it
  * here rather than restating it.
@@ -24,11 +23,11 @@ import { Link } from 'react-router';
 
 import TopBar from '../components/TopBar';
 
-// Placeholders for counsel to finalize before publication. Kept identical to
-// the Biometric Data Retention Policy so the two documents stay in sync.
-const ENTITY = '[Legal Entity Name]';
+// Kept identical to the Biometric Data Retention Policy so the two documents
+// stay in sync.
+const ENTITY = 'InterviewPie';
 const PRIVACY_EMAIL = 'privacy@interviewpie.com';
-const EFFECTIVE_DATE = '[Effective date — pending legal review]';
+const EFFECTIVE_DATE = 'September 22, 2026';
 
 function Section({
   id,
@@ -87,20 +86,7 @@ export default function PrivacyPolicy() {
       />
 
       <main className="mx-auto w-full max-w-[52rem] px-6 pb-24 pt-6 md:px-10 2xl:max-w-[56rem]">
-        {/* DRAFT banner — remove once counsel approves. */}
-        <div
-          role="note"
-          className="rounded-lg border border-border-strong bg-surface-sunken px-4 py-3 text-xs leading-6 text-text"
-        >
-          <span className="font-medium uppercase tracking-eyebrow">
-            Draft — pending legal review.
-          </span>{' '}
-          This document is a working draft prepared for review by counsel and is
-          not yet in force. Bracketed items are placeholders to be finalized
-          before publication.
-        </div>
-
-        <p className="mt-8 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+        <p className="mt-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
           Legal
         </p>
         <h1
@@ -483,10 +469,7 @@ export default function PrivacyPolicy() {
             information will be transferred to and processed in the United States.
             Where required for transfers from the EU/EEA, UK, or Switzerland, we
             rely on an appropriate transfer mechanism (such as the European
-            Commission&rsquo;s Standard Contractual Clauses).{' '}
-            <span className="text-text-muted">
-              [Transfer mechanism to be confirmed by counsel.]
-            </span>
+            Commission&rsquo;s Standard Contractual Clauses).
           </p>
         </Section>
 
@@ -547,8 +530,6 @@ export default function PrivacyPolicy() {
         </Section>
 
         <p className="mt-12 border-t border-border pt-6 text-xs leading-6 text-text-muted">
-          This draft is provided for legal review and does not constitute legal
-          advice or a binding commitment until finalized and published.{' '}
           <Link
             to="/"
             className="underline-offset-4 transition-colors hover:text-text hover:underline"

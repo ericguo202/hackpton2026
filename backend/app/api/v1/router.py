@@ -56,9 +56,10 @@ api_router.include_router(
     tags=["custom-questions"],
 )
 
-# Protected. Ask Tutor chat, scoped to one turn. The route declares its full
-# nested path (/sessions/{id}/turns/{turn_id}/tutor), so it's registered with
-# no prefix.
+# Protected. Ask Tutor chat, on both surfaces: the turn-scoped chat and the
+# general coach. Each route declares its own full path (the nested
+# /sessions/{id}/turns/{turn_id}/tutor and the flat /tutor), so the module is
+# registered with no prefix.
 api_router.include_router(tutor.router, tags=["tutor"])
 
 # Protected. Required beta feedback after completed sessions.

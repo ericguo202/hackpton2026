@@ -49,7 +49,17 @@ export function useMe() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await apiFetch<MeResponse>('/api/v1/me');
+      // Browser-local IANA timezone. The backend SEEDS `users.timezone` from
+      // this the first time it sees one and never overwrites it, so the
+      // free-tier counters roll on the user's local midnight rather than UTC's.
+      // `/me` carries it because it's the first authenticated call on every page
+      // load: POST /sessions sends the timezone too, but a user who only ever
+      // opens Ask Tutor never reaches that path and would keep rolling on UTC.
+      // Omitted rather than sent empty where the runtime can't resolve one.
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const data = await apiFetch<MeResponse>(
+        tz ? `/api/v1/me?timezone=${encodeURIComponent(tz)}` : '/api/v1/me',
+      );
       // Update every live instance, not just this one.
       broadcastMe(data);
     } catch (err) {

@@ -15,6 +15,6 @@ frontend mirror), but bumping it — like bumping any of these constants — tri
 the policy-change notification email in `policy_notifications.py`.
 """
 
-CURRENT_TERMS_VERSION = 1
-CURRENT_PRIVACY_VERSION = 1
-CURRENT_BIOMETRIC_VERSION = 1
+CURRENT_TERMS_VERSION = 2
+CURRENT_PRIVACY_VERSION = 2
+CURRENT_BIOMETRIC_VERSION = 2

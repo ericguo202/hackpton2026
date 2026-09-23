@@ -119,6 +119,8 @@ export type TurnResult = {
   feedback_detail: FeedbackDetail | null;
   filler_word_count: number;
   filler_word_breakdown: Record<string, number>;
+  /** Words per minute for the just-submitted turn. Null when unknown / too short. */
+  speaking_pace_wpm: number | null;
   next_question: string | null;
   next_question_audio_url: string | null;
   // True when the next question is a follow-up (drills into the current story)

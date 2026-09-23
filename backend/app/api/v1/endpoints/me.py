@@ -45,8 +45,10 @@ from app.schemas.user import (
     PolicyAcceptanceIn,
     UserOut,
 )
-from app.services.daily_limit import check_and_reset as daily_check_and_reset
 from app.services.daily_limit import check_and_reset_chat
+from app.services.daily_limit import check_and_reset_turns
+from app.services.daily_limit import check_and_reset_week
+from app.services.daily_limit import is_known_timezone
 from app.services.delivery_consent import (
     DELIVERY_ANALYTICS_NOTICE_VERSION,
     purge_delivery_analytics_for_user,
@@ -70,15 +72,52 @@ async def get_me(
     claims: ClerkClaims = Depends(current_user),
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
+    tz: str | None = Query(default=None, alias="timezone", max_length=64),
 ) -> User:
-    # Roll over the free-tier daily counter at view time so Home's "X/5
-    # sessions today" reflects the user's local-calendar today, not the
-    # day they last started a session. Without this, a user who hit the
-    # cap last night sees a stale "5/5" the next morning even though the
-    # gate at POST /sessions would let them through. `check_and_reset`
-    # refreshes the attached ORM instance, so the value below is current.
+    # Seed the caller's IANA timezone on first sight, BEFORE the rollovers below
+    # read it.
+    #
+    # `users.timezone` used to be written in exactly one place —
+    # `enforce_session_start_limits`, reachable only from POST /sessions and the
+    # re-practice route — so a user who chatted with Ask Tutor before ever
+    # starting an interview kept a NULL timezone, and all three counters rolled
+    # on UTC instead of their local day. Practising at 10pm Eastern stamped the
+    # spend against the NEXT UTC date, and the counter then visibly failed to
+    # reset at local midnight. /me is the first authenticated call on every page
+    # load, which makes it the only place the timezone is certain to be captured
+    # before the user does anything chargeable.
+    #
+    # SEED-ONCE, deliberately: this writes only while the column is NULL and
+    # never overwrites. The rollover guards in `daily_limit` are
+    # `IS DISTINCT FROM`, so a stored date can move BACKWARDS as well as
+    # forwards — a caller able to change their timezone on an endpoint this hot
+    # could zero any counter on demand by alternating between two far-apart
+    # zones. Travel is still picked up at POST /sessions, where each flip costs a
+    # weekly session slot and is therefore self-limiting.
+    #
+    # Ordering is load-bearing: written after the rollovers, the first /me of
+    # each day would still stamp a UTC date, and the `IS DISTINCT FROM` guard
+    # wouldn't fire again until that wrong date had passed.
+    #
+    # Junk is dropped rather than stored (`is_known_timezone`) — with no second
+    # write to correct it, one bad value would pin the user to UTC forever.
+    if user.timezone is None and is_known_timezone(tz):
+        user.timezone = tz
+        await db.commit()
+
+    # Roll over the free-tier counters at view time so Home's "X/10 questions
+    # today" reflects the user's local-calendar today, not the day they last
+    # answered a turn. Without this, a user who hit the cap last night sees a
+    # stale "10/10" the next morning — and a disabled Begin button — even though
+    # the gate at POST /sessions would let them through. Each helper refreshes
+    # the attached ORM instance, so the values serialized below are current.
+    # All three are zero-write in the steady state (see `daily_limit`), which
+    # matters because every route guard hits this endpoint.
     if user.tier == UserTier.free:
-        await daily_check_and_reset(db, user)
+        await check_and_reset_turns(db, user)
+        # The weekly session window rolls independently of the daily one — a
+        # Monday crossing resets this without touching the turn counter.
+        await check_and_reset_week(db, user)
         # Same rollover for the Ask Tutor daily chat counter so `daily_chat_count`
         # reflects the user's local-today, letting the chat composer disable /
         # show the "N left today" hint immediately on load.
@@ -289,13 +328,15 @@ _EXPORT_TURN_FIELDS = (
     "id", "session_id", "turn_number", "question_text", "transcript_text",
     "is_followup", "dimension_1_score", "dimension_2_score", "dimension_3_score",
     "dimension_4_score", "dimension_5_score", "delivery_score", "cv_summary",
-    "filler_word_count", "filler_word_breakdown", "word_count", "feedback",
+    "filler_word_count", "filler_word_breakdown", "word_count",
+    "duration_seconds", "feedback",
     "feedback_detail", "ai_model_used", "evaluated_at", "created_at",
 )
 _EXPORT_METRICS_FIELDS = (
     "avg_dimension_1", "avg_dimension_2", "avg_dimension_3", "avg_dimension_4",
     "avg_dimension_5", "avg_delivery", "total_filler_word_count",
-    "total_word_count", "overall_score", "turns_evaluated", "generated_at",
+    "total_word_count", "total_duration_seconds", "overall_score",
+    "turns_evaluated", "generated_at",
 )
 _EXPORT_SAVED_QUESTION_FIELDS = (
     "id", "question_text", "company", "job_title", "category",

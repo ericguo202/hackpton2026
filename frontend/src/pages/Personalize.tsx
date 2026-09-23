@@ -26,7 +26,8 @@ import { useNavigate } from 'react-router';
 import AccountButton from '../components/AccountButton';
 import CustomQuestionsManager from '../components/CustomQuestionsManager';
 import IndustryAutocompleteField from '../components/IndustryAutocompleteField';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 import TargetRolesField from '../components/TargetRolesField';
 import SpeechToTextButton from '../components/SpeechToTextButton';
 import { Button } from '../components/ui/button';
@@ -71,18 +72,7 @@ export default function Personalize() {
       <TopBar
         nav={
           <>
-            <TopBarNavLink to="/" matchPatterns={['/practice']}>
-              Practice
-            </TopBarNavLink>
-            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-              History
-            </TopBarNavLink>
-            <TopBarNavLink to="/personalize">
-              Personalize
-            </TopBarNavLink>
-            <TopBarNavLink to="/calibrate">
-              Calibration
-            </TopBarNavLink>
+            <AppNav />
           </>
         }
         rightSlot={<AccountButton />}

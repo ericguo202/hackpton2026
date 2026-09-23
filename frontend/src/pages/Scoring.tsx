@@ -16,42 +16,15 @@
 
 import { useAuth } from '@clerk/react';
 import { type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 
 import AccountButton from '../components/AccountButton';
 import CategoryScoringSection, {
   type CategoryContent,
 } from '../components/scoring/CategoryScoringSection';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
-
-function ScoringNav() {
-  return (
-    <>
-      <TopBarNavLink to="/" matchPatterns={['/practice']}>
-        Practice
-      </TopBarNavLink>
-      <TopBarNavLink to="/history" matchPatterns={['/sessions/:id']}>
-        History
-      </TopBarNavLink>
-      <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
-      <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
-    </>
-  );
-}
-
-/** Signed-out right slot — mirrors the Hero masthead's sign-in link. */
-function SignInLink() {
-  const navigate = useNavigate();
-  return (
-    <button
-      type="button"
-      onClick={() => navigate('/sign-in')}
-      className="relative cursor-pointer rounded-xs text-sm text-text-muted underline decoration-border-strong underline-offset-[6px] transition-colors hover:text-text hover:decoration-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface before:absolute before:-inset-[14px] before:content-['']"
-    >
-      Sign in
-    </button>
-  );
-}
+import SignInLink from '../components/SignInLink';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 
 /** External citation link — consistent styling for the research references. */
 function Cite({ href, children }: { href: string; children: ReactNode }) {
@@ -229,7 +202,7 @@ export default function Scoring() {
   return (
     <div className="min-h-screen bg-surface text-text">
       <TopBar
-        nav={isSignedIn ? <ScoringNav /> : undefined}
+        nav={isSignedIn ? <AppNav /> : undefined}
         legalMenu={!isSignedIn}
         rightSlot={isSignedIn ? <AccountButton /> : <SignInLink />}
       />

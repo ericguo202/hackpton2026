@@ -226,6 +226,10 @@ class TurnSubmitOut(BaseModel):
     feedback_detail: FeedbackDetailOut | None = None
     filler_word_count: int
     filler_word_breakdown: dict[str, int]
+    # Words per minute over this turn's speech span. Null when the span
+    # couldn't be derived from the STT response or the answer was under
+    # `MIN_WORDS_FOR_PACE` words (too short for pace to mean anything).
+    speaking_pace_wpm: int | None = None
     next_question: str | None
     next_question_audio_url: str | None
     # True when the next question drills into the current story (a follow-up)
@@ -323,6 +327,15 @@ class TurnOut(BaseModel):
     # the turn has no transcript. Transcript-derived, so present even when the
     # LLM evaluation failed.
     filler_word_rate: Decimal | None = None
+    # Spoken words in this turn (audio-event tags scrubbed) and the speech span
+    # they were spoken over. Exposed raw — not just as the derived pace — so the
+    # Practice results view can aggregate a session-level rate/pace locally
+    # while the session is still finalizing and no `session_metrics` row exists.
+    word_count: int = 0
+    duration_seconds: Decimal | None = None
+    # Words per minute for this turn. Null when the span is unknown (legacy
+    # rows) or the answer was too short for pace to be meaningful.
+    speaking_pace_wpm: int | None = None
     evaluated_at: datetime | None
     created_at: datetime
 
@@ -350,6 +363,10 @@ class SessionDetailOut(BaseModel):
     # Session-level filler rate (filler words / total words, percent), shown
     # on the Overview scores card. Null on legacy rows with no cached word total.
     filler_word_rate: Decimal | None = None
+    # Session-level speaking pace, word-weighted across turns (Σwords ÷
+    # Σminutes of speech span) — shown beside the filler rate. Null on sessions
+    # finalized before per-turn durations were measured.
+    speaking_pace_wpm: int | None = None
     turns_evaluated: int
     # Non-null when this session's opening question has been saved for
     # re-practice (either this is the baseline session that was saved, or a

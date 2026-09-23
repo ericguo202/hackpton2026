@@ -25,6 +25,7 @@ import {
   MAX_QUESTION_CHARS,
   type RejectedQuestion,
 } from '../types/customQuestions';
+import { questionCategoryLabel } from '../types/session';
 
 const inputClass =
   'w-full rounded border border-border bg-surface-sunken px-3 py-2 text-text ' +
@@ -234,7 +235,15 @@ export default function CustomQuestionsManager() {
                   key={q.id}
                   className="flex items-start justify-between gap-3 rounded border border-border bg-surface-sunken px-3 py-2"
                 >
-                  <span className="text-sm text-text">{q.question_text}</span>
+                  {/* The classified question type rides along in parentheses —
+                      it decides the rubric this question is graded by, so the
+                      user should see it before picking one at setup. */}
+                  <span className="text-sm text-text">
+                    {q.question_text}{' '}
+                    <span className="text-text-subtle">
+                      ({questionCategoryLabel(q.question_category)})
+                    </span>
+                  </span>
                   <button
                     type="button"
                     aria-label="Delete question"

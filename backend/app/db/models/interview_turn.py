@@ -122,11 +122,22 @@ class InterviewTurn(Base):
     filler_word_breakdown: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
-    # Total word count of `transcript_text` (whitespace tokenization) — the
-    # denominator for filler-word rate. Sibling of `filler_word_count`;
-    # written in `submit_turn`. Backfilled from transcript in migration 0011.
+    # Total SPOKEN word count of `transcript_text` — the denominator for both
+    # the filler-word rate and words-per-minute. Whitespace tokenization with
+    # ElevenLabs audio-event tags scrubbed (`filler_words.count_words`).
+    # Sibling of `filler_word_count`; written in `submit_turn`. Backfilled from
+    # transcript in migration 0011 (that backfill predates the tag scrub).
     word_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
+    )
+    # Speech span of this turn in seconds — first spoken word's start to the
+    # last word's end, from the ElevenLabs word timestamps
+    # (`stt.py:_speech_span_seconds`). The denominator for words-per-minute.
+    # NULLABLE with no default and deliberately NOT backfilled (migration
+    # 0030): it isn't recoverable from anything we persisted, so legacy rows
+    # are genuinely unmeasured and 0 would look like a real measurement.
+    duration_seconds: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 2), nullable=True
     )
 
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)

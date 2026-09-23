@@ -70,6 +70,7 @@ export function PracticeOverviewPanel({
         averages={effectiveAverages}
         caption={caption}
         fillerRate={sessionFillerRate(turns)}
+        paceWpm={sessionPaceWpm(turns)}
       />
     </div>
   );
@@ -105,18 +106,46 @@ function averagesFromTurns(turns: TurnDetail[]): DimensionAverages {
 
 /**
  * Word-weighted session filler rate (percent) from the turns — Σfillers ÷
- * Σwords. Computed here rather than threaded from the refetch so it also
- * works on the refetch-failed fallback path (turns synthesized locally).
- * Whitespace tokenization mirrors the backend's `count_words`.
+ * Σwords. Computed here rather than read off `session.filler_word_rate` because
+ * that comes from `session_metrics`, which doesn't exist until the session
+ * finalizes — this keeps the tile populated while scoring is still pending.
+ *
+ * Uses the server-computed `word_count` rather than re-tokenizing the
+ * transcript: the backend excludes ElevenLabs audio-event tags ("(laughter)")
+ * from the count, and re-deriving it here would mean mirroring that scrub in TS.
  */
 function sessionFillerRate(turns: TurnDetail[]): number | null {
   let fillers = 0;
   let words = 0;
   for (const t of turns) {
     fillers += t.filler_word_count;
-    words += (t.transcript_text ?? '').trim().split(/\s+/).filter(Boolean).length;
+    words += t.word_count;
   }
   return words > 0 ? (fillers / words) * 100 : null;
+}
+
+/**
+ * Word-weighted session speaking pace (Σwords ÷ Σminutes of speech span), the
+ * pending-state counterpart to `session.speaking_pace_wpm`. Mirrors the
+ * backend's `speaking_pace_wpm`, including its short-answer floor — below it,
+ * words-per-minute is noise rather than pacing.
+ *
+ * Turns with no measured span are excluded from BOTH sums so a legacy turn
+ * can't silently deflate the rate.
+ */
+const MIN_WORDS_FOR_PACE = 25;
+
+function sessionPaceWpm(turns: TurnDetail[]): number | null {
+  let words = 0;
+  let seconds = 0;
+  for (const t of turns) {
+    const dur = t.duration_seconds == null ? null : parseFloat(t.duration_seconds);
+    if (dur == null || !Number.isFinite(dur) || dur <= 0) continue;
+    words += t.word_count;
+    seconds += dur;
+  }
+  if (words < MIN_WORDS_FOR_PACE || seconds <= 0) return null;
+  return Math.round(words / (seconds / 60));
 }
 
 function IntroColumn({ company, jobTitle }: { company: string; jobTitle: string }) {

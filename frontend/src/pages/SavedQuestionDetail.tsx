@@ -32,14 +32,18 @@ import DimensionMenu from '../components/DimensionMenu';
 import { StrengthsRadarPanel } from '../components/StrengthsRadar';
 import RePracticeVoiceDialog from '../components/RePracticeVoiceDialog';
 import type { SpeechPace } from '../components/SpeechSpeedToggle';
-import TopBar, { TopBarNavLink } from '../components/TopBar';
+import AppNav from '../components/AppNav';
+import TopBar from '../components/TopBar';
 import { Button } from '../components/ui/button';
+import { useMe } from '../hooks/useMe';
 import { useSavedQuestionDetail } from '../hooks/useSavedQuestionDetail';
 import { useSavedQuestions } from '../hooks/useSavedQuestions';
 import { ApiError, extractApiErrorDetail } from '../lib/api';
 import { buildRadarData } from '../lib/radarData';
 import { scoreDimensionsFor, type ScoreKey } from '../lib/scoreDimensions';
+import { paceColor } from '../lib/speakingPace';
 import { questionCategoryLabel } from '../types/session';
+import { usageBudget } from '../types/user';
 import type {
   SavedQuestionAttempt,
   SavedQuestionDetail as SavedQuestionDetailType,
@@ -145,6 +149,10 @@ export default function SavedQuestionDetail() {
   const navigate = useNavigate();
   const { saved, isLoading, error, errorStatus } = useSavedQuestionDetail(id);
   const { rePractice } = useSavedQuestions();
+  const { me } = useMe();
+  // Re-practice spends a full 2-turn session, so gate it on the same free-tier
+  // budget Home uses rather than letting the click earn a 429 flash.
+  const outOfQuota = usageBudget(me).blocked;
   const [rePracticing, setRePracticing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -239,12 +247,7 @@ export default function SavedQuestionDetail() {
       <TopBar
         nav={
           <>
-            <TopBarNavLink to="/" matchPatterns={['/practice']}>Practice</TopBarNavLink>
-            <TopBarNavLink to="/history" matchPatterns={['/sessions/:id', '/saved-question/:id']}>
-              History
-            </TopBarNavLink>
-            <TopBarNavLink to="/personalize">Personalize</TopBarNavLink>
-            <TopBarNavLink to="/calibrate">Calibration</TopBarNavLink>
+            <AppNav />
           </>
         }
         rightSlot={<AccountButton />}
@@ -290,7 +293,7 @@ export default function SavedQuestionDetail() {
                 <Button
                   type="button"
                   onClick={() => setDialogOpen(true)}
-                  disabled={rePracticing}
+                  disabled={rePracticing || outOfQuota}
                 >
                   {rePracticing ? 'Starting…' : 'Re-practice'}
                 </Button>
@@ -471,10 +474,21 @@ function AttemptRow({
       <span className="col-span-1 text-eyebrow uppercase tracking-eyebrow text-text-subtle tabular-nums">
         {String(ordinal).padStart(2, '0')}
       </span>
-      <span className="col-span-6 text-sm text-text-muted tabular-nums">
+      <span className="col-span-4 text-sm text-text-muted tabular-nums">
         {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
       </span>
-      <span className="col-span-5 text-right text-sm tabular-nums">
+      {/* Speaking pace is transcript-derived, so it's shown even for a failed
+          evaluation. Null (unmeasured attempt / too-short answer) → em-dash. */}
+      <span className="col-span-3 text-right text-sm tabular-nums">
+        {attempt.speaking_pace_wpm == null ? (
+          <span className="text-text-subtle">—</span>
+        ) : (
+          <span style={{ color: paceColor(attempt.speaking_pace_wpm) }}>
+            {attempt.speaking_pace_wpm} wpm
+          </span>
+        )}
+      </span>
+      <span className="col-span-4 text-right text-sm tabular-nums">
         {pending ? (
           <span className="text-text-subtle">Scoring in progress</span>
         ) : attempt.evaluation_failed ? (

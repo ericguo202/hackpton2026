@@ -14,9 +14,13 @@ alembic
 pydantic-settings
 python-dotenv
 
-# Computer-vision heuristics for the interview analyzer prototype
-opencv-python-headless
-mediapipe
+# NOTE: opencv-python-headless + mediapipe were removed. All delivery/webcam
+# analytics run in the BROWSER (frontend MediaPipe → `cv_summary` posted with
+# the turn); the backend only reads that JSON in `_compute_delivery_score`.
+# The only Python users of cv2/mediapipe are the standalone dev prototypes
+# `backend/opencv.py` and `backend/opencv/calibrate_face_ranges.py`, which are
+# never imported by the app and need a local display anyway — install them
+# ad hoc (`pip install opencv-python mediapipe`) if you run those.
 
 # Clerk JWT verification:
 #   python-jose handles JWT decode + RS256 signature check.
@@ -52,3 +56,14 @@ openai
 # lets `async def test_*` functions run without explicit decoration.
 pytest
 pytest-asyncio
+
+# IANA time-zone database for `zoneinfo`. Every free-tier counter in
+# `daily_limit.py` resolves the user's local day through `ZoneInfo(...)`, which
+# reads the SYSTEM tz database and raises `ZoneInfoNotFoundError` when there
+# isn't one. The Linux image happens to ship /usr/share/zoneinfo, so this was
+# working by accident: on Windows (dev, tests) and on any slim/distroless base
+# there is no system copy, every zone silently fails the lookup, and the UTC
+# fallback swallows it — which is the exact bug the seed-once timezone on
+# `GET /me` exists to fix, but applied to every user at once. Pinning the
+# database as a dependency makes the resolution platform-independent.
+tzdata

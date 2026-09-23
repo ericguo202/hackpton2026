@@ -10,10 +10,11 @@
  * The header link goes to /sign-in; both CTAs go to /sign-up (new visitors).
  */
 
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import HowItWorks from '../components/landing/HowItWorks';
 import Methodology from '../components/landing/Methodology';
 import ScorePieChart from '../components/landing/ScorePieChart';
+import SignInLink from '../components/SignInLink';
 import SiteFooter from '../components/SiteFooter';
 import TopBar from '../components/TopBar';
 import { GetStartedButton } from '../components/ui/get-started-button';
@@ -22,18 +23,7 @@ export default function Hero() {
   const navigate = useNavigate();
   return (
     <div className="min-h-screen flex flex-col bg-surface text-text">
-      <TopBar
-        legalMenu
-        rightSlot={
-          <button
-            type="button"
-            onClick={() => navigate('/sign-in')}
-            className="relative cursor-pointer text-sm text-text-muted hover:text-text underline underline-offset-[6px] decoration-border-strong hover:decoration-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-4 focus-visible:ring-offset-surface rounded-xs before:absolute before:-inset-[14px] before:content-['']"
-          >
-            Sign in
-          </button>
-        }
-      />
+      <TopBar legalMenu rightSlot={<SignInLink />} />
 
       <main className="flex-1">
         {/* Beat 1 — hero: type column + the score pie (brand visual). */}
@@ -90,14 +80,23 @@ export default function Hero() {
         >
           <div className="mx-auto flex max-w-[44rem] flex-col items-center text-center">
             <h2 id="free-tier-heading" style={{ textWrap: 'balance' }}>
-              Five practice sessions a day, free.
+              Ten practice questions a day, free.
             </h2>
-            <p className="mt-3 mb-8 max-w-[48ch] text-[0.9375rem] leading-relaxed text-text-muted">
-              The counter resets at midnight, your local time. No card
-              required, nothing to install: a browser, a microphone, and ten
-              minutes.
+            <p className="mt-3 mb-8 max-w-[50ch] text-[0.9375rem] leading-relaxed text-text-muted">
+              You get an AI interviewer that listens and asks real follow-ups, six scores on every answer with
+              the exact moments that earned them, and delivery coaching from
+              your webcam. No credit card required. { }
+              <Link
+                to="/pricing"
+                className="rounded-xs text-[0.9375rem] text-link underline decoration-link/40 underline-offset-4 transition-colors hover:decoration-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+              >
+                See everything included
+              </Link>
             </p>
-            <GetStartedButton onClick={() => navigate('/sign-up')} />
+            <div className="flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
+              <GetStartedButton onClick={() => navigate('/sign-up')} />
+              
+            </div>
           </div>
         </section>
       </main>

@@ -10,7 +10,7 @@
  * construction (`<ClerkProvider>` wrapping `<BrowserRouter>`, plus
  * `AnalyticsConsentBanner` reading `document.cookie` during render) and none of
  * it contributes anything a crawler needs. Mounting each page directly under
- * `StaticRouter` keeps Node-safety confined to this five-page subtree — the one
+ * `StaticRouter` keeps Node-safety confined to this public-page subtree — the one
  * remaining gap is closed by the `@clerk/react` alias in `clerk-stub.tsx`.
  *
  * Pages are imported EAGERLY here, not through `lazyWithRetry`: code-splitting
@@ -29,6 +29,7 @@ import { StaticRouter } from 'react-router';
 
 import BiometricDataRetentionPolicy from '../pages/BiometricDataRetentionPolicy';
 import Hero from '../pages/Hero';
+import Pricing from '../pages/Pricing';
 import PrivacyPolicy from '../pages/PrivacyPolicy';
 import Scoring from '../pages/Scoring';
 import TermsOfService from '../pages/TermsOfService';
@@ -45,6 +46,7 @@ import TermsOfService from '../pages/TermsOfService';
 export const PRERENDER_PAGES: Record<string, ComponentType> = {
   '/': Hero,
   '/scoring': Scoring,
+  '/pricing': Pricing,
   '/legal/privacy': PrivacyPolicy,
   '/legal/terms': TermsOfService,
   '/legal/biometric-data-retention': BiometricDataRetentionPolicy,

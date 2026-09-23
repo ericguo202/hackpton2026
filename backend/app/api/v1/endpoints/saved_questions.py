@@ -43,7 +43,8 @@ from app.api.v1.endpoints.sessions import (
     _parse_company_summary,
     _persist_session_and_turn,
 )
-from app.services.daily_limit import enforce_daily_limit
+from app.services.daily_limit import enforce_session_start_limits
+from app.services.filler_words import speaking_pace_wpm
 from app.services.incidents import (
     log_interview_session_started,
     log_save_question,
@@ -365,6 +366,14 @@ async def get_saved_question(
             overall_score=s.overall_score,
             turn1_scores=turn1_scores,
             evaluation_failed=not evaluated,
+            # Transcript-derived, so it's computed off `evaluated` — a failed
+            # evaluation still spoke at a real pace. `t1` is already loaded
+            # above, so this costs no extra query.
+            speaking_pace_wpm=(
+                speaking_pace_wpm(t1.word_count, t1.duration_seconds)
+                if t1 is not None
+                else None
+            ),
         ))
 
     return SavedQuestionDetailOut(
@@ -408,10 +417,16 @@ async def practice_saved_question(
 ) -> SessionCreateOut:
     sq = await _get_owned_saved_question(db, user, saved_question_id)
 
-    # Persist the latest timezone and enforce the free-tier daily cap before any
-    # TTS spend — a re-practice is a full session. Counter still increments at
-    # finalization in submit_turn.
-    await enforce_daily_limit(db, user, timezone=body.timezone)
+    # Persist the latest timezone and enforce the free-tier caps before any TTS
+    # spend — a re-practice is a full session. Counters advance in submit_turn
+    # (per answered turn, plus the weekly slot on turn 1), same as a normal
+    # session. Re-practice is hard-locked to 2 turns (see `num_turns=2` below),
+    # which is also the clamp floor, so the returned value is always 2 and the
+    # only outcome that matters here is whether it raises: a caller with fewer
+    # than 2 turns left today (or no weekly sessions left) gets the 429.
+    await enforce_session_start_limits(
+        db, user, timezone=body.timezone, requested_turns=2
+    )
 
     # Everything is frozen on the saved row — no research / question-gen LLM
     # calls. The opening question and brief are read straight off it.

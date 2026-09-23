@@ -53,11 +53,12 @@ export function QuitConfirmDialog({ open, completedTurns, busy, error, onCancel,
             <>
               You&apos;ve completed {completedTurns} {turnLabel}. We&apos;ll score this
               session on {completedTurns === 1 ? 'that turn' : 'those turns'} and save it
-              to your history so you can review your feedback. It counts toward your daily
-              limit.
+              to your history so you can review your feedback. The {turnLabel} you
+              answered are already counted; you won&apos;t be charged for the ones you
+              skip.
             </>
           ) : (
-            <>Your progress won&apos;t be scored. This session won&apos;t count toward your daily limit.</>
+            <>Your progress won&apos;t be scored. Nothing is charged until you answer a question, so this session won&apos;t count toward your limits.</>
           )}
         </p>
         {error ? (

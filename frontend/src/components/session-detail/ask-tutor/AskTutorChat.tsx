@@ -28,7 +28,11 @@ import { useAskTutor } from './_askTutor';
 import { PieMark } from './PieMark';
 import { TutorMarkdown } from './TutorMarkdown';
 import { useTutorChat } from './useTutorChat';
-import { MAX_TUTOR_CHATS_PER_DAY } from '../../../types/tutor';
+import {
+  MAX_CHAT_CREDITS_PER_DAY,
+  MAX_TURN_MESSAGE_CHARS,
+  TURN_CHAT_CREDIT_COST,
+} from '../../../types/tutor';
 
 // One-tap starters mapped to the three jobs the tutor exists for. Tapping one
 // fills the composer (it does NOT auto-send) so the user can edit before
@@ -74,7 +78,7 @@ const mobileMaxH = () => Math.round(window.innerHeight * MOBILE_MAX_VH);
 // costs LLM tokens, so this bounds abuse. Mirrors the backend
 // `TutorMessageIn.message` cap (backend/app/schemas/tutor.py). The attached
 // "Ask about this" snippet is a separate field and is NOT counted here.
-const MAX_MESSAGE_CHARS = 300;
+const MAX_MESSAGE_CHARS = MAX_TURN_MESSAGE_CHARS;
 const clampNum = (v: number, lo: number, hi: number) =>
   Math.min(Math.max(v, lo), Math.max(lo, hi));
 
@@ -91,11 +95,18 @@ export default function AskTutorChat({
   turnId?: string;
 }) {
   const tutor = useAskTutor();
-  const { messages, isStreaming, send, remaining } = useTutorChat(sessionId, turnId);
+  const { messages, isStreaming, send, remaining } = useTutorChat({
+    mode: 'turn',
+    sessionId,
+    turnId,
+  });
 
-  // Daily chat-quota UI state. `remaining` is null for Pro / unknown (no cap).
-  const limitReached = remaining !== null && remaining <= 0;
-  const showLowHint = remaining !== null && remaining > 0 && remaining <= 3;
+  // Daily chat-CREDIT UI state. `remaining` is null for Pro / unknown (no cap).
+  // Compared against this surface's cost rather than zero: the budget is shared
+  // with the general coach, which spends 2 credits a message to this one's 1.
+  const limitReached = remaining !== null && remaining < TURN_CHAT_CREDIT_COST;
+  const showLowHint =
+    remaining !== null && !limitReached && remaining <= 3;
 
   const [text, setText] = useState('');
   const [contextSnippet, setContextSnippet] = useState<string | null>(null);
@@ -500,9 +511,9 @@ export default function AskTutorChat({
           {remaining !== null && (
             <>
               {' '}
-              Your account is limited to {MAX_TUTOR_CHATS_PER_DAY} chats per day. You
-              have used {MAX_TUTOR_CHATS_PER_DAY - remaining}/{MAX_TUTOR_CHATS_PER_DAY}{' '}
-              chats already.
+              Your account gets {MAX_CHAT_CREDITS_PER_DAY} chat credits a day, and
+              each chat here costs {TURN_CHAT_CREDIT_COST}. You have used{' '}
+              {MAX_CHAT_CREDITS_PER_DAY - remaining}/{MAX_CHAT_CREDITS_PER_DAY}.
             </>
           )}
         </p>
@@ -623,12 +634,13 @@ export default function AskTutorChat({
 
         {limitReached ? (
           <p className="mb-2 text-xs leading-5 text-critique" role="alert">
-            You&rsquo;ve reached your daily limit of {MAX_TUTOR_CHATS_PER_DAY} tutor
-            chats. It resets at midnight.
+            You&rsquo;ve used all {MAX_CHAT_CREDITS_PER_DAY} of your daily chat
+            credits. They reset at midnight.
           </p>
         ) : showLowHint ? (
           <p className="mb-2 text-xs text-text-subtle" aria-live="polite">
-            {remaining} chat{remaining === 1 ? '' : 's'} left today.
+            {remaining} chat credit{remaining === 1 ? '' : 's'} left today. Each chat
+            here costs {TURN_CHAT_CREDIT_COST}.
           </p>
         ) : null}
 
@@ -668,7 +680,9 @@ export default function AskTutorChat({
                 submit(text);
               }
             }}
-            placeholder={limitReached ? 'Daily chat limit reached' : 'Ask about this turn…'}
+            placeholder={
+              limitReached ? 'Out of chat credits today' : 'Ask about this turn…'
+            }
             className="max-h-[120px] min-h-[2.5rem] flex-1 resize-none rounded-2xl bg-surface-sunken px-3.5 py-2.5 text-sm leading-6 text-text placeholder:text-text-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface-raised disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button

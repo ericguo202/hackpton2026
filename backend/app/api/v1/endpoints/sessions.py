@@ -55,13 +55,19 @@ from app.services.company_research import (
 from app.services._field_categories import FieldCategory
 from app.services._injection import contains_injection
 from app.services.daily_limit import (
-    enforce_daily_limit,
-    increment as daily_increment,
+    enforce_session_start_limits,
+    increment_turns,
+    increment_week,
 )
 from app.services.coaching import generate_next_take
 from app.services.delivery_consent import has_active_delivery_analytics_consent
 from app.services.evaluator import EVAL_MODEL, EvaluatorOutput, evaluate_turn
-from app.services.filler_words import count_filler_words, count_words, filler_rate_pct
+from app.services.filler_words import (
+    count_filler_words,
+    count_words,
+    filler_rate_pct,
+    speaking_pace_wpm,
+)
 from app.services.followup import (
     generate_followup_transition,
     should_continue_followup,
@@ -111,7 +117,9 @@ def _spawn_finalize(
     Holds a strong reference to the task (so it isn't GC'd mid-flight) and
     records the session id so the lazy reaper in `get_session` won't start a
     second, concurrent finalizer for a session this worker is already
-    finishing — which would otherwise double the free-tier daily increment.
+    finishing — which would otherwise duplicate the evaluator spend and race
+    the metrics upsert. (Usage counters are charged per answered turn in
+    `submit_turn` and are unaffected by a double finalize.)
     """
     if session_id in _finalizing_sessions:
         return
@@ -223,12 +231,22 @@ async def create_session(
     user: User = Depends(get_current_user_db),
     db: AsyncSession = Depends(get_db),
 ) -> SessionCreateOut:
-    # Persist the client's latest timezone and enforce the free-tier daily cap
+    # Persist the client's latest timezone and enforce both free-tier caps
     # BEFORE moderation / research / TTS so a rate-limited request never spends
-    # Serper, OpenRouter, or ElevenLabs credits. The counter itself only
-    # advances at session finalization (`daily_increment` in the final-turn
-    # branch of `submit_turn`).
-    await enforce_daily_limit(db, user, timezone=body.timezone)
+    # Serper, OpenRouter, or ElevenLabs credits. The counters themselves advance
+    # in `submit_turn` — once per answered turn, plus the weekly session slot on
+    # turn 1 — so this is a pre-check, not a reservation.
+    #
+    # The return value is the session length the caller can actually afford: a
+    # user with fewer turns left today than they asked for gets a SHORTENED
+    # session rather than a 429 (only < 2 turns left is refused). Everything
+    # downstream must read `effective_num_turns`, never `body.num_turns` — the
+    # value is echoed on the response, and Practice renders its "Question X of
+    # N" from that echo, so a missed substitution shows up as a session that
+    # ends early with no explanation.
+    effective_num_turns = await enforce_session_start_limits(
+        db, user, timezone=body.timezone, requested_turns=body.num_turns
+    )
 
     # Deterministic prompt-injection gate on the two user-authored inputs that
     # feed company research + every downstream prompt. Free (no network) so it
@@ -377,20 +395,29 @@ async def create_session(
         )
 
     # "Recommended Mix" mode: each story-block opening draws a calibrated category
-    # from the user's level + researched field. A custom question is verbatim user
-    # text (not a generated opening), so Mix never applies to it.
-    mixed_mode = body.calibrated_mix and custom_question is None
+    # from the user's level + researched field. A custom question only ever fills
+    # the FIRST opening (its own classified category), so every LATER opening in a
+    # custom-question session draws from the Mix too — hence Mix is forced on.
+    # (`body.question_category` is ignored for a custom question; the frontend
+    # disables the picker and stops sending it.)
+    mixed_mode = body.calibrated_mix or custom_question is not None
 
     # The category used to select the RESEARCH variant. The situational research
     # variant (accurate company principles + situational themes) is picked BEFORE
-    # research, so it needs a category up front. In Mix mode the field category
-    # (which drives the turn-1 draw) only exists AFTER research, so we can't
-    # pre-select the situational variant — Mix uses the standard/behavioral brief
-    # (see plan "Known limitations"). Custom questions are STAR verbatim.
+    # research, so it needs a category up front. A custom question is already
+    # classified, so its stored category selects the variant — a situational
+    # custom question gets the situational brief. In plain Mix mode the field
+    # category (which drives the turn-1 draw) only exists AFTER research, so we
+    # can't pre-select the situational variant — Mix uses the standard/behavioral
+    # brief (see plan "Known limitations").
     research_category = (
-        QuestionCategory.experience_star
-        if (custom_question is not None or mixed_mode)
-        else body.question_category
+        custom_question.question_category
+        if custom_question is not None
+        else (
+            QuestionCategory.experience_star
+            if mixed_mode
+            else body.question_category
+        )
     )
 
     try:
@@ -411,15 +438,21 @@ async def create_session(
         body.company, body.job_title, brief.category,
     )
 
-    # The FORM stamped on turn 1. In Mix mode, drawn from the calibrated weights
-    # now that the field category is known (turn 1 of a >2-turn session carries
-    # the "tell me about yourself" M&F bias); otherwise the picker's single
-    # category (STAR for custom questions). Later openings redraw in submit_turn.
-    if mixed_mode:
+    # The FORM stamped on turn 1. A custom question always wins — turn 1 IS that
+    # question, so it carries the category it was classified as. Otherwise, in
+    # Mix mode, drawn from the calibrated weights now that the field category is
+    # known (turn 1 of a >2-turn session carries the "tell me about yourself" M&F
+    # bias); else the picker's single category. Later openings redraw in
+    # submit_turn — for a custom session, turn 1's category is already in the
+    # no-repeat `used` set there, so the rest of the interview varies off it.
+    if mixed_mode and custom_question is None:
         question_category = draw_opening_category(
             field=brief.category,
             level=user.experience_level,
-            num_turns=body.num_turns,
+            # The clamped length, not the requested one: the turn-1 M&F bias
+            # only applies to sessions longer than 2 turns, so a request for 8
+            # clamped down to 2 must draw under the 2-turn exception.
+            num_turns=effective_num_turns,
             used=set(),
             is_first_opening=True,
         )
@@ -441,9 +474,8 @@ async def create_session(
         )
 
     # Generate the session UUID up front so the voice can be resolved
-    # before the row hits the DB. This lets TTS and the INSERT run in
-    # parallel instead of waiting on the DB to hand back a
-    # server-generated UUID.
+    # before the row hits the DB (the voice is derived from the id on the
+    # "Surprise me" path and persisted on the row).
     session_id = uuid.uuid4()
     # Honor the candidate's picker choice when valid, else a deterministic
     # per-session voice (see `resolve_voice`). The resolved voice is persisted
@@ -455,28 +487,38 @@ async def create_session(
     # reused verbatim by turn 2's follow-up TTS.
     speech_speed = resolve_speed(voice_id, body.speech_pace)
 
-    audio_url, _ = await asyncio.gather(
-        synthesize_speech(opening_q, voice_id=voice_id, speed=speech_speed),
-        _persist_session_and_turn(
-            db,
-            user,
-            company=body.company,
-            job_title=body.job_title,
-            company_summary=brief.model_dump_json(),
-            opening_q=opening_q,
-            session_id=session_id,
-            voice_id=voice_id,
-            experience_level=user.experience_level,
-            num_turns=body.num_turns,
-            # A custom question is a deliberate, reusable pick — don't push it
-            # into the generation avoid-list (it isn't a generated question).
-            roll_recent=custom_question is None,
-            # Persist the resolved pace so turn 2's TTS matches turn 1.
-            speech_speed=speech_speed,
-            # Stamp turn 1 with the session's chosen category (STAR for custom).
-            question_category=question_category,
-            calibrated_mix=mixed_mode,
-        ),
+    # TTS BEFORE the INSERT, deliberately sequential (mirrors re-practice in
+    # saved_questions.py). These used to run in one asyncio.gather, but
+    # `_persist_session_and_turn` COMMITS — so an ElevenLabs failure (DNS,
+    # timeout, 5xx) propagated out of gather while the row was already, or
+    # still being, written, leaving an orphan in_progress session with a
+    # pending turn the candidate never saw. Synthesis has no side effects, so
+    # failing here (→ 503 via SpeechSynthesisUnavailableError) leaves nothing
+    # behind. Cost: the DB round-trip is no longer hidden under the ~1s TTS
+    # call — tens of milliseconds.
+    audio_url = await synthesize_speech(
+        opening_q, voice_id=voice_id, speed=speech_speed
+    )
+    await _persist_session_and_turn(
+        db,
+        user,
+        company=body.company,
+        job_title=body.job_title,
+        company_summary=brief.model_dump_json(),
+        opening_q=opening_q,
+        session_id=session_id,
+        voice_id=voice_id,
+        experience_level=user.experience_level,
+        num_turns=effective_num_turns,
+        # A custom question is a deliberate, reusable pick — don't push it
+        # into the generation avoid-list (it isn't a generated question).
+        roll_recent=custom_question is None,
+        # Persist the resolved pace so turn 2's TTS matches turn 1.
+        speech_speed=speech_speed,
+        # Stamp turn 1 with its category — the picker's choice, a Mix draw,
+        # or the custom question's own classified category.
+        question_category=question_category,
+        calibrated_mix=mixed_mode,
     )
     await log_interview_session_started(
         db,
@@ -485,7 +527,8 @@ async def create_session(
         metadata={
             "company": body.company,
             "job_title": body.job_title,
-            "num_turns": body.num_turns,
+            "num_turns": effective_num_turns,
+            "requested_num_turns": body.num_turns,
             "custom_question": custom_question is not None,
         },
     )
@@ -495,7 +538,7 @@ async def create_session(
         summary=CompanyBriefOut(**brief.model_dump()),
         first_question=opening_q,
         first_question_category=question_category.value,
-        num_turns=body.num_turns,
+        num_turns=effective_num_turns,
         calibrated_mix=mixed_mode,
         first_question_audio_url=audio_url,
     )
@@ -1130,6 +1173,7 @@ async def _upsert_session_metrics(
     averages: dict[str, float | None],
     total_filler_word_count: int,
     total_word_count: int,
+    total_duration_seconds: float | None,
     overall_score: float | None,
     turns_evaluated: int,
 ) -> None:
@@ -1157,6 +1201,7 @@ async def _upsert_session_metrics(
         avg_delivery=averages["delivery"],
         total_filler_word_count=total_filler_word_count,
         total_word_count=total_word_count,
+        total_duration_seconds=total_duration_seconds,
         overall_score=overall_score,
         turns_evaluated=turns_evaluated,
     ))
@@ -1167,7 +1212,6 @@ async def _complete_session_from_turns(
     db: AsyncSession,
     *,
     session: InterviewSession,
-    user: User,
     turns: list[InterviewTurn],
 ) -> bool:
     """Aggregate evaluated turns and mark the session completed.
@@ -1195,6 +1239,16 @@ async def _complete_session_from_turns(
     per_dim_avgs = _per_dimension_averages(all_turn_scores)
     total_fillers = sum(t[6] for t in all_turn_scores)
     total_words = sum(int(t.word_count or 0) for t in turns)
+    # Speech-span total for the session-level speaking pace (word-weighted:
+    # Σwords ÷ Σminutes, matching the lifetime filler rate in `me.py` — NOT a
+    # mean of per-turn WPMs). None when no turn carries a measurement, which is
+    # the case for every session finalized before migration 0030.
+    turn_durations = [
+        float(t.duration_seconds)
+        for t in turns
+        if t.transcript_text is not None and t.duration_seconds is not None
+    ]
+    total_duration = sum(turn_durations) if turn_durations else None
     flat_scores = [
         v for t in all_turn_scores for v in t[:6] if v is not None
     ]
@@ -1217,8 +1271,9 @@ async def _complete_session_from_turns(
     # it can't see across them. Flip the status with a conditional UPDATE
     # instead: under READ COMMITTED the second writer blocks on this row's lock,
     # then re-checks the predicate after the first commits, matches zero rows,
-    # and bails — so the daily-counter bump and metrics write happen exactly
-    # once no matter how many finalizers race.
+    # and bails — so the metrics write happens exactly once no matter how many
+    # finalizers race. (Usage counters no longer ride this path at all; they're
+    # charged per answered turn in `submit_turn`.)
     result = await db.execute(
         update(InterviewSession)
         .where(
@@ -1234,7 +1289,7 @@ async def _complete_session_from_turns(
     if result.rowcount == 0:
         logger.info(
             "Session %s already finalized by another worker; skipping metrics "
-            "upsert and daily increment.",
+            "upsert.",
             session.id,
         )
         return False
@@ -1249,12 +1304,10 @@ async def _complete_session_from_turns(
         averages=per_dim_avgs,
         total_filler_word_count=total_fillers,
         total_word_count=total_words,
+        total_duration_seconds=total_duration,
         overall_score=overall,
         turns_evaluated=turns_evaluated,
     )
-
-    if user.tier == UserTier.free:
-        await daily_increment(db, user)
 
     return True
 
@@ -1380,7 +1433,6 @@ async def _run_background_finalize(
             completed = await _complete_session_from_turns(
                 db,
                 session=session,
-                user=user,
                 turns=turns,
             )
             if completed:
@@ -1499,7 +1551,8 @@ async def submit_turn(
     # 3. Transcribe. Bounded read so an oversized upload is rejected with 413
     #    before it can OOM the worker or be sent to ElevenLabs STT.
     audio_bytes = await _read_audio_bounded(audio)
-    transcript = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+    transcription = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+    transcript = transcription.text
 
     # 3a-pre. Deterministic prompt-injection gate. Free (no network) so it runs
     # BEFORE the billed moderation call: a transcript carrying an injection
@@ -1591,10 +1644,14 @@ async def submit_turn(
             evaluation_pending=False,
         )
 
-    # 4. Filler words (regex ground truth per CLAUDE.md) + total word count
-    #    (denominator for the filler rate).
+    # 4. Filler words (regex ground truth per CLAUDE.md) + total spoken word
+    #    count (the denominator for BOTH the filler rate and words-per-minute;
+    #    both counters scrub ElevenLabs audio-event tags first). The pace
+    #    denominator is the STT speech span, which is None on any unexpected
+    #    response shape — `speaking_pace_wpm` then yields None (no pace shown).
     filler_count, filler_breakdown = count_filler_words(transcript)
     word_count = count_words(transcript)
+    turn_pace_wpm = speaking_pace_wpm(word_count, transcription.duration_seconds)
 
     # 5. Collect prior evaluated turns for history context.
     prior_result = await db.execute(
@@ -1633,11 +1690,36 @@ async def submit_turn(
     #     Background tasks mutate this same row; persisting now means they
     #     always find a transcript to evaluate against and the row is durable
     #     even if a task crashes.
+    #     `transcript` keeps its audio-event tags verbatim — the evaluator
+    #     should see "(laughter)" and the candidate should read what they
+    #     actually said; only the counts above are computed on scrubbed text.
     current_turn.transcript_text       = transcript
     current_turn.cv_summary            = parsed_cv_summary
     current_turn.filler_word_count     = filler_count
     current_turn.filler_word_breakdown = filler_breakdown
     current_turn.word_count            = word_count
+    current_turn.duration_seconds      = transcription.duration_seconds
+
+    # 8a-bis. Free-tier metering. Both counters ride whichever commit closes this
+    # handler (the non-final branch's, or the final branch's below), so a failure
+    # in next-question generation / TTS rolls the charge back together with the
+    # turn — the candidate is never billed for an answer that wasn't persisted.
+    #
+    # A TURN is charged when answered, not when the session finalizes. Every
+    # submitted turn fires evaluator + coaching + next-question + TTS, and a
+    # session abandoned by closing the tab never finalizes at all (the lazy
+    # reaper deliberately won't touch a session with an unanswered turn), so
+    # finalization-time counting under-charges exactly the expensive case.
+    #
+    # Turn 1 additionally claims the weekly SESSION slot. Claiming it at create
+    # would burn one of only 10 weekly slots on a mic failure; claiming it at
+    # finalization would let the same tab-close abandon evade the weekly cap.
+    # This sits after the clarification-retry early return above, so a re-ask
+    # stays free — it neither scores nor advances the turn.
+    if user.tier == UserTier.free:
+        await increment_turns(db, user)
+        if current_turn.turn_number == 1:
+            await increment_week(db, user)
 
     # 8b. Branch: non-final returns the next question; final returns immediately
     #     after spawning session finalization below.
@@ -1788,6 +1870,7 @@ async def submit_turn(
             feedback_detail=None,
             filler_word_count=filler_count,
             filler_word_breakdown=filler_breakdown,
+            speaking_pace_wpm=turn_pace_wpm,
             next_question=next_q,
             next_question_audio_url=next_audio_url,
             next_question_is_followup=(route == "followup"),
@@ -1821,6 +1904,7 @@ async def submit_turn(
         feedback_detail=None,
         filler_word_count=filler_count,
         filler_word_breakdown=filler_breakdown,
+        speaking_pace_wpm=turn_pace_wpm,
         next_question=None,
         next_question_audio_url=None,
         is_final=True,
@@ -1844,9 +1928,12 @@ async def end_session_early(
 
     Requires ≥ 1 answered (transcript-bearing) turn; the frontend only calls
     this in that case (a zero-turn quit stays a pure client-side abandon with
-    no record and no daily-limit charge). The completed session counts toward
-    the free-tier daily limit like any other finalized session — the normal
-    finalize path increments the counter.
+    no record and no usage charge, since nothing is charged until turn 1 is
+    submitted). This endpoint moves no counters itself: the turns the candidate
+    answered were already charged as they were submitted, and turn 1 already
+    claimed the weekly session slot. Quitting early therefore costs exactly what
+    was used — the unanswered remainder of the session is refunded by never
+    having been charged.
 
     Mirrors the final-turn finalize: trims the dangling unanswered turn, then
     spawns the same detached `_run_background_finalize`. Returning immediately
@@ -2148,6 +2235,9 @@ async def get_session(
             filler_word_count=t.filler_word_count or 0,
             filler_word_breakdown=t.filler_word_breakdown or {},
             filler_word_rate=filler_rate_pct(t.filler_word_count, t.word_count),
+            word_count=t.word_count or 0,
+            duration_seconds=t.duration_seconds,
+            speaking_pace_wpm=speaking_pace_wpm(t.word_count, t.duration_seconds),
             evaluated_at=t.evaluated_at,
             created_at=t.created_at,
         )
@@ -2173,6 +2263,10 @@ async def get_session(
         filler_word_rate=filler_rate_pct(
             metrics.total_filler_word_count if metrics else None,
             metrics.total_word_count if metrics else None,
+        ),
+        speaking_pace_wpm=speaking_pace_wpm(
+            metrics.total_word_count if metrics else None,
+            metrics.total_duration_seconds if metrics else None,
         ),
         turns_evaluated=metrics.turns_evaluated if metrics else 0,
         saved_question_id=session.saved_question_id,
