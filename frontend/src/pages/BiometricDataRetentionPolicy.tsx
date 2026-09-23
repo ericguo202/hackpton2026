@@ -8,10 +8,10 @@
  *
  * SCOPE: biometric + biometric-derived data only (webcam delivery analytics and
  * voice handling). Non-biometric data (profile, transcripts, auth) is covered by
- * the forthcoming general Privacy Policy and is cross-referenced, not restated.
+ * the general Privacy Policy and is cross-referenced, not restated.
  *
- * This is a DRAFT pending legal review — see BIOMETRIC_DATA_REVIEW.md for the
- * data-flow inventory, statute-by-statute analysis, and open questions. Keep the
+ * See BIOMETRIC_DATA_REVIEW.md for the data-flow inventory and
+ * statute-by-statute analysis. Keep the
  * retention figure here (12 months) in sync with
  * `DELIVERY_ANALYTICS_RETENTION_MONTHS` in the backend.
  */
@@ -21,10 +21,9 @@ import { Link } from 'react-router';
 
 import TopBar from '../components/TopBar';
 
-// Placeholders for counsel to finalize before publication.
-const ENTITY = '[Legal Entity Name]';
+const ENTITY = 'InterviewPie';
 const PRIVACY_EMAIL = 'privacy@interviewpie.com';
-const EFFECTIVE_DATE = '[Effective date — pending legal review]';
+const EFFECTIVE_DATE = 'September 22, 2026';
 
 function Section({
   id,
@@ -62,20 +61,7 @@ export default function BiometricDataRetentionPolicy() {
       />
 
       <main className="mx-auto w-full max-w-[52rem] px-6 pb-24 pt-6 md:px-10 2xl:max-w-[56rem]">
-        {/* DRAFT banner — remove once counsel approves. */}
-        <div
-          role="note"
-          className="rounded-lg border border-border-strong bg-surface-sunken px-4 py-3 text-xs leading-6 text-text"
-        >
-          <span className="font-medium uppercase tracking-eyebrow">
-            Draft — pending legal review.
-          </span>{' '}
-          This document is a working draft prepared for review by counsel and is
-          not yet in force. Bracketed items are placeholders to be finalized
-          before publication.
-        </div>
-
-        <p className="mt-8 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+        <p className="mt-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
           Legal
         </p>
         <h1
@@ -276,8 +262,6 @@ export default function BiometricDataRetentionPolicy() {
         </Section>
 
         <p className="mt-12 border-t border-border pt-6 text-xs leading-6 text-text-muted">
-          This draft is provided for legal review and does not constitute legal
-          advice or a binding commitment until finalized and published.{' '}
           <Link
             to="/"
             className="underline-offset-4 transition-colors hover:text-text hover:underline"

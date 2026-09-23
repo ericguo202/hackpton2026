@@ -13,9 +13,8 @@
  * Deliberately PUBLIC (no auth guard) so anyone can read it before signing up,
  * and so it can be linked from sign-up and the other legal pages.
  *
- * This is a DRAFT pending legal review — see TERMS_REVIEW.md for the
- * code-verified enforcement facts, law-by-law analysis, and open questions for
- * counsel. The Service has NO paid tier today, so these Terms contain no
+ * See TERMS_REVIEW.md for the code-verified enforcement facts and law-by-law
+ * analysis. The Service has NO paid tier today, so these Terms contain no
  * payment terms. Keep the age / guardian wording in sync with the Privacy
  * Policy's "Eligibility and age" section.
  */
@@ -25,12 +24,11 @@ import { Link } from 'react-router';
 
 import TopBar from '../components/TopBar';
 
-// Placeholders for counsel to finalize before publication. Kept identical to
-// the Privacy Policy and Biometric Data Retention Policy so the three documents
-// stay in sync.
-const ENTITY = '[Legal Entity Name]';
+// Kept identical to the Privacy Policy and Biometric Data Retention Policy so
+// the three documents stay in sync.
+const ENTITY = 'InterviewPie';
 const PRIVACY_EMAIL = 'team@interviewpie.com';
-const EFFECTIVE_DATE = '[Effective date — pending legal review]';
+const EFFECTIVE_DATE = 'September 22, 2026';
 
 function Section({
   id,
@@ -68,20 +66,7 @@ export default function TermsOfService() {
       />
 
       <main className="mx-auto w-full max-w-[52rem] px-6 pb-24 pt-6 md:px-10 2xl:max-w-[56rem]">
-        {/* DRAFT banner — remove once counsel approves. */}
-        <div
-          role="note"
-          className="rounded-lg border border-border-strong bg-surface-sunken px-4 py-3 text-xs leading-6 text-text"
-        >
-          <span className="font-medium uppercase tracking-eyebrow">
-            Draft — pending legal review.
-          </span>{' '}
-          This document is a working draft prepared for review by counsel and is
-          not yet in force. Bracketed items are placeholders to be finalized
-          before publication.
-        </div>
-
-        <p className="mt-8 text-eyebrow uppercase tracking-eyebrow text-text-muted">
+        <p className="mt-2 text-eyebrow uppercase tracking-eyebrow text-text-muted">
           Legal
         </p>
         <h1
@@ -313,12 +298,7 @@ export default function TermsOfService() {
             >
               Privacy Policy
             </Link>
-            .{' '}
-            <span className="text-text-muted">
-              [Whether this license also permits use of de-identified or
-              aggregated data to improve the Service is to be confirmed by
-              counsel.]
-            </span>
+            .
           </p>
           <p>
             The Service itself — including our software, models as configured,
@@ -369,10 +349,7 @@ export default function TermsOfService() {
             officers, employees, and suppliers will not be liable for any
             indirect, incidental, special, consequential, or punitive damages, or
             for any loss of data, opportunities, or goodwill, arising out of or
-            relating to your use of (or inability to use) the Service.{' '}
-            <span className="text-text-muted">
-              [Aggregate liability cap and any exclusions to be set by counsel.]
-            </span>{' '}
+            relating to your use of (or inability to use) the Service.
             Nothing in these Terms limits or excludes any liability that cannot be
             limited or excluded under applicable law — including, for consumers in
             the EU/EEA and UK, your mandatory legal rights.
@@ -384,10 +361,7 @@ export default function TermsOfService() {
             To the extent permitted by applicable law, you agree to indemnify and
             hold harmless {ENTITY} from claims, losses, and expenses arising out
             of your misuse of the Service or your violation of these Terms or of
-            applicable law.{' '}
-            <span className="text-text-muted">
-              [Scope to be confirmed by counsel.]
-            </span>
+            applicable law.
           </p>
         </Section>
 
@@ -417,11 +391,14 @@ export default function TermsOfService() {
 
         <Section id="governing-law" heading="14. Governing law and dispute resolution">
           <p>
-            <span className="text-text-muted">
-              [Governing law, venue, and dispute-resolution procedure (including
-              whether arbitration and any class-action waiver apply) to be
-              determined by counsel.]
-            </span>{' '}
+            These Terms and any dispute arising from your use of InterviewPie are governed by the 
+            laws of the State of New Jersey, without regard to its conflict-of-law rules, 
+            except where applicable law requires otherwise.
+
+            If you have a concern, please contact us at {PRIVACY_EMAIL} so we can try to resolve it. 
+            If a dispute proceeds to court, it will be brought in a court of competent jurisdiction 
+            in New Jersey, unless applicable law permits or requires a different location. 
+            Either party may bring an eligible claim in small claims court where permitted by law.
             Nothing here is intended to deprive consumers of the protection of
             mandatory laws of their country of residence.
           </p>
@@ -446,8 +423,6 @@ export default function TermsOfService() {
         </Section>
 
         <p className="mt-12 border-t border-border pt-6 text-xs leading-6 text-text-muted">
-          This draft is provided for legal review and does not constitute legal
-          advice or a binding commitment until finalized and published.{' '}
           <Link
             to="/"
             className="underline-offset-4 transition-colors hover:text-text hover:underline"
