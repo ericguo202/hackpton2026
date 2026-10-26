@@ -75,7 +75,7 @@ jobs:
           IMAGE_REF: ${{ env.IMAGE_REF }}:${{ github.sha }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          PUBLIC_HEALTH_URL: https://tfpdo.space/api/v1/health
+          PUBLIC_HEALTH_URL: https://18-217-35-60.sslip.io/api/v1/health
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}

@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-backend}"
-PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-https://tfpdo.space/api/v1/health}"
+PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-https://18-217-35-60.sslip.io/api/v1/health}"
 STATE_DIR="${STATE_DIR:-.deploy}"
 ACTIVE_FILE="${ACTIVE_FILE:-$STATE_DIR/active_color}"
 UPSTREAM_DIR="${UPSTREAM_DIR:-caddy}"

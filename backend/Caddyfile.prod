@@ -1,4 +1,4 @@
-tfpdo.space {
+18-217-35-60.sslip.io {
     # Baseline security headers on every API response. Caddy already terminates
     # TLS (HTTP->HTTPS auto-redirect), but HSTS must be explicit so browsers pin
     # https for future visits. The API only ever returns JSON, so a CSP isn't
